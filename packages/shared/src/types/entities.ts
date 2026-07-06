@@ -114,3 +114,16 @@ export type Occurrence = {
   snapshot: ItemSnapshot
   materializedAt: Date
 }
+
+// §5.4 — unified type for the merged read API.
+// Covers both stored (materialized) and computed (on-the-fly) occurrences.
+// id / materializedAt are null for occurrences that haven't been stored yet;
+// callers that don't care about storage status can treat both cases identically.
+export type ComputedOccurrence = {
+  id: string | null
+  userId: string
+  itemId: string
+  appliesToDay: string        // YYYY-MM-DD
+  snapshot: ItemSnapshot
+  materializedAt: Date | null
+}

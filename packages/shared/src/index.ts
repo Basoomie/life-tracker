@@ -20,6 +20,9 @@ export type {
   Item,
   ItemPrerequisite,
   Occurrence,
+  ComputedOccurrence,
 } from './types/entities'
 
 export type { TrackerEvent, EventType } from './types/events'
+
+export { bucketLocalDateTime, bucketTimestamp, getDueDays } from './domain/index'

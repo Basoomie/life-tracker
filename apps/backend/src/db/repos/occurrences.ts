@@ -94,3 +94,46 @@ export async function findOccurrenceByItemAndDay(
   )
   return rows[0] ? toOccurrence(rows[0]) : null
 }
+
+// All occurrences for a user across an inclusive date range — the primary query
+// for the merged read API.
+export async function findOccurrencesByRange(
+  pool: Pool,
+  userId: string,
+  startDay: string,   // YYYY-MM-DD inclusive
+  endDay: string      // YYYY-MM-DD inclusive
+): Promise<Occurrence[]> {
+  const { rows } = await pool.query<OccurrenceRow>(
+    `SELECT * FROM occurrences
+     WHERE user_id = $1 AND applies_to_day >= $2 AND applies_to_day <= $3
+     ORDER BY applies_to_day, item_id`,
+    [userId, startDay, endDay]
+  )
+  return rows.map(toOccurrence)
+}
+
+// §5.3 — Delete future occurrences for an item that have no events attached.
+// Used during template edit: frozen past rows and rows already touched by events
+// are left in place; the rest are wiped so they can be re-materialized with the
+// updated snapshot.
+// Returns the count of rows deleted.
+export async function deleteUntouchedFutureOccurrences(
+  pool: Pool,
+  itemId: string,
+  userId: string,
+  fromDay: string   // YYYY-MM-DD — only delete on or after this day
+): Promise<number> {
+  const { rowCount } = await pool.query(
+    `DELETE FROM occurrences
+     WHERE item_id = $1
+       AND user_id = $2
+       AND applies_to_day >= $3
+       AND id NOT IN (
+         SELECT DISTINCT occurrence_id
+         FROM events
+         WHERE occurrence_id IS NOT NULL AND user_id = $2
+       )`,
+    [itemId, userId, fromDay]
+  )
+  return rowCount ?? 0
+}
