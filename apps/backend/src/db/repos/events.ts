@@ -33,6 +33,7 @@ export type InsertEventData = {
   itemId?: string | null
   appliesToDay?: string | null
   payload?: Record<string, unknown>
+  recordedAt?: Date   // optional; defaults to NOW() when omitted
 }
 
 export async function insertEvent(
@@ -40,14 +41,15 @@ export async function insertEvent(
   data: InsertEventData
 ): Promise<TrackerEvent> {
   const { rows } = await pool.query<EventRow>(
-    `INSERT INTO events (user_id, event_type, occurrence_id, item_id, applies_to_day, payload)
-     VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+    `INSERT INTO events (user_id, event_type, occurrence_id, item_id, applies_to_day, recorded_at, payload)
+     VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
     [
       data.userId,
       data.eventType,
       data.occurrenceId ?? null,
       data.itemId ?? null,
       data.appliesToDay ?? null,
+      data.recordedAt ?? new Date(),
       JSON.stringify(data.payload ?? {}),
     ]
   )

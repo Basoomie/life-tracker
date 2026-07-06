@@ -268,6 +268,21 @@ export async function updateItem(
   return rows[0] ? toItem(rows[0]) : null
 }
 
+// §4.1 — Direct children in the containment tree (items where parent_id = parentId)
+export async function findChildItems(
+  pool: Pool,
+  parentId: string,
+  userId: string
+): Promise<Item[]> {
+  const { rows } = await pool.query<ItemRow>(
+    `SELECT * FROM items
+     WHERE parent_id = $1 AND user_id = $2 AND archived_at IS NULL
+     ORDER BY created_at`,
+    [parentId, userId]
+  )
+  return rows.map(toItem)
+}
+
 export async function deletePrerequisite(
   pool: Pool,
   itemId: string,

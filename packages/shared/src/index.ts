@@ -25,4 +25,13 @@ export type {
 
 export type { TrackerEvent, EventType } from './types/events'
 
-export { bucketLocalDateTime, bucketTimestamp, getDueDays } from './domain/index'
+export {
+  bucketLocalDateTime,
+  bucketTimestamp,
+  getDueDays,
+  deriveLeafCompletion,
+  computeDerivedPercent,
+  findDeclaredPercent,
+  buildParentCompletionState,
+} from './domain/index'
+export type { LeafCompletionState, ParentCompletionState } from './domain/index'

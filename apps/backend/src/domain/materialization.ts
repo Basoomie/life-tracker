@@ -247,8 +247,12 @@ export async function getOccurrencesInRange(
 
 /**
  * §8.4 — Background job entry point.
- * Phase (a) [this step]: tops up near-term materialization for all active items.
- * Phase (b) [step 2b]:   end-of-day dispositions — seam left here, not yet built.
+ * Phase (a): tops up near-term materialization for all active items.
+ * Phase (b): end-of-day dispositions for untouched occurrences on `day`.
+ *
+ * `day` is the logical day being closed out (determined by the caller from the
+ * day-start timeline).  Phase (a) materializes near-term rows first so phase (b)
+ * can find all due occurrences via a simple table scan.
  */
 export async function runBackgroundJob(
   pool: Pool,
@@ -256,5 +260,6 @@ export async function runBackgroundJob(
   today: string   // YYYY-MM-DD
 ): Promise<void> {
   await topUpMaterialization(pool, userId, today)
-  // TODO (step 2b): await runDispositions(pool, userId, today)
+  const { runDispositions } = await import('./dispositions')
+  await runDispositions(pool, userId, today)
 }

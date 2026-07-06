@@ -112,6 +112,47 @@ export async function findOccurrencesByRange(
   return rows.map(toOccurrence)
 }
 
+// Fetch occurrences for a set of item IDs on a specific day (bulk, for parent-derived % computation)
+export async function findOccurrencesByItemsAndDay(
+  pool: Pool,
+  itemIds: string[],
+  day: string,
+  userId: string
+): Promise<Occurrence[]> {
+  if (itemIds.length === 0) return []
+  const placeholders = itemIds.map((_, i) => `$${i + 3}`).join(', ')
+  const { rows } = await pool.query<OccurrenceRow>(
+    `SELECT * FROM occurrences
+     WHERE user_id = $1 AND applies_to_day = $2 AND item_id IN (${placeholders})`,
+    [userId, day, ...itemIds]
+  )
+  return rows.map(toOccurrence)
+}
+
+// §4.2 — Check if an item has ever been completed at 100% (used for isBlocked derivation).
+// Returns true if the latest completion event for the item's occurrence has percent >= 100.
+// One-time tasks have a single occurrence; this query finds it regardless.
+export async function isItemEverCompleted(
+  pool: Pool,
+  itemId: string,
+  userId: string
+): Promise<boolean> {
+  const { rows } = await pool.query<{ pct: number }>(
+    `SELECT (e.payload->>'completionPercent')::int AS pct
+     FROM events e
+     JOIN occurrences o ON o.id = e.occurrence_id
+     WHERE o.item_id = $1
+       AND o.user_id = $2
+       AND e.user_id = $2
+       AND e.event_type IN ('item_completed', 'retroactive_completion')
+     ORDER BY e.recorded_at DESC
+     LIMIT 1`,
+    [itemId, userId]
+  )
+  if (rows.length === 0) return false
+  return rows[0].pct >= 100
+}
+
 // §5.3 — Delete future occurrences for an item that have no events attached.
 // Used during template edit: frozen past rows and rows already touched by events
 // are left in place; the rest are wiped so they can be re-materialized with the

@@ -13,7 +13,7 @@ export type TimingPrecision = 'none' | 'bucket' | 'point' | 'range'
 export type CreationSource = 'planned' | 'ad_hoc'
 
 // §8.1 — per-item policy for what happens when due-but-untouched at end of day
-export type DispositionPolicy = 'skip' | 'excuse' | 'auto_close'
+export type DispositionPolicy = 'skip' | 'excuse' | 'auto_close' | 'require_manual'
 
 // §5.1 — recurrence rule stored as JSONB; null = one-time task
 export type RecurrenceRule =
