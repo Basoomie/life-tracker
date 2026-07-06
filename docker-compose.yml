@@ -25,6 +25,10 @@ services:
     container_name: tracker_db
     image: postgres:16-alpine
     restart: unless-stopped
+    ports:
+      # Exposed so the backend can run locally (outside Docker) against the same Postgres.
+      # Useful for running integration tests and the migration CLI from the host.
+      - "${POSTGRES_HOST_PORT:-5432}:5432"
     environment:
       POSTGRES_DB: ${POSTGRES_DB:?required}
       POSTGRES_USER: ${POSTGRES_USER:?required}

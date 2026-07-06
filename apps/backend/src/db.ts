@@ -1,3 +1,4 @@
+import './db/pg-setup'
 import { Pool } from 'pg'
 
 if (!process.env.DATABASE_URL) {
