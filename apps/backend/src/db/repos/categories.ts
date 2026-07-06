@@ -57,6 +57,22 @@ export async function findCategoryById(
   return rows[0] ? toCategory(rows[0]) : null
 }
 
+export async function renameCategory(
+  pool: Pool,
+  id: string,
+  userId: string,
+  name: string
+): Promise<Category | null> {
+  const { rows } = await pool.query<CategoryRow>(
+    `UPDATE categories
+     SET name = $3
+     WHERE id = $1 AND user_id = $2 AND archived_at IS NULL
+     RETURNING *`,
+    [id, userId, name]
+  )
+  return rows[0] ? toCategory(rows[0]) : null
+}
+
 export async function archiveCategory(
   pool: Pool,
   id: string,

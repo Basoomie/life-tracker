@@ -16,8 +16,9 @@ function toBucket(row: BucketRow): Bucket {
     id: row.id,
     userId: row.user_id,
     name: row.name,
-    startTime: row.start_time,
-    endTime: row.end_time,
+    // Postgres TIME columns return 'HH:MM:SS'; normalise to the spec's 'HH:MM' format.
+    startTime: row.start_time.slice(0, 5),
+    endTime: row.end_time.slice(0, 5),
     sortOrder: row.sort_order,
     createdAt: row.created_at,
   }

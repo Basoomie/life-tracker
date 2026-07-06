@@ -1,0 +1,162 @@
+// §3 — API request/response types for the Fastify layer.
+// All types are consumed by both frontend (step 4) and backend routes.
+// Defined once here so the API cannot drift from the client.
+
+import type { ComputedOccurrence } from './entities'
+import type {
+  Priority,
+  Valence,
+  DispositionPolicy,
+  RecurrenceRule,
+  QuotaTarget,
+  TimingPrecision,
+  CreationSource,
+} from './enums'
+
+// ── Occurrence enrichment types ───────────────────────────────────────────────
+
+// Unified completion view for API consumers; derived from events by enrichOccurrence.
+export type OccurrenceCompletionState = {
+  isLeaf: boolean
+  completionPercent: number        // 0-100
+  isComplete: boolean
+  completedAt: Date | null         // null for parents or incomplete
+  wasRetroactive: boolean          // leaf-only; false for parents
+  derivedPercent: number | null    // non-null for parents only
+  declaredPercent: number | null   // non-null if manual_parent_percent_declared exists
+}
+
+// What happened to this occurrence (pending until explicitly changed)
+export type OccurrenceDisposition = {
+  type: 'pending' | 'completed' | 'skipped' | 'excused' | 'rescheduled' | 'auto_closed'
+  reasonId: string | null
+  comment: string | null
+  rescheduledToDay: string | null
+  derivedPercentAtClose: number | null  // for auto_closed
+}
+
+// Full enriched occurrence — what the views actually consume
+export type OccurrenceWithState = ComputedOccurrence & {
+  isBlocked: boolean
+  incompletePrerequisiteIds: string[]
+  completionState: OccurrenceCompletionState
+  disposition: OccurrenceDisposition
+  hasChildren: boolean
+}
+
+// ── Request body types ────────────────────────────────────────────────────────
+
+export type CreateItemBody = {
+  name: string
+  description?: string | null
+  categoryId?: string | null
+  valence?: Valence | null
+  priority?: Priority | null
+  recurrenceRule?: RecurrenceRule | null
+  quotaTarget?: QuotaTarget | null
+  timingPrecision?: TimingPrecision
+  timingBucketId?: string | null
+  timingStartTime?: string | null
+  timingEndTime?: string | null
+  plannedDurationMin?: number | null
+  parentId?: string | null
+  dispositionPolicy?: DispositionPolicy
+  creationSource?: CreationSource
+  day?: string  // YYYY-MM-DD — for one-time task materialization; defaults to today
+}
+
+export type UpdateItemBody = Omit<Partial<CreateItemBody>, 'creationSource' | 'day'>
+
+export type SetPriorityBody = {
+  priority: Priority | null
+}
+
+export type AddPrerequisiteBody = {
+  prerequisiteItemId: string
+}
+
+export type DeclarePercentBody = {
+  percent: number
+}
+
+export type DispositionBody = {
+  reasonId?: string | null
+  comment?: string | null
+}
+
+export type CarryForwardBody = {
+  targetDay: string   // YYYY-MM-DD
+  reasonId?: string | null
+  comment?: string | null
+}
+
+export type RetroactiveBody = {
+  recordedAt?: string   // ISO 8601 timestamp; defaults to now
+}
+
+export type StartSessionBody = {
+  itemId: string
+  day?: string   // YYYY-MM-DD; defaults to today
+}
+
+export type ManualSessionBody = {
+  itemId: string
+  day?: string
+  startedAt: string   // ISO 8601
+  endedAt: string     // ISO 8601
+}
+
+export type EditSessionBody = {
+  startedAt: string   // ISO 8601
+  endedAt: string     // ISO 8601
+}
+
+export type AdHocCaptureBody = {
+  name: string
+  categoryId?: string | null
+  valence?: Valence | null
+}
+
+export type CreateCategoryBody = {
+  name: string
+}
+
+export type RenameCategoryBody = {
+  name: string
+}
+
+export type CreateReasonBody = {
+  name: string
+}
+
+export type RenameReasonBody = {
+  name: string
+}
+
+export type CreateBucketBody = {
+  name: string
+  startTime: string   // HH:MM
+  endTime: string     // HH:MM
+  sortOrder?: number
+}
+
+export type UpdateBucketBoundariesBody = {
+  startTime: string   // HH:MM
+  endTime: string     // HH:MM
+}
+
+export type CreateDayStartBody = {
+  value: string         // HH:MM
+  effectiveFrom: string // YYYY-MM-DD — must be >= today (§6.7)
+}
+
+export type RunBackgroundJobBody = {
+  day: string   // YYYY-MM-DD — the logical day to close out
+}
+
+// ── Standard error shape ──────────────────────────────────────────────────────
+
+export type ApiError = {
+  error: string    // machine-readable code, e.g. 'not_found', 'cycle_rejected'
+  message: string  // human-readable description
+}

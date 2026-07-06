@@ -1,6 +1,33 @@
 export type { HealthResponse } from './health'
 
 export type {
+  OccurrenceCompletionState,
+  OccurrenceDisposition,
+  OccurrenceWithState,
+  CreateItemBody,
+  UpdateItemBody,
+  SetPriorityBody,
+  AddPrerequisiteBody,
+  DeclarePercentBody,
+  DispositionBody,
+  CarryForwardBody,
+  RetroactiveBody,
+  StartSessionBody,
+  ManualSessionBody,
+  EditSessionBody,
+  AdHocCaptureBody,
+  CreateCategoryBody,
+  RenameCategoryBody,
+  CreateReasonBody,
+  RenameReasonBody,
+  CreateBucketBody,
+  UpdateBucketBoundariesBody,
+  CreateDayStartBody,
+  RunBackgroundJobBody,
+  ApiError,
+} from './types/api'
+
+export type {
   Priority,
   Valence,
   TimingPrecision,

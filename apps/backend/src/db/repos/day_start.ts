@@ -14,7 +14,8 @@ function toDayStartEntry(row: DayStartRow): DayStartEntry {
     id: row.id,
     userId: row.user_id,
     startsOn: row.starts_on,
-    value: row.value,
+    // Postgres TIME columns return 'HH:MM:SS'; normalise to the spec's 'HH:MM' format.
+    value: row.value.slice(0, 5),
     recordedAt: row.recorded_at,
   }
 }

@@ -146,6 +146,35 @@ export async function runDispositions(
   }
 }
 
+// ── User-initiated skip / excuse ──────────────────────────────────────────────
+
+/**
+ * §8 — User-initiated skip (explicit action from the UI or API).
+ * Unlike applyDisposition (background-job path), this is always a skip regardless
+ * of the item's configured disposition policy.
+ */
+export async function skipOccurrenceByUser(
+  pool: Pool,
+  occurrence: Occurrence,
+  userId: string,
+  opts: { reasonId?: string | null; comment?: string | null } = {}
+): Promise<TrackerEvent> {
+  return applySkip(pool, occurrence, userId, opts)
+}
+
+/**
+ * §8 — User-initiated excuse (explicit action from the UI or API).
+ * Always an excuse regardless of the item's configured disposition policy.
+ */
+export async function excuseOccurrenceByUser(
+  pool: Pool,
+  occurrence: Occurrence,
+  userId: string,
+  opts: { reasonId?: string | null; comment?: string | null } = {}
+): Promise<TrackerEvent> {
+  return applyExcuse(pool, occurrence, userId, opts)
+}
+
 // ── §8.2 Explicit carry-forward ───────────────────────────────────────────────
 
 /**

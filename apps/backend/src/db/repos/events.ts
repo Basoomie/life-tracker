@@ -101,6 +101,23 @@ export async function findTemplateEventsByItem(
   return rows.map(toEvent)
 }
 
+// All events that belong to a specific session (identified by payload.sessionId).
+// Covers session_started, session_paused, session_resumed, session_stopped,
+// session_created, and session_edited — all share sessionId in their payload.
+export async function findEventsBySessionId(
+  pool: Pool,
+  sessionId: string,
+  userId: string
+): Promise<TrackerEvent[]> {
+  const { rows } = await pool.query<EventRow>(
+    `SELECT * FROM events
+     WHERE user_id = $1 AND payload->>'sessionId' = $2
+     ORDER BY recorded_at`,
+    [userId, sessionId]
+  )
+  return rows.map(toEvent)
+}
+
 // Config-level events (no item, no occurrence), e.g. category changes, day-start
 export async function findConfigEvents(
   pool: Pool,

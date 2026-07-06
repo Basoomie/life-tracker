@@ -57,6 +57,22 @@ export async function findReasonById(
   return rows[0] ? toReason(rows[0]) : null
 }
 
+export async function renameReason(
+  pool: Pool,
+  id: string,
+  userId: string,
+  name: string
+): Promise<Reason | null> {
+  const { rows } = await pool.query<ReasonRow>(
+    `UPDATE reasons
+     SET name = $3
+     WHERE id = $1 AND user_id = $2 AND archived_at IS NULL
+     RETURNING *`,
+    [id, userId, name]
+  )
+  return rows[0] ? toReason(rows[0]) : null
+}
+
 export async function archiveReason(
   pool: Pool,
   id: string,
