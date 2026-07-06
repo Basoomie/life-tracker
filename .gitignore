@@ -1,0 +1,19 @@
+node_modules/
+dist/
+.env
+*.env.local
+
+# Frontend build output
+apps/frontend/dist/
+
+# Test output
+test-results/
+playwright-report/
+blob-report/
+
+# TypeScript incremental build
+*.tsbuildinfo
+
+# OS
+.DS_Store
+Thumbs.db

@@ -1,0 +1,23 @@
+{
+  "name": "tracker",
+  "version": "0.0.1",
+  "private": true,
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev:backend": "npm run dev --workspace=apps/backend",
+    "dev:frontend": "npm run dev --workspace=apps/frontend",
+    "build": "npm run build --workspace=apps/frontend && npm run build --workspace=apps/backend",
+    "test:unit": "npm run test --workspace=packages/shared && npm run test --workspace=apps/backend",
+    "test:e2e": "npm run test:e2e --workspace=apps/frontend",
+    "test": "npm run test:unit && npm run test:e2e",
+    "typecheck": "npm run typecheck --workspaces --if-present"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.4",
+    "@types/node": "^22.9.0",
+    "vitest": "^2.1.8"
+  }
+}
