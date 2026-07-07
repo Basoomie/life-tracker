@@ -1,6 +1,7 @@
 // §12.5 — Shared filter bar. Filter state lives in the calling view (view state only).
 
 import type { FilterState } from '../lib/filters'
+import { makeDefaultFilters, isDefaultFilters } from '../lib/filters'
 import type { Category } from '@tracker/shared'
 import type { Priority, Valence, TimingPrecision } from '@tracker/shared'
 
@@ -39,6 +40,7 @@ const PRECISIONS: Array<{ key: TimingPrecision; label: string }> = [
 ]
 
 export function FilterBar({ filters, categories, onChange }: Props) {
+  const isDefault = isDefaultFilters(filters)
   return (
     <div className="filter-bar" data-testid="filter-bar" role="group" aria-label="Filters">
 
@@ -151,6 +153,19 @@ export function FilterBar({ filters, categories, onChange }: Props) {
           ))}
         </div>
       </div>
+
+      {/* Reset */}
+      {!isDefault && (
+        <div className="filter-group filter-group--reset">
+          <button
+            className="btn btn--ghost filter-reset-btn"
+            onClick={() => onChange(makeDefaultFilters())}
+            data-testid="filter-reset"
+          >
+            Reset filters
+          </button>
+        </div>
+      )}
 
     </div>
   )

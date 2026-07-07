@@ -21,9 +21,13 @@ import type {
 const BASE = '/api'
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
+  const hasBody = init?.body !== undefined
   const res = await fetch(`${BASE}${path}`, {
-    headers: { 'Content-Type': 'application/json', ...init?.headers },
     ...init,
+    headers: {
+      ...(hasBody ? { 'Content-Type': 'application/json' } : {}),
+      ...init?.headers,
+    },
   })
   if (!res.ok) {
     const err = await res.json().catch(() => ({ message: res.statusText }))

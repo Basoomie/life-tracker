@@ -5,21 +5,38 @@ import { useRangeData } from '../../hooks/useRangeData'
 import { useOccurrenceActions } from '../../hooks/useOccurrenceActions'
 import { OccurrenceRow } from '../now/OccurrenceRow'
 import { DispositionModal } from '../now/DispositionModal'
+import { ConfirmModal } from '../shared/ConfirmModal'
 import { FilterBar } from '../FilterBar'
 import { sortByTiming, groupByPriority } from '../../lib/list-sort'
-import { applyFilters, makeDefaultFilters } from '../../lib/filters'
+import { applyFilters, makeDefaultFilters, serializeFilters, deserializeFilters } from '../../lib/filters'
 import { getRangeDates, getDaysInRange, formatDayLabel } from '../../lib/date-range'
 import { api } from '../../lib/api'
 import type { RangeKey } from '../../lib/date-range'
 import type { OccurrenceWithState, Category, Reason } from '@tracker/shared'
 
-export function ListView() {
-  const [range, setRange] = useState<RangeKey>('today')
-  const [priorityFlip, setPriorityFlip] = useState(false)
+type Props = {
+  onEditItem: (itemId: string) => void
+}
+
+export function ListView({ onEditItem }: Props) {
+  const [range, setRange] = useState<RangeKey>(() => {
+    return (localStorage.getItem('tracker:list-range') as RangeKey | null) ?? 'today'
+  })
+  const [priorityFlip, setPriorityFlip] = useState(() => {
+    return localStorage.getItem('tracker:list-priorityFlip') === 'true'
+  })
   const [showFilters, setShowFilters] = useState(false)
-  const [filters, setFilters] = useState(makeDefaultFilters)
+  const [filters, setFilters] = useState(() => {
+    const saved = localStorage.getItem('tracker:list-filters')
+    return saved ? deserializeFilters(saved) : makeDefaultFilters()
+  })
   const [categories, setCategories] = useState<Category[]>([])
   const [reasons, setReasons] = useState<Reason[]>([])
+  const [pendingUncompletion, setPendingUncompletion] = useState<OccurrenceWithState | null>(null)
+
+  useEffect(() => { localStorage.setItem('tracker:list-range', range) }, [range])
+  useEffect(() => { localStorage.setItem('tracker:list-priorityFlip', String(priorityFlip)) }, [priorityFlip])
+  useEffect(() => { localStorage.setItem('tracker:list-filters', serializeFilters(filters)) }, [filters])
 
   const { start, end } = useMemo(() => getRangeDates(range), [range])
 
@@ -77,12 +94,13 @@ export function ListView() {
         isChild={isChild}
         session={sessions.get(occId)}
         onComplete={() => handleComplete(occ)}
-        onUncomplete={() => handleUncomplete(occ)}
+        onUncomplete={() => setPendingUncompletion(occ)}
         onTimerStart={() => handleTimerStart(occ)}
         onTimerPause={() => handleTimerPause(occ)}
         onTimerResume={() => handleTimerResume(occ)}
         onTimerStop={() => handleTimerStop(occ)}
         onDisposition={() => setDispositionTarget(occ)}
+        onEdit={() => onEditItem(occ.itemId)}
       />
     )
   }
@@ -217,6 +235,20 @@ export function ListView() {
           onExcuse={(rid, cmt) => handleExcuse(dispositionTarget, rid, cmt)}
           onCarryForward={(day, rid, cmt) => handleCarryForward(dispositionTarget, day, rid, cmt)}
           onClose={() => setDispositionTarget(null)}
+        />
+      )}
+
+      {/* Uncomplete confirmation modal */}
+      {pendingUncompletion && (
+        <ConfirmModal
+          title="Mark as incomplete?"
+          message={`Revert completion of "${pendingUncompletion.snapshot.name}"?`}
+          confirmLabel="Yes, undo"
+          onConfirm={async () => {
+            await handleUncomplete(pendingUncompletion)
+            setPendingUncompletion(null)
+          }}
+          onCancel={() => setPendingUncompletion(null)}
         />
       )}
     </div>

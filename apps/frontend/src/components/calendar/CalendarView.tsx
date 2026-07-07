@@ -6,21 +6,35 @@ import { useState, useEffect, useMemo } from 'react'
 import { useRangeData, effectiveDayStart } from '../../hooks/useRangeData'
 import { useOccurrenceActions } from '../../hooks/useOccurrenceActions'
 import { DispositionModal } from '../now/DispositionModal'
+import { ConfirmModal } from '../shared/ConfirmModal'
 import { FilterBar } from '../FilterBar'
 import { TimeGrid } from './TimeGrid'
-import { applyFilters, makeDefaultFilters } from '../../lib/filters'
+import { applyFilters, makeDefaultFilters, serializeFilters, deserializeFilters } from '../../lib/filters'
 import { getRangeDates, getDaysInRange, formatDayLabel, todayStr } from '../../lib/date-range'
 import { api } from '../../lib/api'
 import type { RangeKey } from '../../lib/date-range'
 import type { OccurrenceWithState, Category, Reason } from '@tracker/shared'
 
-export function CalendarView() {
-  const [range, setRange] = useState<RangeKey>('today')
+type Props = {
+  onEditItem: (itemId: string) => void
+}
+
+export function CalendarView({ onEditItem }: Props) {
+  const [range, setRange] = useState<RangeKey>(() => {
+    return (localStorage.getItem('tracker:cal-range') as RangeKey | null) ?? 'today'
+  })
   const [showFilters, setShowFilters] = useState(false)
-  const [filters, setFilters] = useState(makeDefaultFilters)
+  const [filters, setFilters] = useState(() => {
+    const saved = localStorage.getItem('tracker:cal-filters')
+    return saved ? deserializeFilters(saved) : makeDefaultFilters()
+  })
   const [categories, setCategories] = useState<Category[]>([])
   const [reasons, setReasons] = useState<Reason[]>([])
   const [now, setNow] = useState(() => new Date())
+  const [pendingUncompletion, setPendingUncompletion] = useState<OccurrenceWithState | null>(null)
+
+  useEffect(() => { localStorage.setItem('tracker:cal-range', range) }, [range])
+  useEffect(() => { localStorage.setItem('tracker:cal-filters', serializeFilters(filters)) }, [filters])
 
   // Mobile single-day navigation: which day within range is focused
   const [focusedDay, setFocusedDay] = useState(() => todayStr())
@@ -94,12 +108,13 @@ export function CalendarView() {
         now={now}
         sessions={sessions}
         onComplete={handleComplete}
-        onUncomplete={handleUncomplete}
+        onUncomplete={setPendingUncompletion}
         onTimerStart={handleTimerStart}
         onTimerPause={handleTimerPause}
         onTimerResume={handleTimerResume}
         onTimerStop={handleTimerStop}
         onDisposition={setDispositionTarget}
+        onEdit={onEditItem}
       />
     )
   }
@@ -207,6 +222,20 @@ export function CalendarView() {
           onExcuse={(rid, cmt) => handleExcuse(dispositionTarget, rid, cmt)}
           onCarryForward={(day, rid, cmt) => handleCarryForward(dispositionTarget, day, rid, cmt)}
           onClose={() => setDispositionTarget(null)}
+        />
+      )}
+
+      {/* Uncomplete confirmation modal */}
+      {pendingUncompletion && (
+        <ConfirmModal
+          title="Mark as incomplete?"
+          message={`Revert completion of "${pendingUncompletion.snapshot.name}"?`}
+          confirmLabel="Yes, undo"
+          onConfirm={async () => {
+            await handleUncomplete(pendingUncompletion)
+            setPendingUncompletion(null)
+          }}
+          onCancel={() => setPendingUncompletion(null)}
         />
       )}
     </div>

@@ -23,6 +23,7 @@ type Props = {
   onTimerResume: (occ: OccurrenceWithState) => void
   onTimerStop: (occ: OccurrenceWithState) => void
   onDisposition: (occ: OccurrenceWithState) => void
+  onEdit: (itemId: string) => void
 }
 
 // Hour labels on the time axis (every 2 hours for readability)
@@ -61,11 +62,13 @@ export function TimeGrid({
   onTimerResume,
   onTimerStop,
   onDisposition,
+  onEdit,
 }: Props) {
   const layout: DayLayout = computeDayLayout(occs, buckets, dayStart)
   const hourLabels = buildHourLabels(dayStart)
   const nowPx = isToday ? nowLinePx(now, dayStart) : null
   const [selected, setSelected] = useState<OccurrenceWithState | null>(null)
+  const [showGutter, setShowGutter] = useState(true)
   const panelRef = useRef<HTMLDivElement>(null)
 
   // Close detail panel when clicking outside
@@ -82,31 +85,7 @@ export function TimeGrid({
 
   return (
     <div className="cal-day" data-testid={`cal-day-${day}`}>
-      {/* Unscheduled gutter */}
-      {layout.gutter.length > 0 && (
-        <div className="cal-gutter" data-testid={`cal-gutter-${day}`}>
-          {layout.gutter.map((occ) => {
-            const occId = occ.id ?? occ.itemId
-            return (
-              <OccurrenceRow
-                key={occId}
-                occ={occ}
-                buckets={buckets}
-                session={sessions.get(occId)}
-                onComplete={() => onComplete(occ)}
-                onUncomplete={() => onUncomplete(occ)}
-                onTimerStart={() => onTimerStart(occ)}
-                onTimerPause={() => onTimerPause(occ)}
-                onTimerResume={() => onTimerResume(occ)}
-                onTimerStop={() => onTimerStop(occ)}
-                onDisposition={() => onDisposition(occ)}
-              />
-            )
-          })}
-        </div>
-      )}
-
-      {/* Time grid */}
+      {/* Time grid — primary element */}
       <div className="cal-grid-wrap">
         {/* Hour axis */}
         <div className="cal-time-axis" aria-hidden="true" style={{ height: `${TOTAL_PX}px` }}>
@@ -192,7 +171,42 @@ export function TimeGrid({
             onTimerResume={() => onTimerResume(selected)}
             onTimerStop={() => { onTimerStop(selected); setSelected(null) }}
             onDisposition={() => { onDisposition(selected); setSelected(null) }}
+            onEdit={() => onEdit(selected.itemId)}
           />
+        </div>
+      )}
+
+      {/* Unscheduled gutter — below the time grid so the grid stays primary */}
+      {layout.gutter.length > 0 && (
+        <div className="cal-gutter" data-testid={`cal-gutter-${day}`}>
+          <button
+            className="tier-header tier-header--btn cal-gutter__header"
+            onClick={() => setShowGutter((v) => !v)}
+            aria-expanded={showGutter}
+          >
+            <span className="tier-label">Unscheduled</span>
+            <span className="tier-count">{layout.gutter.length}</span>
+            <span className="tier-header__chevron" aria-hidden="true">{showGutter ? '▲' : '▼'}</span>
+          </button>
+          {showGutter && layout.gutter.map((occ) => {
+            const occId = occ.id ?? occ.itemId
+            return (
+              <OccurrenceRow
+                key={occId}
+                occ={occ}
+                buckets={buckets}
+                session={sessions.get(occId)}
+                onComplete={() => onComplete(occ)}
+                onUncomplete={() => onUncomplete(occ)}
+                onTimerStart={() => onTimerStart(occ)}
+                onTimerPause={() => onTimerPause(occ)}
+                onTimerResume={() => onTimerResume(occ)}
+                onTimerStop={() => onTimerStop(occ)}
+                onDisposition={() => onDisposition(occ)}
+                onEdit={() => onEdit(occ.itemId)}
+              />
+            )
+          })}
         </div>
       )}
     </div>

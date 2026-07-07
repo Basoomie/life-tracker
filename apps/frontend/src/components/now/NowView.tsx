@@ -1,12 +1,13 @@
 // §12.2 — Now view: three tiers (Active / Imminent / Unscheduled-today).
 // Owns session state for live timers; all mutations go through the API.
 
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import { useNowData } from '../../hooks/useNowData'
 import { TierSection } from './TierSection'
 import { OccurrenceRow } from './OccurrenceRow'
 import { AdHocModal } from './AdHocModal'
 import { DispositionModal } from './DispositionModal'
+import { ConfirmModal } from '../shared/ConfirmModal'
 import { api } from '../../lib/api'
 import type { OccurrenceWithState } from '@tracker/shared'
 import type { Category, Reason } from '@tracker/shared'
@@ -18,11 +19,42 @@ type Props = {
 
 export function NowView({ onEditItem }: Props) {
   const [showAdHoc, setShowAdHoc] = useState(false)
-  const [imminentWindow, setImminentWindow] = useState(90)
-  const [alwaysNext, setAlwaysNext] = useState(false)
+  const [showDone, setShowDone] = useState(false)
+  const [imminentWindow, setImminentWindow] = useState(() => {
+    const saved = localStorage.getItem('tracker:imminentWindow')
+    return saved ? Number(saved) : 90
+  })
+  const [alwaysNext, setAlwaysNext] = useState(() => {
+    return localStorage.getItem('tracker:alwaysNext') === 'true'
+  })
 
-  const { tiers, buckets, loading, error, refresh, setOccurrences } =
+  useEffect(() => {
+    localStorage.setItem('tracker:imminentWindow', String(imminentWindow))
+  }, [imminentWindow])
+
+  useEffect(() => {
+    localStorage.setItem('tracker:alwaysNext', String(alwaysNext))
+  }, [alwaysNext])
+
+  const { tiers, occurrences, buckets, loading, error, refresh, setOccurrences } =
     useNowData(imminentWindow, alwaysNext)
+
+  const doneToday = useMemo(
+    () => occurrences.filter((o) => o.completionState.isComplete),
+    [occurrences]
+  )
+
+  // Auto-expand Done Today when the first item is completed in this session
+  const prevDoneLengthRef = useRef(0)
+  useEffect(() => {
+    if (doneToday.length > 0 && prevDoneLengthRef.current === 0) {
+      setShowDone(true)
+    }
+    prevDoneLengthRef.current = doneToday.length
+  }, [doneToday.length])
+
+  // Pending uncomplete confirmation target
+  const [pendingUncompletion, setPendingUncompletion] = useState<OccurrenceWithState | null>(null)
 
   // Live session state: occurrenceId → SessionState
   const [sessions, setSessions] = useState<Map<string, SessionState>>(new Map())
@@ -186,7 +218,7 @@ export function NowView({ onEditItem }: Props) {
         isChild={isChild}
         session={sessions.get(occId)}
         onComplete={() => handleComplete(occ)}
-        onUncomplete={() => handleUncomplete(occ)}
+        onUncomplete={() => setPendingUncompletion(occ)}
         onTimerStart={() => handleTimerStart(occ)}
         onTimerPause={() => handleTimerPause(occ)}
         onTimerResume={() => handleTimerResume(occ)}
@@ -290,6 +322,23 @@ export function NowView({ onEditItem }: Props) {
         >
           {tiers.unscheduled.map((occ) => renderRow(occ))}
         </TierSection>
+
+        {/* Done today — auto-expands on first completion; click checkbox to undo */}
+        {doneToday.length > 0 && (
+          <section className="tier-section tier-section--done" data-testid="tier-done">
+            <button
+              className="tier-header tier-header--btn"
+              onClick={() => setShowDone((v) => !v)}
+              aria-expanded={showDone}
+            >
+              <span aria-hidden="true">✓</span>
+              <span className="tier-label">Done today</span>
+              <span className="tier-count">{doneToday.length}</span>
+              <span className="tier-header__chevron" aria-hidden="true">{showDone ? '▲' : '▼'}</span>
+            </button>
+            {showDone && doneToday.map((occ) => renderRow(occ))}
+          </section>
+        )}
       </div>
 
       {/* Ad-hoc capture modal */}
@@ -310,6 +359,20 @@ export function NowView({ onEditItem }: Props) {
           onExcuse={(rid, cmt) => handleExcuse(dispositionTarget, rid, cmt)}
           onCarryForward={(day, rid, cmt) => handleCarryForward(dispositionTarget, day, rid, cmt)}
           onClose={() => setDispositionTarget(null)}
+        />
+      )}
+
+      {/* Uncomplete confirmation modal */}
+      {pendingUncompletion && (
+        <ConfirmModal
+          title="Mark as incomplete?"
+          message={`Revert completion of "${pendingUncompletion.snapshot.name}"?`}
+          confirmLabel="Yes, undo"
+          onConfirm={async () => {
+            await handleUncomplete(pendingUncompletion)
+            setPendingUncompletion(null)
+          }}
+          onCancel={() => setPendingUncompletion(null)}
         />
       )}
     </>

@@ -2,6 +2,7 @@
 // Both have the same shape and operations; this component handles both.
 
 import { useState } from 'react'
+import { ConfirmModal } from '../shared/ConfirmModal'
 
 type Item = { id: string; name: string }
 
@@ -86,6 +87,8 @@ export function ConfigurableListSection({
     fontSize: 'var(--text-xs)',
   }
 
+  const confirmItem = items.find((i) => i.id === confirmArchiveId)
+
   return (
     <div className="settings-section" data-testid={testId}>
       <div className="settings-section__header">
@@ -130,33 +133,6 @@ export function ConfigurableListSection({
                     style={btnSm}
                     onClick={() => setRenamingId(null)}
                     data-testid={`${testId}-row-${item.id}-rename-cancel`}
-                  >
-                    Cancel
-                  </button>
-                </div>
-              ) : confirmArchiveId === item.id ? (
-                /* inline archive confirmation */
-                <div className="cfg-rename-wrap">
-                  <span className="cfg-list-row__name" style={{ color: 'var(--color-text-secondary)' }}>
-                    Archive &ldquo;{item.name}&rdquo;?
-                  </span>
-                  <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-tertiary)' }}>
-                    History preserved.
-                  </span>
-                  <button
-                    className="btn btn--danger"
-                    style={btnSm}
-                    onClick={() => handleArchiveConfirm(item.id)}
-                    disabled={archiveBusy}
-                    data-testid={`${testId}-row-${item.id}-archive-confirm`}
-                  >
-                    Archive
-                  </button>
-                  <button
-                    className="btn btn--ghost"
-                    style={btnSm}
-                    onClick={() => setConfirmArchiveId(null)}
-                    data-testid={`${testId}-row-${item.id}-archive-cancel-confirm`}
                   >
                     Cancel
                   </button>
@@ -213,6 +189,17 @@ export function ConfigurableListSection({
           </button>
         </div>
       </div>
+
+      {confirmItem && (
+        <ConfirmModal
+          title="Archive item"
+          message={`Archive "${confirmItem.name}"? History is preserved.`}
+          confirmLabel="Archive"
+          busy={archiveBusy}
+          onConfirm={() => handleArchiveConfirm(confirmItem.id)}
+          onCancel={() => setConfirmArchiveId(null)}
+        />
+      )}
     </div>
   )
 }

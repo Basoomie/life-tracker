@@ -231,6 +231,18 @@ input, select, textarea {
 .tier-section--active   .tier-label { color: var(--color-tier-active-label); }
 .tier-section--imminent .tier-label { color: var(--color-tier-imminent-label); }
 .tier-section--unscheduled .tier-label { color: var(--color-text-tertiary); }
+.tier-section--done .tier-label { color: var(--color-text-tertiary); }
+
+.tier-header--btn {
+  width: 100%;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: inherit;
+  text-align: left;
+}
+.tier-header--btn:hover { background: var(--color-surface-hover, rgba(0,0,0,.04)); }
+.tier-header__chevron { margin-left: var(--space-2); font-size: var(--text-xs); }
 
 .tier-count {
   margin-left: auto;
@@ -246,6 +258,7 @@ input, select, textarea {
   color: var(--color-text-tertiary);
   font-style: italic;
 }
+
 
 /* ── Occurrence row ────────────────────────────────────────────────────────── */
 .occ-row {
@@ -760,6 +773,16 @@ input, select, textarea {
   color: var(--color-accent);
 }
 
+.filter-group--reset {
+  margin-top: var(--space-1);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--color-border-subtle);
+}
+.filter-reset-btn {
+  font-size: var(--text-xs);
+  padding: var(--space-1) var(--space-3);
+}
+
 /* ── List view (§12.3) ─────────────────────────────────────────────────────── */
 .list-view {
   display: flex;
@@ -897,13 +920,27 @@ input, select, textarea {
   gap: var(--space-2);
 }
 
-/* Gutter — unscheduled items above the grid */
+/* Gutter — unscheduled items below the time grid */
 .cal-gutter {
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   overflow: hidden;
-  margin-bottom: var(--space-2);
+  margin-top: var(--space-3);
+}
+.cal-gutter__header {
+  width: 100%;
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--color-text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-bottom: 1px solid var(--color-border-subtle);
+  background: var(--color-surface);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
 }
 
 /* Grid wrap: axis + grid side by side */

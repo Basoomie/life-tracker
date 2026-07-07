@@ -89,7 +89,7 @@ export function tierOccurrences(
           ? nowMin >= endMin
           : false // wrapped ranges are either active or upcoming
         if (inPast) {
-          unscheduled.push(occ)
+          // Window has passed — don't surface in Now view; visible in List/Calendar
         } else {
           imminentCandidates.push({ occ, minsUntil: minutesUntil(nowMin, startMin) })
         }
@@ -128,7 +128,7 @@ export function tierOccurrences(
           ? nowMin >= bEnd
           : false // wrapped buckets never "past" in the same way
         if (bucketIsPast) {
-          unscheduled.push(occ)
+          // Bucket has passed — don't surface in Now view; visible in List/Calendar
         } else {
           imminentCandidates.push({ occ, minsUntil: minutesUntil(nowMin, bStart) })
         }

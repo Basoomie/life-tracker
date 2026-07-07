@@ -358,3 +358,151 @@ test.describe('§12.3 — List view', () => {
   })
 
 })
+
+test.describe('§4 — Uncomplete with confirmation (List view)', () => {
+
+  test('§4 clicking checked checkbox in List view shows confirmation modal', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2025-06-16T09:00:00'))
+    await setupApiMocks(page, [DONE_OCC])
+    await goToListView(page)
+
+    const doneRow = page.getByTestId(`occ-row-${DONE_OCC.id}`)
+    await expect(doneRow).toBeVisible()
+
+    await doneRow.getByTestId('occ-check').click()
+
+    await expect(page.getByTestId('confirm-modal')).toBeVisible()
+    await expect(page.getByTestId('confirm-modal')).toContainText(DONE_OCC.snapshot.name)
+  })
+
+  test('§4 cancelling uncomplete in List view makes no API call', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2025-06-16T09:00:00'))
+    await setupApiMocks(page, [DONE_OCC])
+
+    const uncompleteCalls: string[] = []
+    await page.route(`/api/occurrences/${DONE_OCC.id}/uncomplete`, (route) => {
+      uncompleteCalls.push(route.request().url())
+      route.fulfill({ json: DONE_OCC })
+    })
+
+    await goToListView(page)
+    await page.getByTestId(`occ-row-${DONE_OCC.id}`).getByTestId('occ-check').click()
+    await expect(page.getByTestId('confirm-modal')).toBeVisible()
+    await page.getByRole('button', { name: 'Cancel' }).click()
+
+    await expect(page.getByTestId('confirm-modal')).not.toBeVisible()
+    expect(uncompleteCalls.length).toBe(0)
+  })
+
+  test('§4 confirming uncomplete in List view calls API and reverts item state', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2025-06-16T09:00:00'))
+
+    const uncompletedOcc: OccurrenceWithState = {
+      ...DONE_OCC,
+      completionState: { ...DONE_OCC.completionState, isComplete: false, completionPercent: 0 },
+      disposition: { type: 'pending', reasonId: null, comment: null, rescheduledToDay: null, derivedPercentAtClose: null },
+    }
+
+    await setupApiMocks(page, [DONE_OCC])
+    await page.route(`/api/occurrences/${DONE_OCC.id}/uncomplete`, (route) =>
+      route.fulfill({ json: uncompletedOcc })
+    )
+
+    await goToListView(page)
+    await page.getByTestId(`occ-row-${DONE_OCC.id}`).getByTestId('occ-check').click()
+    await expect(page.getByTestId('confirm-modal')).toBeVisible()
+    await page.getByTestId('confirm-modal-confirm').click()
+
+    await expect(page.getByTestId('confirm-modal')).not.toBeVisible()
+    // Item reverted — checkbox is no longer checked
+    const row = page.getByTestId(`occ-row-${DONE_OCC.id}`)
+    await expect(row.getByTestId('occ-check')).not.toHaveClass(/occ-check--checked/)
+  })
+
+})
+
+test.describe('§9 — List view state persistence across navigation', () => {
+
+  test('§9 List view range persists after navigating to Now and back', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2025-06-16T09:00:00'))
+    await setupApiMocks(page, [])
+
+    await goToListView(page)
+
+    // Change range to "This Week"
+    await page.getByTestId('range-select').selectOption('this-week')
+    await expect(page.getByTestId('range-select')).toHaveValue('this-week')
+
+    // Navigate away to Now, then back to List
+    await page.getByTestId('view-nav-now').click()
+    await page.getByTestId('view-nav-list').click()
+    await expect(page.getByTestId('list-view')).toBeVisible()
+
+    // Range should be restored
+    await expect(page.getByTestId('range-select')).toHaveValue('this-week')
+  })
+
+  test('§9 List view priority-flip toggle persists after navigating away and back', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2025-06-16T09:00:00'))
+    await setupApiMocks(page, [HIGH_OCC, MEDIUM_OCC])
+
+    await goToListView(page)
+
+    // Enable priority flip by clicking the label
+    await page.getByTestId('priority-flip-toggle').click()
+    await expect(page.getByTestId('list-priority-view')).toBeVisible()
+
+    // Navigate away and back
+    await page.getByTestId('view-nav-now').click()
+    await page.getByTestId('view-nav-list').click()
+    await expect(page.getByTestId('list-view')).toBeVisible()
+
+    // Priority view should still be active
+    await expect(page.getByTestId('list-priority-view')).toBeVisible()
+  })
+
+  test('§9 List view filters persist after navigating away and back', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2025-06-16T09:00:00'))
+    await setupApiMocks(page, [HIGH_OCC, MEDIUM_OCC])
+
+    await goToListView(page)
+
+    // Open filters and select "High" priority
+    await page.getByTestId('toggle-filters').click()
+    await page.getByTestId('filter-priority-high').click()
+    await expect(page.getByTestId('filter-priority-high')).toHaveAttribute('aria-pressed', 'true')
+
+    // Navigate away and back
+    await page.getByTestId('view-nav-now').click()
+    await page.getByTestId('view-nav-list').click()
+    await expect(page.getByTestId('list-view')).toBeVisible()
+
+    // Open filters again — high should still be active
+    await page.getByTestId('toggle-filters').click()
+    await expect(page.getByTestId('filter-priority-high')).toHaveAttribute('aria-pressed', 'true')
+    await expect(page.getByText('Medium Priority Task')).not.toBeVisible()
+  })
+
+  test('§9 Filter Reset button appears when filters are non-default and resets to default', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2025-06-16T09:00:00'))
+    await setupApiMocks(page, [HIGH_OCC, MEDIUM_OCC])
+
+    await goToListView(page)
+    await page.getByTestId('toggle-filters').click()
+
+    // Reset not shown at default state
+    await expect(page.getByTestId('filter-reset')).not.toBeVisible()
+
+    // Apply a filter
+    await page.getByTestId('filter-priority-high').click()
+    await expect(page.getByTestId('filter-reset')).toBeVisible()
+
+    // Click reset
+    await page.getByTestId('filter-reset').click()
+
+    // All filters back to default, reset button gone
+    await expect(page.getByTestId('filter-priority-high')).toHaveAttribute('aria-pressed', 'false')
+    await expect(page.getByTestId('filter-reset')).not.toBeVisible()
+  })
+
+})

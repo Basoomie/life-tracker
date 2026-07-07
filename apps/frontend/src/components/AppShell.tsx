@@ -7,12 +7,13 @@ type Props = {
   theme: Theme
   onToggleTheme: () => void
   onQuickAdd: () => void
+  onNewItem: () => void
   activeView: ViewKey
   onViewChange: (v: ViewKey) => void
   children: ReactNode
 }
 
-export function AppShell({ theme, onToggleTheme, onQuickAdd, activeView, onViewChange, children }: Props) {
+export function AppShell({ theme, onToggleTheme, onQuickAdd, onNewItem, activeView, onViewChange, children }: Props) {
   return (
     <>
       <header className="app-header">
@@ -28,6 +29,14 @@ export function AppShell({ theme, onToggleTheme, onQuickAdd, activeView, onViewC
             data-testid="theme-toggle"
           >
             {theme === 'dark' ? '☀' : '☾'}
+          </button>
+          <button
+            className="btn btn--ghost"
+            onClick={onNewItem}
+            aria-label="Add item with full form"
+            data-testid="new-item-btn"
+          >
+            Create Task
           </button>
           <button
             className="btn btn--primary"

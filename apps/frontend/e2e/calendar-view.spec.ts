@@ -353,3 +353,145 @@ test.describe('§12.4 — Calendar view', () => {
   })
 
 })
+
+// Completed item fixture for uncomplete tests
+const DONE_OCC = makeOcc({
+  id: 'occ-done', itemId: 'item-done', name: 'Completed Task',
+  snapshot: { timingPrecision: 'range', timingStartTime: '08:00', timingEndTime: '09:00' },
+  completionState: {
+    isLeaf: true, completionPercent: 100, isComplete: true,
+    completedAt: null, wasRetroactive: false, derivedPercent: null, declaredPercent: null,
+  },
+  disposition: { type: 'completed', reasonId: null, comment: null, rescheduledToDay: null, derivedPercentAtClose: null },
+})
+
+test.describe('§4 — Uncomplete with confirmation (Calendar view)', () => {
+
+  test('§4 clicking checked checkbox in Calendar detail panel shows confirmation modal', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2025-06-16T07:00:00'))
+    await setupCalApiMocks(page, [DONE_OCC])
+    await goToCalendarView(page)
+
+    const grid = desktopGrid(page)
+
+    // Click the block to open detail panel
+    await grid.getByTestId('cal-block-occ-done').click()
+    await expect(grid.getByTestId('cal-detail-panel')).toBeVisible()
+
+    // Click the checked (green) checkbox
+    await grid.getByTestId('cal-detail-panel').getByTestId('occ-check').click()
+
+    // Confirmation modal appears
+    await expect(page.getByTestId('confirm-modal')).toBeVisible()
+    await expect(page.getByTestId('confirm-modal')).toContainText('Completed Task')
+  })
+
+  test('§4 cancelling uncomplete in Calendar view makes no API call', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2025-06-16T07:00:00'))
+    await setupCalApiMocks(page, [DONE_OCC])
+
+    const uncompleteCalls: string[] = []
+    await page.route(`/api/occurrences/${DONE_OCC.id}/uncomplete`, (route) => {
+      uncompleteCalls.push(route.request().url())
+      route.fulfill({ json: DONE_OCC })
+    })
+
+    await goToCalendarView(page)
+
+    const grid = desktopGrid(page)
+    await grid.getByTestId('cal-block-occ-done').click()
+    await grid.getByTestId('cal-detail-panel').getByTestId('occ-check').click()
+
+    await expect(page.getByTestId('confirm-modal')).toBeVisible()
+    await page.getByRole('button', { name: 'Cancel' }).click()
+
+    await expect(page.getByTestId('confirm-modal')).not.toBeVisible()
+    expect(uncompleteCalls.length).toBe(0)
+  })
+
+  test('§4 confirming uncomplete in Calendar view calls API and reverts block state', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2025-06-16T07:00:00'))
+
+    const uncompletedOcc: OccurrenceWithState = {
+      ...DONE_OCC,
+      completionState: { ...DONE_OCC.completionState, isComplete: false, completionPercent: 0 },
+      disposition: { type: 'pending', reasonId: null, comment: null, rescheduledToDay: null, derivedPercentAtClose: null },
+    }
+
+    await setupCalApiMocks(page, [DONE_OCC])
+    await page.route(`/api/occurrences/${DONE_OCC.id}/uncomplete`, (route) =>
+      route.fulfill({ json: uncompletedOcc })
+    )
+
+    await goToCalendarView(page)
+
+    const grid = desktopGrid(page)
+    await grid.getByTestId('cal-block-occ-done').click()
+    await grid.getByTestId('cal-detail-panel').getByTestId('occ-check').click()
+
+    await expect(page.getByTestId('confirm-modal')).toBeVisible()
+    await page.getByTestId('confirm-modal-confirm').click()
+
+    await expect(page.getByTestId('confirm-modal')).not.toBeVisible()
+    // Block loses the done class after revert
+    await expect(grid.getByTestId('cal-block-occ-done')).not.toHaveClass(/cal-block--done/)
+  })
+
+  test('§8 Calendar: unscheduled gutter is collapsible', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2025-06-16T07:00:00'))
+    await setupCalApiMocks(page, [UNSCHEDULED, ONE_HOUR])
+    await goToCalendarView(page)
+
+    const grid = desktopGrid(page)
+    const gutter = grid.getByTestId('cal-gutter-2025-06-16')
+    await expect(gutter).toBeVisible()
+
+    // Item visible by default (expanded)
+    await expect(gutter.getByText('Reading')).toBeVisible()
+
+    // Click the collapsible header button to collapse
+    await gutter.locator('.cal-gutter__header').click()
+    await expect(gutter.getByText('Reading')).not.toBeVisible()
+
+    // Click again to expand
+    await gutter.locator('.cal-gutter__header').click()
+    await expect(gutter.getByText('Reading')).toBeVisible()
+  })
+
+})
+
+test.describe('§9 — Calendar view state persistence across navigation', () => {
+
+  test('§9 Calendar view range persists after navigating to Now and back', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2025-06-16T07:00:00'))
+    await setupCalApiMocks(page, [])
+    await goToCalendarView(page)
+
+    await page.getByTestId('cal-range-select').selectOption('this-week')
+    await expect(page.getByTestId('cal-range-select')).toHaveValue('this-week')
+
+    await page.getByTestId('view-nav-now').click()
+    await page.getByTestId('view-nav-calendar').click()
+    await expect(page.getByTestId('calendar-view')).toBeVisible()
+
+    await expect(page.getByTestId('cal-range-select')).toHaveValue('this-week')
+  })
+
+  test('§9 Calendar view filters persist after navigating away and back', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2025-06-16T07:00:00'))
+    await setupCalApiMocks(page, [ONE_HOUR])
+    await goToCalendarView(page)
+
+    await page.getByTestId('cal-toggle-filters').click()
+    await page.getByTestId('filter-priority-high').click()
+    await expect(page.getByTestId('filter-priority-high')).toHaveAttribute('aria-pressed', 'true')
+
+    await page.getByTestId('view-nav-now').click()
+    await page.getByTestId('view-nav-calendar').click()
+    await expect(page.getByTestId('calendar-view')).toBeVisible()
+
+    await page.getByTestId('cal-toggle-filters').click()
+    await expect(page.getByTestId('filter-priority-high')).toHaveAttribute('aria-pressed', 'true')
+  })
+
+})

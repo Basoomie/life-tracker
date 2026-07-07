@@ -63,3 +63,30 @@ export function isDefaultFilters(f: FilterState): boolean {
     f.blocked === 'all'
   )
 }
+
+export function serializeFilters(f: FilterState): string {
+  return JSON.stringify({
+    priorities: [...f.priorities],
+    categories: [...f.categories],
+    valences:   [...f.valences],
+    precisions: [...f.precisions],
+    completion: f.completion,
+    blocked:    f.blocked,
+  })
+}
+
+export function deserializeFilters(s: string): FilterState {
+  try {
+    const raw = JSON.parse(s) as Record<string, unknown>
+    return {
+      priorities: new Set((raw.priorities as string[] | undefined) ?? []) as FilterState['priorities'],
+      categories: new Set((raw.categories as string[] | undefined) ?? []),
+      valences:   new Set((raw.valences as string[] | undefined) ?? []) as FilterState['valences'],
+      precisions: new Set((raw.precisions as string[] | undefined) ?? []) as FilterState['precisions'],
+      completion: (raw.completion as FilterState['completion']) ?? 'all',
+      blocked:    (raw.blocked    as FilterState['blocked'])    ?? 'all',
+    }
+  } catch {
+    return makeDefaultFilters()
+  }
+}

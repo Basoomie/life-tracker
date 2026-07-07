@@ -181,9 +181,13 @@ test.describe('§12.2 — Now view tier ordering and rendering', () => {
 
     await page.goto('/')
 
-    // Blocked and completed are hidden from all tiers
+    // Blocked is hidden from all tiers
     await expect(page.getByText('Blocked Task')).not.toBeVisible()
-    await expect(page.getByText('Done Item')).not.toBeVisible()
+    // Completed item appears in Done Today section, not in active/imminent/unscheduled tiers
+    await expect(page.getByTestId('tier-active').getByText('Done Item')).not.toBeVisible()
+    await expect(page.getByTestId('tier-imminent').getByText('Done Item')).not.toBeVisible()
+    await expect(page.getByTestId('tier-unscheduled').getByText('Done Item')).not.toBeVisible()
+    await expect(page.getByTestId('tier-done').getByText('Done Item')).toBeVisible()
 
     // Active item is visible
     await expect(page.getByTestId('tier-active').getByText('Day Trading')).toBeVisible()
@@ -420,6 +424,95 @@ test.describe('§12.2 — Now view tier ordering and rendering', () => {
     // Header doesn't overflow
     const header = await page.locator('.app-header').boundingBox()
     expect(header!.width).toBeLessThanOrEqual(320)
+  })
+
+})
+
+test.describe('§4 — Uncomplete with confirmation (Now view)', () => {
+
+  test('§4 clicking checked checkbox in Done Today shows confirmation modal', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2025-06-16T22:00:00'))
+    await setupApiMocks(page, [DONE_OCC])
+
+    await page.goto('/')
+
+    // Done Today section auto-expands when there are completed items
+    const doneSection = page.getByTestId('tier-done')
+    await expect(doneSection).toBeVisible()
+
+    // The completed item's row is visible inside Done Today
+    const doneRow = doneSection.getByTestId(`occ-row-${DONE_OCC.id}`)
+    await expect(doneRow).toBeVisible()
+
+    // Click the green checked checkbox
+    await doneRow.getByTestId('occ-check').click()
+
+    // Confirmation modal appears
+    await expect(page.getByTestId('confirm-modal')).toBeVisible()
+    await expect(page.getByTestId('confirm-modal')).toContainText(DONE_OCC.snapshot.name)
+  })
+
+  test('§4 cancelling uncomplete modal leaves item completed with no API call', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2025-06-16T22:00:00'))
+    await setupApiMocks(page, [DONE_OCC])
+
+    const uncompleteCalls: string[] = []
+    await page.route(`/api/occurrences/${DONE_OCC.id}/uncomplete`, (route) => {
+      uncompleteCalls.push(route.request().url())
+      route.fulfill({ json: DONE_OCC })
+    })
+
+    await page.goto('/')
+
+    const doneRow = page.getByTestId('tier-done').getByTestId(`occ-row-${DONE_OCC.id}`)
+    await doneRow.getByTestId('occ-check').click()
+    await expect(page.getByTestId('confirm-modal')).toBeVisible()
+
+    // Cancel
+    await page.getByRole('button', { name: 'Cancel' }).click()
+
+    // Modal gone, no API call made
+    await expect(page.getByTestId('confirm-modal')).not.toBeVisible()
+    expect(uncompleteCalls.length).toBe(0)
+
+    // Item is still in Done Today
+    await expect(page.getByTestId('tier-done').getByTestId(`occ-row-${DONE_OCC.id}`)).toBeVisible()
+  })
+
+  test('§4 confirming uncomplete calls the API and moves item back to active tiers', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2025-06-16T22:00:00'))
+
+    const uncompletedOcc: OccurrenceWithState = {
+      ...DONE_OCC,
+      completionState: {
+        ...DONE_OCC.completionState,
+        isComplete: false,
+        completionPercent: 0,
+      },
+      disposition: { type: 'pending', reasonId: null, comment: null, rescheduledToDay: null, derivedPercentAtClose: null },
+    }
+
+    await setupApiMocks(page, [DONE_OCC])
+    await page.route(`/api/occurrences/${DONE_OCC.id}/uncomplete`, (route) =>
+      route.fulfill({ json: uncompletedOcc })
+    )
+
+    await page.goto('/')
+
+    const doneSection = page.getByTestId('tier-done')
+    const doneRow = doneSection.getByTestId(`occ-row-${DONE_OCC.id}`)
+    await doneRow.getByTestId('occ-check').click()
+
+    await expect(page.getByTestId('confirm-modal')).toBeVisible()
+    await page.getByTestId('confirm-modal-confirm').click()
+
+    // Modal closes
+    await expect(page.getByTestId('confirm-modal')).not.toBeVisible()
+
+    // Item is no longer in Done Today (it reverted to pending)
+    await expect(page.getByTestId('tier-done').getByTestId(`occ-row-${DONE_OCC.id}`)).not.toBeVisible()
+    // Item moved to unscheduled tier
+    await expect(page.getByTestId('tier-unscheduled').getByTestId(`occ-row-${DONE_OCC.id}`)).toBeVisible()
   })
 
 })

@@ -226,15 +226,16 @@ test.describe('§7 Categories — add / rename / archive lifecycle', () => {
     const section = page.getByTestId('categories-section')
     await expect(section.getByText('Music')).toBeVisible()
 
-    // Click Archive on Music → shows inline confirmation
+    // Click Archive on Music → opens confirmation modal
     await section.getByTestId('categories-section-row-cat-music-archive-btn').click()
-    await expect(section.getByTestId('categories-section-row-cat-music-archive-confirm')).toBeVisible()
+    await expect(page.getByTestId('confirm-modal')).toBeVisible()
 
-    // Confirm archive
-    await section.getByTestId('categories-section-row-cat-music-archive-confirm').click()
+    // Confirm archive — wait for modal to close (archive is async)
+    await page.getByTestId('confirm-modal-confirm').click()
+    await expect(page.getByTestId('confirm-modal')).not.toBeVisible()
 
-    // Music is gone from the list
-    await expect(section.getByText('Music')).not.toBeVisible()
+    // Music row is gone from the list
+    await expect(section.getByTestId('categories-section-row-cat-music')).not.toBeVisible()
     // Other entry remains
     await expect(section.getByText('Fitness')).toBeVisible()
 
@@ -291,10 +292,11 @@ test.describe('§7 Reasons — separate list with same lifecycle', () => {
     await expect(reasonSection.getByText('Rest day')).toBeVisible()
     await expect(reasonSection.getByText('Sick')).not.toBeVisible()
 
-    // Archive Rest Day
+    // Archive Rest Day → opens confirmation modal
     await reasonSection.getByTestId('reasons-section-row-r-sick-archive-btn').click()
-    await reasonSection.getByTestId('reasons-section-row-r-sick-archive-confirm').click()
-    await expect(reasonSection.getByText('Rest day')).not.toBeVisible()
+    await page.getByTestId('confirm-modal-confirm').click()
+    await expect(page.getByTestId('confirm-modal')).not.toBeVisible()
+    await expect(reasonSection.getByTestId('reasons-section-row-r-sick')).not.toBeVisible()
     // Traveling still there
     await expect(reasonSection.getByText('Traveling')).toBeVisible()
   })

@@ -45,14 +45,15 @@ export function App() {
       theme={theme}
       onToggleTheme={toggleTheme}
       onQuickAdd={() => setShowQuickAdd(true)}
+      onNewItem={() => setEditItemId('')}
       activeView={activeView}
       onViewChange={setActiveView}
     >
       {activeView === 'now' && (
         <NowView onEditItem={(id) => setEditItemId(id)} />
       )}
-      {activeView === 'list' && <ListView />}
-      {activeView === 'calendar' && <CalendarView />}
+      {activeView === 'list' && <ListView onEditItem={(id) => setEditItemId(id)} />}
+      {activeView === 'calendar' && <CalendarView onEditItem={(id) => setEditItemId(id)} />}
       {activeView === 'settings' && (
         <SettingsView theme={theme} onToggleTheme={toggleTheme} />
       )}
