@@ -12,17 +12,17 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      '/health': 'http://localhost:3000',
-      '/api': 'http://localhost:3000',
-      '/me': 'http://localhost:3000',
+      '/health': 'http://127.0.0.1:37801',
+      '/api': 'http://127.0.0.1:37801',
+      '/me': 'http://127.0.0.1:37801',
     },
   },
   preview: {
     port: 4173,
     proxy: {
-      '/health': 'http://localhost:3000',
-      '/api': 'http://localhost:3000',
-      '/me': 'http://localhost:3000',
+      '/health': 'http://127.0.0.1:37801',
+      '/api': 'http://127.0.0.1:37801',
+      '/me': 'http://127.0.0.1:37801',
     },
   },
 })

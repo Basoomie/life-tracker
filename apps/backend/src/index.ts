@@ -5,12 +5,20 @@ import { join } from 'path'
 config({ path: join(__dirname, '../../../.env') })
 
 import { buildApp } from './app'
+import { migrateUp } from './db/migrate'
+import { seed } from './db/seed'
+import { pool } from './db'
 
 const port = parseInt(process.env.PORT ?? '3000', 10)
 
-buildApp()
-  .then((app) => app.listen({ port, host: '0.0.0.0' }))
-  .catch((err) => {
-    console.error(err)
-    process.exit(1)
-  })
+async function main() {
+  await migrateUp(pool)
+  await seed(pool)
+  const app = await buildApp()
+  await app.listen({ port, host: '0.0.0.0' })
+}
+
+main().catch((err) => {
+  console.error(err)
+  process.exit(1)
+})

@@ -59,11 +59,14 @@ export async function buildApp(
     await app.register(cors, { origin: true })
   }
 
+  app.decorateRequest('userId', '')
+
   // ── User-context seam (§13.4) ──────────────────────────────────────────────
 
-  app.decorateRequest('userId', '')
   const resolver = resolveUserId ?? defaultResolveUserId
+  // Skip /health — it doesn't need user context and is called by Docker health checks.
   app.addHook('preHandler', async (req) => {
+    if ((req.routerPath as string | undefined) === '/health') return
     req.userId = await resolver(req)
   })
 
