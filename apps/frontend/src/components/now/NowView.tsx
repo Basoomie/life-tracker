@@ -13,11 +13,11 @@ import type { Category, Reason } from '@tracker/shared'
 import type { SessionState } from './TimerControl'
 
 type Props = {
-  showAdHoc: boolean
-  onAdHocClose: () => void
+  onEditItem: (itemId: string) => void
 }
 
-export function NowView({ showAdHoc, onAdHocClose }: Props) {
+export function NowView({ onEditItem }: Props) {
+  const [showAdHoc, setShowAdHoc] = useState(false)
   const [imminentWindow, setImminentWindow] = useState(90)
   const [alwaysNext, setAlwaysNext] = useState(false)
 
@@ -192,6 +192,7 @@ export function NowView({ showAdHoc, onAdHocClose }: Props) {
         onTimerResume={() => handleTimerResume(occ)}
         onTimerStop={() => handleTimerStop(occ)}
         onDisposition={() => setDispositionTarget(occ)}
+        onEdit={() => onEditItem(occ.itemId)}
       />
     )
   }
@@ -225,6 +226,14 @@ export function NowView({ showAdHoc, onAdHocClose }: Props) {
       <div className="now-view">
         <div className="now-view__toolbar">
           <span className="now-view__date">{today}</span>
+          <button
+            className="btn btn--ghost now-view__adhoc-btn"
+            onClick={() => setShowAdHoc(true)}
+            data-testid="adhoc-btn"
+            aria-label="Start ad-hoc activity"
+          >
+            ▶ Ad-hoc
+          </button>
           <div className="now-view__controls">
             <label className="now-view__toggle-label">
               <span className="toggle">
@@ -288,7 +297,7 @@ export function NowView({ showAdHoc, onAdHocClose }: Props) {
         <AdHocModal
           categories={categories}
           onCapture={handleAdHocCapture}
-          onClose={onAdHocClose}
+          onClose={() => setShowAdHoc(false)}
         />
       )}
 

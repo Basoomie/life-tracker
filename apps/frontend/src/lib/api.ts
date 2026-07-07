@@ -7,12 +7,15 @@ import type {
   Category,
   Reason,
   Item,
+  ItemPrerequisite,
   Occurrence,
   DayStartEntry,
   DispositionBody,
   CarryForwardBody,
   StartSessionBody,
   AdHocCaptureBody,
+  CreateItemBody,
+  UpdateItemBody,
 } from '@tracker/shared'
 
 const BASE = '/api'
@@ -68,6 +71,24 @@ export const api = {
       apiFetch<{ sessionId: string; durationMin: number }>(`/sessions/${sessionId}/stop`, {
         method: 'POST',
       }),
+  },
+
+  items: {
+    list: () => apiFetch<Item[]>('/items'),
+    get: (id: string) =>
+      apiFetch<Item & { children: Item[]; prerequisites: ItemPrerequisite[] }>(`/items/${id}`),
+    create: (body: CreateItemBody) =>
+      apiFetch<Item>('/items', { method: 'POST', body: JSON.stringify(body) }),
+    update: (id: string, body: UpdateItemBody) =>
+      apiFetch<Item>(`/items/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+    archive: (id: string) =>
+      apiFetch<void>(`/items/${id}`, { method: 'DELETE' }),
+    addPrerequisite: (id: string, prerequisiteItemId: string) =>
+      apiFetch<ItemPrerequisite>(`/items/${id}/prerequisites`, {
+        method: 'POST', body: JSON.stringify({ prerequisiteItemId }),
+      }),
+    removePrerequisite: (id: string, prereqId: string) =>
+      apiFetch<void>(`/items/${id}/prerequisites/${prereqId}`, { method: 'DELETE' }),
   },
 
   adHoc: {

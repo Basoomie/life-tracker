@@ -6,13 +6,13 @@ import type { ViewKey } from './ViewNav'
 type Props = {
   theme: Theme
   onToggleTheme: () => void
-  onAdHoc: () => void
+  onQuickAdd: () => void
   activeView: ViewKey
   onViewChange: (v: ViewKey) => void
   children: ReactNode
 }
 
-export function AppShell({ theme, onToggleTheme, onAdHoc, activeView, onViewChange, children }: Props) {
+export function AppShell({ theme, onToggleTheme, onQuickAdd, activeView, onViewChange, children }: Props) {
   return (
     <>
       <header className="app-header">
@@ -31,9 +31,9 @@ export function AppShell({ theme, onToggleTheme, onAdHoc, activeView, onViewChan
           </button>
           <button
             className="btn btn--primary"
-            onClick={onAdHoc}
-            aria-label="Start ad-hoc activity"
-            data-testid="adhoc-btn"
+            onClick={onQuickAdd}
+            aria-label="Quick-add a planned task"
+            data-testid="quick-add-btn"
           >
             + Quick
           </button>
