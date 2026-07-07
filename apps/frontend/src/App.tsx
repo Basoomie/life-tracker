@@ -1,31 +1,22 @@
-import { useState, useEffect } from 'react'
-import type { HealthResponse } from '@tracker/shared'
-
-type ConnectionState = 'checking' | 'connected' | 'disconnected'
+import { useState } from 'react'
+import { useTheme } from './hooks/useTheme'
+import { AppShell } from './components/AppShell'
+import { NowView } from './components/now/NowView'
 
 export function App() {
-  const [state, setState] = useState<ConnectionState>('checking')
-
-  useEffect(() => {
-    fetch('/health')
-      .then((res) => res.json() as Promise<HealthResponse>)
-      .then((data) => setState(data.status === 'ok' ? 'connected' : 'disconnected'))
-      .catch(() => setState('disconnected'))
-  }, [])
-
-  const label =
-    state === 'checking'
-      ? 'Checking...'
-      : state === 'connected'
-        ? 'Connected'
-        : 'Not connected'
+  const { theme, toggleTheme } = useTheme()
+  const [showAdHoc, setShowAdHoc] = useState(false)
 
   return (
-    <div style={{ fontFamily: 'sans-serif', padding: '2rem' }}>
-      <h1>Tracker</h1>
-      <p>
-        Backend status: <strong data-testid="connection-status">{label}</strong>
-      </p>
-    </div>
+    <AppShell
+      theme={theme}
+      onToggleTheme={toggleTheme}
+      onAdHoc={() => setShowAdHoc(true)}
+    >
+      <NowView
+        showAdHoc={showAdHoc}
+        onAdHocClose={() => setShowAdHoc(false)}
+      />
+    </AppShell>
   )
 }

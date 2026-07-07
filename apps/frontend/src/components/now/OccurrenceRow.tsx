@@ -1,0 +1,106 @@
+import type { OccurrenceWithState } from '@tracker/shared'
+import type { Bucket } from '@tracker/shared'
+import type { SessionState } from './TimerControl'
+import { TimerControl } from './TimerControl'
+import { formatTimingLabel } from '../../lib/now-ordering'
+
+type Props = {
+  occ: OccurrenceWithState
+  buckets: Bucket[]
+  isChild?: boolean
+  session: SessionState | undefined
+  onComplete: () => void
+  onUncomplete: () => void
+  onTimerStart: () => void
+  onTimerPause: () => void
+  onTimerResume: () => void
+  onTimerStop: () => void
+  onDisposition: () => void
+}
+
+export function OccurrenceRow({
+  occ,
+  buckets,
+  isChild,
+  session,
+  onComplete,
+  onUncomplete,
+  onTimerStart,
+  onTimerPause,
+  onTimerResume,
+  onTimerStop,
+  onDisposition,
+}: Props) {
+  const isComplete = occ.completionState.isComplete
+  const timingLabel = formatTimingLabel(occ, buckets)
+  const derivedPct = occ.completionState.derivedPercent
+
+  const rowClasses = [
+    'occ-row',
+    isChild ? 'occ-row--child' : '',
+    occ.isBlocked ? 'occ-row--blocked' : '',
+  ].filter(Boolean).join(' ')
+
+  return (
+    <div className={rowClasses} data-testid={`occ-row-${occ.id ?? occ.itemId}`} data-item-id={occ.itemId}>
+      {/* Completion checkbox */}
+      <button
+        className={`occ-check${isComplete ? ' occ-check--checked' : ''}`}
+        onClick={isComplete ? onUncomplete : onComplete}
+        aria-label={isComplete ? `Unmark ${occ.snapshot.name} as done` : `Mark ${occ.snapshot.name} as done`}
+        aria-pressed={isComplete}
+        data-testid="occ-check"
+      >
+        {isComplete && (
+          <svg className="occ-check__icon" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+            <path d="M2 6l3 3 5-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        )}
+      </button>
+
+      {/* Row body */}
+      <div className="occ-body">
+        <div className={`occ-name${isComplete ? ' occ-name--completed' : ''}`}>
+          {occ.snapshot.name}
+        </div>
+        <div className="occ-meta">
+          {timingLabel && (
+            <span className="occ-timing">
+              <span className="occ-timing__dot" aria-hidden="true" />
+              {timingLabel}
+            </span>
+          )}
+          {derivedPct !== null && (
+            <span className="occ-percent" data-testid="derived-pct">
+              {Math.round(derivedPct)}%
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* Actions */}
+      <div className="occ-actions">
+        {!isComplete && occ.id && (
+          <TimerControl
+            session={session}
+            onStart={onTimerStart}
+            onPause={onTimerPause}
+            onResume={onTimerResume}
+            onStop={onTimerStop}
+          />
+        )}
+        {occ.id && (
+          <button
+            className="disp-btn"
+            onClick={onDisposition}
+            aria-label="More options"
+            data-testid="occ-disposition-btn"
+            title="Skip / excuse / carry forward"
+          >
+            ···
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}

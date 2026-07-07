@@ -1,0 +1,133 @@
+/* ── Design tokens — apply by setting data-theme="light"|"dark" on <html> ── */
+
+:root,
+[data-theme='light'] {
+  /* Surfaces */
+  --color-bg:              #F7F7F5;
+  --color-surface:         #FFFFFF;
+  --color-surface-raised:  #FFFFFF;
+
+  /* Borders */
+  --color-border:          #E4E4E0;
+  --color-border-subtle:   #EEEEEA;
+
+  /* Text */
+  --color-text-primary:    #1A1A18;
+  --color-text-secondary:  #6B6B65;
+  --color-text-tertiary:   #A3A39B;
+
+  /* Accent — calm indigo */
+  --color-accent:          #5B6CF7;
+  --color-accent-hover:    #4A5BEC;
+  --color-accent-subtle:   #EEEFFE;
+  --color-accent-fg:       #FFFFFF;
+
+  /* Status */
+  --color-success:         #10B981;
+  --color-success-subtle:  #ECFDF5;
+  --color-success-fg:      #065F46;
+  --color-warning:         #F59E0B;
+  --color-warning-subtle:  #FFFBEB;
+  --color-warning-fg:      #92400E;
+  --color-danger:          #EF4444;
+  --color-danger-subtle:   #FEF2F2;
+  --color-danger-fg:       #991B1B;
+
+  /* Timer — purple */
+  --color-timer:           #7C3AED;
+  --color-timer-subtle:    #F5F3FF;
+  --color-timer-fg:        #FFFFFF;
+
+  /* Tier backgrounds */
+  --color-tier-active-bg:      #FFF8F0;
+  --color-tier-active-border:  #FED7AA;
+  --color-tier-active-label:   #C2410C;
+  --color-tier-imminent-bg:    #F0FDF4;
+  --color-tier-imminent-border:#BBF7D0;
+  --color-tier-imminent-label: #15803D;
+
+  /* Elevation */
+  --shadow-sm: 0 1px 2px 0 rgba(0,0,0,0.05);
+  --shadow-md: 0 4px 6px -1px rgba(0,0,0,0.07), 0 2px 4px -2px rgba(0,0,0,0.04);
+  --shadow-lg: 0 10px 15px -3px rgba(0,0,0,0.07), 0 4px 6px -4px rgba(0,0,0,0.04);
+}
+
+[data-theme='dark'] {
+  --color-bg:              #111111;
+  --color-surface:         #1C1C1C;
+  --color-surface-raised:  #262626;
+
+  --color-border:          #2E2E2E;
+  --color-border-subtle:   #222222;
+
+  --color-text-primary:    #EEEEEA;
+  --color-text-secondary:  #A3A39B;
+  --color-text-tertiary:   #6B6B65;
+
+  --color-accent:          #818CF8;
+  --color-accent-hover:    #929AF9;
+  --color-accent-subtle:   #1E1B4B;
+  --color-accent-fg:       #FFFFFF;
+
+  --color-success:         #34D399;
+  --color-success-subtle:  #022C22;
+  --color-success-fg:      #6EE7B7;
+  --color-warning:         #FCD34D;
+  --color-warning-subtle:  #1A1100;
+  --color-warning-fg:      #FDE68A;
+  --color-danger:          #F87171;
+  --color-danger-subtle:   #2D0000;
+  --color-danger-fg:       #FCA5A5;
+
+  --color-timer:           #A78BFA;
+  --color-timer-subtle:    #1E0B4B;
+  --color-timer-fg:        #FFFFFF;
+
+  --color-tier-active-bg:      #1C1000;
+  --color-tier-active-border:  #7C2D12;
+  --color-tier-active-label:   #FB923C;
+  --color-tier-imminent-bg:    #001C0D;
+  --color-tier-imminent-border:#14532D;
+  --color-tier-imminent-label: #4ADE80;
+
+  --shadow-sm: 0 1px 2px 0 rgba(0,0,0,0.4);
+  --shadow-md: 0 4px 6px -1px rgba(0,0,0,0.5), 0 2px 4px -2px rgba(0,0,0,0.3);
+  --shadow-lg: 0 10px 15px -3px rgba(0,0,0,0.5), 0 4px 6px -4px rgba(0,0,0,0.3);
+}
+
+/* ── Spacing scale (4px base) ─────────────────────────────────────────────── */
+:root {
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+
+  /* Typography */
+  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  --font-mono: 'Cascadia Code', 'SF Mono', 'Geist Mono', monospace;
+  --text-xs:   11px;
+  --text-sm:   13px;
+  --text-base: 15px;
+  --text-lg:   17px;
+  --text-xl:   21px;
+  --text-2xl:  27px;
+  --leading-tight:  1.25;
+  --leading-normal: 1.55;
+
+  /* Border radius */
+  --radius-sm:   4px;
+  --radius-md:   8px;
+  --radius-lg:   12px;
+  --radius-xl:   16px;
+  --radius-full: 9999px;
+
+  /* Transitions */
+  --transition-fast: 120ms ease;
+  --transition-base: 200ms ease;
+}
