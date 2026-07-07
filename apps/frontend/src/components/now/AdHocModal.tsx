@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import type { Category } from '@tracker/shared'
 import type { Valence } from '@tracker/shared'
+import { CategoryPicker } from '../shared/CategoryPicker'
 
 type Props = {
   categories: Category[]
@@ -68,18 +69,14 @@ export function AdHocModal({ categories, onCapture, onClose }: Props) {
             </div>
             <div className="field">
               <label className="field__label" htmlFor="adhoc-cat">Category (optional)</label>
-              <select
+              <CategoryPicker
                 id="adhoc-cat"
-                className="field__select"
-                value={categoryId}
-                onChange={(e) => setCategoryId(e.target.value)}
-                data-testid="adhoc-category"
-              >
-                <option value="">— unclassified —</option>
-                {categories.map((c) => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
-                ))}
-              </select>
+                categories={categories}
+                value={categoryId || null}
+                onChange={(id) => setCategoryId(id ?? '')}
+                placeholder="— unclassified —"
+                testId="adhoc-category"
+              />
             </div>
             <div className="field">
               <label className="field__label" htmlFor="adhoc-valence">Valence (optional)</label>

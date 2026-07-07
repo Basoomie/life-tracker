@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import type { Reason } from '@tracker/shared'
+import { ReasonPicker } from '../shared/ReasonPicker'
 
 type DispositionType = 'skip' | 'excuse' | 'carry-forward'
 
@@ -119,18 +120,14 @@ export function DispositionModal({
             {reasons.length > 0 && (
               <div className="field">
                 <label className="field__label" htmlFor="disp-reason">Reason (optional)</label>
-                <select
+                <ReasonPicker
                   id="disp-reason"
-                  className="field__select"
-                  value={reasonId}
-                  onChange={(e) => setReasonId(e.target.value)}
-                  data-testid="disp-reason"
-                >
-                  <option value="">— none —</option>
-                  {reasons.map((r) => (
-                    <option key={r.id} value={r.id}>{r.name}</option>
-                  ))}
-                </select>
+                  reasons={reasons}
+                  value={reasonId || null}
+                  onChange={(id) => setReasonId(id ?? '')}
+                  placeholder="— none —"
+                  testId="disp-reason"
+                />
               </div>
             )}
 

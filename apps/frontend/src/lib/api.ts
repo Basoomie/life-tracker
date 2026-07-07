@@ -26,6 +26,8 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
     const err = await res.json().catch(() => ({ message: res.statusText }))
     throw new Error((err as { message?: string }).message ?? `HTTP ${res.status}`)
   }
+  // 204 No Content (e.g. archive/delete endpoints) — no body to parse
+  if (res.status === 204) return undefined as unknown as T
   return res.json() as Promise<T>
 }
 
@@ -77,18 +79,45 @@ export const api = {
 
   buckets: {
     list: () => apiFetch<Bucket[]>('/buckets'),
+    create: (name: string, startTime: string, endTime: string, sortOrder?: number) =>
+      apiFetch<Bucket>('/buckets', {
+        method: 'POST',
+        body: JSON.stringify({ name, startTime, endTime, sortOrder }),
+      }),
+    updateBoundaries: (id: string, startTime: string, endTime: string) =>
+      apiFetch<Bucket>(`/buckets/${id}/boundaries`, {
+        method: 'PATCH',
+        body: JSON.stringify({ startTime, endTime }),
+      }),
   },
 
   categories: {
     list: () => apiFetch<Category[]>('/categories'),
+    create: (name: string) =>
+      apiFetch<Category>('/categories', { method: 'POST', body: JSON.stringify({ name }) }),
+    rename: (id: string, name: string) =>
+      apiFetch<Category>(`/categories/${id}/rename`, { method: 'PATCH', body: JSON.stringify({ name }) }),
+    archive: (id: string) =>
+      apiFetch<void>(`/categories/${id}`, { method: 'DELETE' }),
   },
 
   reasons: {
     list: () => apiFetch<Reason[]>('/reasons'),
+    create: (name: string) =>
+      apiFetch<Reason>('/reasons', { method: 'POST', body: JSON.stringify({ name }) }),
+    rename: (id: string, name: string) =>
+      apiFetch<Reason>(`/reasons/${id}/rename`, { method: 'PATCH', body: JSON.stringify({ name }) }),
+    archive: (id: string) =>
+      apiFetch<void>(`/reasons/${id}`, { method: 'DELETE' }),
   },
 
   dayStart: {
     list: () => apiFetch<DayStartEntry[]>('/day-start'),
+    append: (value: string, effectiveFrom: string) =>
+      apiFetch<DayStartEntry>('/day-start', {
+        method: 'POST',
+        body: JSON.stringify({ value, effectiveFrom }),
+      }),
   },
 
   preferences: {

@@ -4,6 +4,7 @@ import { AppShell } from './components/AppShell'
 import { NowView } from './components/now/NowView'
 import { ListView } from './components/list/ListView'
 import { CalendarView } from './components/calendar/CalendarView'
+import { SettingsView } from './components/settings/SettingsView'
 import type { ViewKey } from './components/ViewNav'
 
 export function App() {
@@ -24,6 +25,9 @@ export function App() {
       )}
       {activeView === 'list' && <ListView />}
       {activeView === 'calendar' && <CalendarView />}
+      {activeView === 'settings' && (
+        <SettingsView theme={theme} onToggleTheme={toggleTheme} />
+      )}
     </AppShell>
   )
 }
