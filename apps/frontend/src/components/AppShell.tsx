@@ -1,14 +1,18 @@
 import type { ReactNode } from 'react'
 import type { Theme } from '../hooks/useTheme'
+import { ViewNav } from './ViewNav'
+import type { ViewKey } from './ViewNav'
 
 type Props = {
   theme: Theme
   onToggleTheme: () => void
   onAdHoc: () => void
+  activeView: ViewKey
+  onViewChange: (v: ViewKey) => void
   children: ReactNode
 }
 
-export function AppShell({ theme, onToggleTheme, onAdHoc, children }: Props) {
+export function AppShell({ theme, onToggleTheme, onAdHoc, activeView, onViewChange, children }: Props) {
   return (
     <>
       <header className="app-header">
@@ -35,6 +39,7 @@ export function AppShell({ theme, onToggleTheme, onAdHoc, children }: Props) {
           </button>
         </div>
       </header>
+      <ViewNav active={activeView} onChange={onViewChange} />
       <main className="app-main">
         {children}
       </main>

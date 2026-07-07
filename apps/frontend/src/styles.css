@@ -653,3 +653,400 @@ input, select, textarea {
   white-space: nowrap;
   border-width: 0;
 }
+
+/* ── View navigation tabs ──────────────────────────────────────────────────── */
+.view-nav {
+  display: flex;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface);
+  padding: 0 var(--space-6);
+  gap: 0;
+}
+
+@media (max-width: 480px) {
+  .view-nav { padding: 0 var(--space-4); }
+}
+
+.view-nav__tab {
+  padding: var(--space-3) var(--space-4);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  transition: color var(--transition-fast), border-color var(--transition-fast);
+  white-space: nowrap;
+}
+
+.view-nav__tab:hover { color: var(--color-text-primary); }
+
+.view-nav__tab--active {
+  color: var(--color-accent);
+  border-bottom-color: var(--color-accent);
+}
+
+/* ── Range toolbar (shared by List + Calendar) ─────────────────────────────── */
+.range-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-4);
+}
+
+.range-toolbar__select {
+  font-size: var(--text-sm);
+  padding: var(--space-2) var(--space-3);
+  width: auto;
+  flex-shrink: 0;
+}
+
+/* ── Filter bar (§12.5) ────────────────────────────────────────────────────── */
+.filter-bar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  margin-bottom: var(--space-4);
+}
+
+.filter-group {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.filter-group__label {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--color-text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  min-width: 64px;
+  padding-top: 3px;
+  flex-shrink: 0;
+}
+
+.filter-pills {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.filter-pill {
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-full);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  border: 1px solid var(--color-border);
+  color: var(--color-text-secondary);
+  background: var(--color-bg);
+  transition: background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
+  white-space: nowrap;
+}
+
+.filter-pill:hover {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+.filter-pill--active {
+  background: var(--color-accent-subtle);
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+/* ── List view (§12.3) ─────────────────────────────────────────────────────── */
+.list-view {
+  display: flex;
+  flex-direction: column;
+}
+
+.list-day-group {
+  margin-bottom: var(--space-4);
+}
+
+.list-day-group__header {
+  font-size: var(--text-xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--color-text-tertiary);
+  padding: var(--space-2) 0 var(--space-2);
+  margin-bottom: var(--space-1);
+  border-bottom: 1px solid var(--color-border-subtle);
+}
+
+.list-section {
+  background: var(--color-surface);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--color-border);
+  overflow: hidden;
+}
+
+.list-section__rows { /* wrapper for priority-group rows */ }
+
+.priority-group {
+  margin-bottom: var(--space-4);
+}
+
+.priority-group__label {
+  font-size: var(--text-xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  padding: var(--space-2) var(--space-4);
+  color: var(--color-text-secondary);
+  background: var(--color-border-subtle);
+  border-radius: var(--radius-md) var(--radius-md) 0 0;
+}
+
+.list-empty {
+  padding: var(--space-4);
+  text-align: center;
+  color: var(--color-text-tertiary);
+  font-size: var(--text-sm);
+  font-style: italic;
+}
+
+/* ── Calendar view (§12.4) ─────────────────────────────────────────────────── */
+.cal-view {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Mobile / desktop visibility */
+.cal-mobile-only  { display: flex; flex-direction: column; }
+.cal-desktop-only { display: none; }
+
+@media (min-width: 640px) {
+  .cal-mobile-only  { display: none; }
+  .cal-desktop-only { display: flex; }
+}
+
+.cal-mobile-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.cal-mobile-nav__label {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.cal-mobile-nav__btn {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--text-lg);
+  border-radius: var(--radius-md);
+}
+
+/* Multi-day layout for desktop (week / month) */
+.cal-multi-day {
+  flex-direction: row;
+  align-items: flex-start;
+  gap: var(--space-2);
+  overflow-x: auto;
+  padding-bottom: var(--space-4);
+}
+
+.cal-day-col {
+  flex: 0 0 auto;
+  min-width: 120px;
+  width: 160px;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Single-day: take full width */
+.cal-multi-day:has(.cal-day-col:only-child) .cal-day-col {
+  width: 100%;
+  min-width: unset;
+}
+
+.cal-day-col__header {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  text-align: center;
+  padding: var(--space-1) 0 var(--space-2);
+  border-bottom: 1px solid var(--color-border);
+  margin-bottom: var(--space-2);
+}
+
+.cal-day-col__header--today {
+  color: var(--color-accent);
+}
+
+/* Calendar day container */
+.cal-day {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+/* Gutter — unscheduled items above the grid */
+.cal-gutter {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  margin-bottom: var(--space-2);
+}
+
+/* Grid wrap: axis + grid side by side */
+.cal-grid-wrap {
+  display: flex;
+  gap: var(--space-2);
+  overflow-y: auto;
+  max-height: 600px;  /* scrollable */
+  position: relative;
+}
+
+.cal-time-axis {
+  flex-shrink: 0;
+  width: 44px;
+  position: relative;
+}
+
+.cal-hour-label {
+  position: absolute;
+  right: 4px;
+  font-size: var(--text-xs);
+  color: var(--color-text-tertiary);
+  font-variant-numeric: tabular-nums;
+  transform: translateY(-50%);
+  white-space: nowrap;
+}
+
+/* The proportional grid itself */
+.cal-grid {
+  flex: 1;
+  position: relative;
+  min-width: 0;
+}
+
+.cal-hour-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: var(--color-border-subtle);
+}
+
+/* Now indicator — horizontal line at current time */
+.cal-now-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--color-danger);
+  z-index: 10;
+  pointer-events: none;
+}
+
+.cal-now-line::before {
+  content: '';
+  position: absolute;
+  left: -4px;
+  top: -4px;
+  width: 10px;
+  height: 10px;
+  border-radius: var(--radius-full);
+  background: var(--color-danger);
+}
+
+/* Calendar blocks */
+.cal-block {
+  position: absolute;
+  border-radius: var(--radius-sm);
+  padding: var(--space-1) var(--space-2);
+  overflow: hidden;
+  text-align: left;
+  cursor: pointer;
+  transition: opacity var(--transition-fast), box-shadow var(--transition-fast);
+  min-height: 20px;
+  border: 1px solid transparent;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.cal-block--range {
+  background: var(--color-accent-subtle);
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+.cal-block--point {
+  background: var(--color-warning-subtle);
+  border-color: var(--color-warning);
+  color: var(--color-warning-fg);
+  border-left-width: 3px;
+}
+
+.cal-block--bucket {
+  background: var(--color-border-subtle);
+  border-color: var(--color-border);
+  color: var(--color-text-secondary);
+  border-style: dashed;
+}
+
+.cal-block--done {
+  opacity: 0.45;
+  text-decoration: line-through;
+}
+
+.cal-block--selected {
+  box-shadow: 0 0 0 2px var(--color-accent);
+  z-index: 20;
+}
+
+.cal-block:hover { opacity: 0.85; }
+
+.cal-block__name {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: var(--leading-tight);
+}
+
+.cal-block__time {
+  font-size: 10px;
+  opacity: 0.75;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Detail panel — shown when a block is clicked */
+.cal-detail-panel {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+  overflow: hidden;
+  margin-top: var(--space-2);
+}
+
+/* btn--active modifier for filter toggle */
+.btn--active {
+  background: var(--color-accent-subtle);
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}

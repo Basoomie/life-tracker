@@ -8,6 +8,7 @@ import type {
   Reason,
   Item,
   Occurrence,
+  DayStartEntry,
   DispositionBody,
   CarryForwardBody,
   StartSessionBody,
@@ -32,6 +33,8 @@ export const api = {
   occurrences: {
     today: () =>
       apiFetch<OccurrenceWithState[]>('/occurrences/today'),
+    range: (start: string, end: string) =>
+      apiFetch<OccurrenceWithState[]>(`/occurrences?start=${start}&end=${end}`),
     complete: (id: string) =>
       apiFetch<OccurrenceWithState>(`/occurrences/${id}/complete`, { method: 'POST' }),
     uncomplete: (id: string) =>
@@ -82,6 +85,10 @@ export const api = {
 
   reasons: {
     list: () => apiFetch<Reason[]>('/reasons'),
+  },
+
+  dayStart: {
+    list: () => apiFetch<DayStartEntry[]>('/day-start'),
   },
 
   preferences: {

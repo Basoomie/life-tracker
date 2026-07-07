@@ -1,0 +1,224 @@
+// §12.3 — List view: flat sorted list per time-range; priority-flip grouping.
+
+import { useState, useEffect, useMemo } from 'react'
+import { useRangeData } from '../../hooks/useRangeData'
+import { useOccurrenceActions } from '../../hooks/useOccurrenceActions'
+import { OccurrenceRow } from '../now/OccurrenceRow'
+import { DispositionModal } from '../now/DispositionModal'
+import { FilterBar } from '../FilterBar'
+import { sortByTiming, groupByPriority } from '../../lib/list-sort'
+import { applyFilters, makeDefaultFilters } from '../../lib/filters'
+import { getRangeDates, getDaysInRange, formatDayLabel } from '../../lib/date-range'
+import { api } from '../../lib/api'
+import type { RangeKey } from '../../lib/date-range'
+import type { OccurrenceWithState, Category, Reason } from '@tracker/shared'
+
+export function ListView() {
+  const [range, setRange] = useState<RangeKey>('today')
+  const [priorityFlip, setPriorityFlip] = useState(false)
+  const [showFilters, setShowFilters] = useState(false)
+  const [filters, setFilters] = useState(makeDefaultFilters)
+  const [categories, setCategories] = useState<Category[]>([])
+  const [reasons, setReasons] = useState<Reason[]>([])
+
+  const { start, end } = useMemo(() => getRangeDates(range), [range])
+
+  const {
+    occurrences,
+    buckets,
+    loading,
+    error,
+    refresh,
+    setOccurrences,
+  } = useRangeData(start, end)
+
+  useEffect(() => {
+    api.categories.list().then(setCategories).catch(() => {})
+    api.reasons.list().then(setReasons).catch(() => {})
+  }, [])
+
+  const {
+    sessions,
+    dispositionTarget,
+    setDispositionTarget,
+    handleComplete,
+    handleUncomplete,
+    handleTimerStart,
+    handleTimerPause,
+    handleTimerResume,
+    handleTimerStop,
+    handleSkip,
+    handleExcuse,
+    handleCarryForward,
+  } = useOccurrenceActions(setOccurrences, refresh)
+
+  // Days in selected range (single element for today/tomorrow, multiple for week/month)
+  const days = useMemo(() => getDaysInRange(start, end), [start, end])
+  const isMultiDay = days.length > 1
+
+  // Per-day occurrence lookup
+  const occsByDay = useMemo(() => {
+    const map = new Map<string, OccurrenceWithState[]>()
+    for (const day of days) map.set(day, [])
+    for (const occ of occurrences) {
+      const bucket = map.get(occ.appliesToDay)
+      if (bucket) bucket.push(occ)
+    }
+    return map
+  }, [occurrences, days])
+
+  function renderRow(occ: OccurrenceWithState, isChild = false) {
+    const occId = occ.id ?? occ.itemId
+    return (
+      <OccurrenceRow
+        key={occId}
+        occ={occ}
+        buckets={buckets}
+        isChild={isChild}
+        session={sessions.get(occId)}
+        onComplete={() => handleComplete(occ)}
+        onUncomplete={() => handleUncomplete(occ)}
+        onTimerStart={() => handleTimerStart(occ)}
+        onTimerPause={() => handleTimerPause(occ)}
+        onTimerResume={() => handleTimerResume(occ)}
+        onTimerStop={() => handleTimerStop(occ)}
+        onDisposition={() => setDispositionTarget(occ)}
+      />
+    )
+  }
+
+  function renderPriorityGroups(occs: OccurrenceWithState[]) {
+    const groups = groupByPriority(occs)
+    const sections: Array<{ label: string; key: string; items: OccurrenceWithState[] }> = [
+      { key: 'high',   label: '⬆ High',   items: groups.high },
+      { key: 'medium', label: '↔ Medium', items: groups.medium },
+      { key: 'low',    label: '⬇ Low',    items: groups.low },
+      { key: 'unset',  label: '— No priority', items: groups.unset },
+    ]
+    return sections.filter((s) => s.items.length > 0).map((s) => (
+      <div key={s.key} className="priority-group" data-testid={`priority-group-${s.key}`}>
+        <div className="priority-group__label">{s.label}</div>
+        <div className="list-section__rows">
+          {s.items.map((occ) => renderRow(occ))}
+        </div>
+      </div>
+    ))
+  }
+
+  function renderContent() {
+    if (priorityFlip) {
+      // All occurrences across all days grouped by priority
+      const filtered = applyFilters(occurrences, filters)
+      const sorted = sortByTiming(filtered, buckets)
+      return <div data-testid="list-priority-view">{renderPriorityGroups(sorted)}</div>
+    }
+
+    // Default: group by day (single-day: no header shown)
+    return (
+      <div data-testid="list-timing-view">
+        {days.map((day) => {
+          const dayOccs = occsByDay.get(day) ?? []
+          const filtered = applyFilters(dayOccs, filters)
+          const sorted = sortByTiming(filtered, buckets)
+          if (sorted.length === 0 && isMultiDay) return null
+          return (
+            <div key={day} className="list-day-group">
+              {isMultiDay && (
+                <div className="list-day-group__header" data-testid={`day-header-${day}`}>
+                  {formatDayLabel(day)}
+                </div>
+              )}
+              <div className="list-section">
+                {sorted.length === 0 ? (
+                  <div className="list-empty">Nothing for this day</div>
+                ) : (
+                  sorted.map((occ) => renderRow(occ))
+                )}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    )
+  }
+
+  return (
+    <div className="list-view" data-testid="list-view">
+      {/* Toolbar */}
+      <div className="range-toolbar">
+        <select
+          className="field__select range-toolbar__select"
+          value={range}
+          onChange={(e) => { setRange(e.target.value as RangeKey); setPriorityFlip(false) }}
+          aria-label="Date range"
+          data-testid="range-select"
+        >
+          <option value="today">Today</option>
+          <option value="tomorrow">Tomorrow</option>
+          <option value="this-week">This Week</option>
+          <option value="this-month">This Month</option>
+        </select>
+
+        <label className="now-view__toggle-label" data-testid="priority-flip-toggle">
+          <span className="toggle">
+            <input
+              type="checkbox"
+              className="toggle__input"
+              checked={priorityFlip}
+              onChange={(e) => setPriorityFlip(e.target.checked)}
+            />
+            <span className="toggle__track" />
+          </span>
+          Priority view
+        </label>
+
+        <button
+          className={`btn btn--ghost${showFilters ? ' btn--active' : ''}`}
+          onClick={() => setShowFilters((v) => !v)}
+          data-testid="toggle-filters"
+          aria-expanded={showFilters}
+        >
+          Filters
+        </button>
+      </div>
+
+      {/* Filter bar */}
+      {showFilters && (
+        <FilterBar
+          filters={filters}
+          categories={categories}
+          onChange={setFilters}
+        />
+      )}
+
+      {/* Content */}
+      {loading ? (
+        <div className="now-view__loading">
+          <span className="spinner" aria-hidden="true" />&ensp;Loading…
+        </div>
+      ) : error ? (
+        <div className="now-view__error" role="alert">
+          {error}
+          <br />
+          <button className="btn btn--ghost" style={{ marginTop: 'var(--space-3)' }} onClick={refresh}>
+            Retry
+          </button>
+        </div>
+      ) : (
+        renderContent()
+      )}
+
+      {/* Disposition modal */}
+      {dispositionTarget && (
+        <DispositionModal
+          occurrenceName={dispositionTarget.snapshot.name}
+          reasons={reasons}
+          onSkip={(rid, cmt) => handleSkip(dispositionTarget, rid, cmt)}
+          onExcuse={(rid, cmt) => handleExcuse(dispositionTarget, rid, cmt)}
+          onCarryForward={(day, rid, cmt) => handleCarryForward(dispositionTarget, day, rid, cmt)}
+          onClose={() => setDispositionTarget(null)}
+        />
+      )}
+    </div>
+  )
+}
