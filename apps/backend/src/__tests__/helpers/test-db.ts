@@ -14,10 +14,8 @@ export function getTestPool(): Pool {
 }
 
 export async function setupTestDb(): Promise<Pool> {
-  const url =
-    process.env.TEST_DATABASE_URL ||
-    process.env.DATABASE_URL ||
-    'postgresql://tracker:dev_password_change_before_deploy@localhost:5432/tracker'
+  const url = process.env.TEST_DATABASE_URL || process.env.DATABASE_URL
+  if (!url) throw new Error('TEST_DATABASE_URL or DATABASE_URL must be set')
 
   _pool = new Pool({ connectionString: url })
   await resetDatabase(_pool)

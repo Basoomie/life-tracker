@@ -11,10 +11,8 @@ import { migrateUp, migrateDown } from '../db/migrate'
 
 config({ path: resolve(__dirname, '../../../../.env') })
 
-const DB_URL =
-  process.env.TEST_DATABASE_URL ||
-  process.env.DATABASE_URL ||
-  'postgresql://tracker:dev_password_change_before_deploy@localhost:5432/tracker'
+const DB_URL = process.env.TEST_DATABASE_URL || process.env.DATABASE_URL
+if (!DB_URL) throw new Error('TEST_DATABASE_URL or DATABASE_URL must be set')
 
 // Tables created by the migrations, in dependency order
 const EXPECTED_TABLES = [
