@@ -15,7 +15,9 @@ const BCRYPT_ROUNDS       = 10
 function cookieOptions(maxAge?: number) {
   return {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
+    // Set COOKIE_SECURE=true only when serving over HTTPS.
+    // Omitting it (the default) keeps the cookie working on plain HTTP deployments.
+    secure: process.env.COOKIE_SECURE === 'true',
     sameSite: 'strict' as const,
     path: '/',
     ...(maxAge !== undefined ? { maxAge } : {}),
