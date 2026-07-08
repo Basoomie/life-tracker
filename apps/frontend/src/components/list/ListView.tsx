@@ -33,6 +33,7 @@ export function ListView({ onEditItem }: Props) {
   const [categories, setCategories] = useState<Category[]>([])
   const [reasons, setReasons] = useState<Reason[]>([])
   const [pendingUncompletion, setPendingUncompletion] = useState<OccurrenceWithState | null>(null)
+  const [pendingArchive, setPendingArchive] = useState<OccurrenceWithState | null>(null)
 
   useEffect(() => { localStorage.setItem('tracker:list-range', range) }, [range])
   useEffect(() => { localStorage.setItem('tracker:list-priorityFlip', String(priorityFlip)) }, [priorityFlip])
@@ -67,6 +68,7 @@ export function ListView({ onEditItem }: Props) {
     handleSkip,
     handleExcuse,
     handleCarryForward,
+    handleArchive,
   } = useOccurrenceActions(setOccurrences, refresh)
 
   // Days in selected range (single element for today/tomorrow, multiple for week/month)
@@ -101,6 +103,7 @@ export function ListView({ onEditItem }: Props) {
         onTimerStop={() => handleTimerStop(occ)}
         onDisposition={() => setDispositionTarget(occ)}
         onEdit={() => onEditItem(occ.itemId)}
+        onArchive={() => setPendingArchive(occ)}
       />
     )
   }
@@ -249,6 +252,20 @@ export function ListView({ onEditItem }: Props) {
             setPendingUncompletion(null)
           }}
           onCancel={() => setPendingUncompletion(null)}
+        />
+      )}
+
+      {/* Archive confirmation modal */}
+      {pendingArchive && (
+        <ConfirmModal
+          title="Delete task?"
+          message={`Delete "${pendingArchive.snapshot.name}"? History is preserved but the task will no longer appear.`}
+          confirmLabel="Delete"
+          onConfirm={async () => {
+            await handleArchive(pendingArchive)
+            setPendingArchive(null)
+          }}
+          onCancel={() => setPendingArchive(null)}
         />
       )}
     </div>

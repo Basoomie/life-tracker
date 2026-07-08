@@ -4,7 +4,7 @@
 import type { FastifyInstance } from 'fastify'
 import { pool } from '../db'
 import * as repos from '../db/repos/index'
-import { getOccurrencesInRange } from '../domain/materialization'
+import { getOccurrencesInRange, ensureOccurrenceMaterialized } from '../domain/materialization'
 import {
   completeLeaf,
   uncompleteLeaf,
@@ -45,6 +45,36 @@ export async function occurrenceRoutes(app: FastifyInstance) {
     const userId = req.userId
     const occ = await repos.findOccurrenceById(pool, id, userId)
     if (!occ) return notFound(reply, 'occurrence')
+    const enriched = await enrichOccurrence(pool, occ, userId)
+    return reply.send(enriched)
+  })
+
+  // POST /occurrences/complete-by-item-day — §5.4 lazy materialization + complete.
+  // Used when the occurrence has no stored row yet (id=null on the client).
+  // Materializes the row if needed, then runs the same completion logic as /:id/complete.
+  app.post('/occurrences/complete-by-item-day', async (req, reply) => {
+    const { itemId, appliesToDay } = (req.body ?? {}) as { itemId?: string; appliesToDay?: string }
+    if (!itemId || !appliesToDay) {
+      return badRequest(reply, 'missing_params', 'itemId and appliesToDay are required')
+    }
+    const userId = req.userId
+    const item = await repos.findItemById(pool, itemId, userId)
+    if (!item || item.archivedAt) return notFound(reply, 'item')
+
+    const occ = await ensureOccurrenceMaterialized(pool, item, appliesToDay, userId)
+
+    const parentItemId = occ.snapshot.parentId
+    if (parentItemId) {
+      const parentOcc = await repos.findOccurrenceByItemAndDay(pool, parentItemId, occ.appliesToDay, userId)
+      if (parentOcc) {
+        await completeChild(pool, occ, parentOcc, userId)
+      } else {
+        await completeLeaf(pool, occ, userId)
+      }
+    } else {
+      await completeLeaf(pool, occ, userId)
+    }
+
     const enriched = await enrichOccurrence(pool, occ, userId)
     return reply.send(enriched)
   })

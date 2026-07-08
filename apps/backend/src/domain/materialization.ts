@@ -223,9 +223,12 @@ export async function getOccurrencesInRange(
     }
   }
 
-  // Remaining stored entries: one-time tasks and any orphaned recurring occurrences
-  // (e.g. from archived items or items whose recurrence was changed).
+  // Remaining stored entries: one-time tasks and orphaned recurring occurrences
+  // (e.g. from items whose recurrence was changed).
+  // Skip occurrences for archived items — they should not appear in active views.
+  const activeItemIds = new Set(items.map((item) => item.id))
   for (const occ of storedIndex.values()) {
+    if (!activeItemIds.has(occ.itemId)) continue
     results.push({
       id:             occ.id,
       userId:         occ.userId,

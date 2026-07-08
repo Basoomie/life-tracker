@@ -46,6 +46,11 @@ export const api = {
       apiFetch<OccurrenceWithState[]>(`/occurrences?start=${start}&end=${end}`),
     complete: (id: string) =>
       apiFetch<OccurrenceWithState>(`/occurrences/${id}/complete`, { method: 'POST' }),
+    completeByItemDay: (itemId: string, appliesToDay: string) =>
+      apiFetch<OccurrenceWithState>('/occurrences/complete-by-item-day', {
+        method: 'POST',
+        body: JSON.stringify({ itemId, appliesToDay }),
+      }),
     uncomplete: (id: string) =>
       apiFetch<OccurrenceWithState>(`/occurrences/${id}/uncomplete`, { method: 'POST' }),
     skip: (id: string, body: DispositionBody) =>

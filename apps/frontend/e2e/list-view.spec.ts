@@ -506,3 +506,56 @@ test.describe('§9 — List view state persistence across navigation', () => {
   })
 
 })
+
+test.describe('§3 — Archive / delete task (List view)', () => {
+
+  test('§3 delete button in List view shows confirmation modal', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2025-06-16T09:00:00'))
+    await setupApiMocks(page, [UNSCHEDULED])
+    await page.route('/api/items/item-read', (route) => route.fulfill({ status: 204, body: '' }))
+
+    await goToListView(page)
+
+    const row = page.getByTestId('occ-row-occ-read')
+    await expect(row).toBeVisible()
+    await row.getByTestId('occ-archive-btn').click()
+
+    await expect(page.getByTestId('confirm-modal')).toBeVisible()
+    await expect(page.getByTestId('confirm-modal')).toContainText('Reading')
+  })
+
+  test('§3 confirming delete in List view calls DELETE and removes the task', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2025-06-16T09:00:00'))
+
+    let archived = false
+    await page.route(/\/api\/occurrences\?start=.*&end=.*/, (route) =>
+      route.fulfill({ json: archived ? [] : [UNSCHEDULED] })
+    )
+    await page.route('/api/occurrences/today', (route) => route.fulfill({ json: [UNSCHEDULED] }))
+    await page.route('/api/buckets', (route) => route.fulfill({ json: BUCKETS }))
+    await page.route('/api/day-start', (route) => route.fulfill({ json: [] }))
+    await page.route('/api/categories', (route) => route.fulfill({ json: [] }))
+    await page.route('/api/reasons', (route) => route.fulfill({ json: [] }))
+    await page.route('/api/preferences', (route) => route.fulfill({ json: {} }))
+
+    const archiveCalls: string[] = []
+    await page.route('/api/items/item-read', (route) => {
+      archiveCalls.push(route.request().method())
+      archived = true
+      route.fulfill({ status: 204, body: '' })
+    })
+
+    await goToListView(page)
+
+    const row = page.getByTestId('occ-row-occ-read')
+    await row.getByTestId('occ-archive-btn').click()
+    await expect(page.getByTestId('confirm-modal')).toBeVisible()
+    await page.getByTestId('confirm-modal-confirm').click()
+
+    await expect(page.getByTestId('confirm-modal')).not.toBeVisible()
+    expect(archiveCalls.length).toBe(1)
+    expect(archiveCalls[0]).toBe('DELETE')
+    await expect(page.getByTestId('occ-row-occ-read')).not.toBeVisible()
+  })
+
+})

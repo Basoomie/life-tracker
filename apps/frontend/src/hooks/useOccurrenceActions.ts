@@ -1,8 +1,9 @@
 // Shared handler logic reused by List and Calendar views.
 // NowView owns its own copy to avoid touching existing passing tests.
 
-import { useState, useCallback, type Dispatch, type SetStateAction } from 'react'
+import { useState, useCallback, useEffect, type Dispatch, type SetStateAction } from 'react'
 import { api } from '../lib/api'
+import { saveSessions, loadSessions } from '../lib/sessions'
 import type { OccurrenceWithState } from '@tracker/shared'
 import type { SessionState } from '../components/now/TimerControl'
 
@@ -19,19 +20,29 @@ export type OccurrenceActions = {
   handleSkip: (occ: OccurrenceWithState, reasonId: string | null, comment: string | null) => Promise<void>
   handleExcuse: (occ: OccurrenceWithState, reasonId: string | null, comment: string | null) => Promise<void>
   handleCarryForward: (occ: OccurrenceWithState, targetDay: string, reasonId: string | null, comment: string | null) => Promise<void>
+  handleArchive: (occ: OccurrenceWithState) => Promise<void>
 }
 
 export function useOccurrenceActions(
   setOccurrences: Dispatch<SetStateAction<OccurrenceWithState[]>>,
   refresh: () => void
 ): OccurrenceActions {
-  const [sessions, setSessions] = useState<Map<string, SessionState>>(new Map())
+  const [sessions, setSessions] = useState<Map<string, SessionState>>(() => loadSessions())
   const [dispositionTarget, setDispositionTarget] = useState<OccurrenceWithState | null>(null)
 
+  useEffect(() => {
+    saveSessions(sessions)
+  }, [sessions])
+
   const handleComplete = useCallback(async (occ: OccurrenceWithState) => {
-    if (!occ.id) return
-    const updated = await api.occurrences.complete(occ.id)
-    setOccurrences((prev) => prev.map((o) => (o.id !== null && o.id === updated.id ? updated : o)))
+    const updated = occ.id
+      ? await api.occurrences.complete(occ.id)
+      : await api.occurrences.completeByItemDay(occ.itemId, occ.appliesToDay)
+    setOccurrences((prev) => prev.map((o) => {
+      if (o.id !== null && o.id === updated.id) return updated
+      if (o.id === null && o.itemId === updated.itemId && o.appliesToDay === updated.appliesToDay) return updated
+      return o
+    }))
     if (occ.snapshot.parentId) refresh()
   }, [setOccurrences, refresh])
 
@@ -114,6 +125,11 @@ export function useOccurrenceActions(
     refresh()
   }, [refresh])
 
+  const handleArchive = useCallback(async (occ: OccurrenceWithState) => {
+    await api.items.archive(occ.itemId)
+    refresh()
+  }, [refresh])
+
   return {
     sessions,
     dispositionTarget,
@@ -127,5 +143,6 @@ export function useOccurrenceActions(
     handleSkip,
     handleExcuse,
     handleCarryForward,
+    handleArchive,
   }
 }

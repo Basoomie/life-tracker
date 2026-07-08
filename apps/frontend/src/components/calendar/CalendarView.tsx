@@ -32,6 +32,7 @@ export function CalendarView({ onEditItem }: Props) {
   const [reasons, setReasons] = useState<Reason[]>([])
   const [now, setNow] = useState(() => new Date())
   const [pendingUncompletion, setPendingUncompletion] = useState<OccurrenceWithState | null>(null)
+  const [pendingArchive, setPendingArchive] = useState<OccurrenceWithState | null>(null)
 
   useEffect(() => { localStorage.setItem('tracker:cal-range', range) }, [range])
   useEffect(() => { localStorage.setItem('tracker:cal-filters', serializeFilters(filters)) }, [filters])
@@ -72,6 +73,7 @@ export function CalendarView({ onEditItem }: Props) {
     handleSkip,
     handleExcuse,
     handleCarryForward,
+    handleArchive,
   } = useOccurrenceActions(setOccurrences, refresh)
 
   const days = useMemo(() => getDaysInRange(start, end), [start, end])
@@ -115,6 +117,7 @@ export function CalendarView({ onEditItem }: Props) {
         onTimerStop={handleTimerStop}
         onDisposition={setDispositionTarget}
         onEdit={onEditItem}
+        onArchive={setPendingArchive}
       />
     )
   }
@@ -236,6 +239,20 @@ export function CalendarView({ onEditItem }: Props) {
             setPendingUncompletion(null)
           }}
           onCancel={() => setPendingUncompletion(null)}
+        />
+      )}
+
+      {/* Archive confirmation modal */}
+      {pendingArchive && (
+        <ConfirmModal
+          title="Delete task?"
+          message={`Delete "${pendingArchive.snapshot.name}"? History is preserved but the task will no longer appear.`}
+          confirmLabel="Delete"
+          onConfirm={async () => {
+            await handleArchive(pendingArchive)
+            setPendingArchive(null)
+          }}
+          onCancel={() => setPendingArchive(null)}
         />
       )}
     </div>

@@ -17,6 +17,7 @@ type Props = {
   onTimerStop: () => void
   onDisposition: () => void
   onEdit?: () => void
+  onArchive?: () => void
 }
 
 export function OccurrenceRow({
@@ -32,6 +33,7 @@ export function OccurrenceRow({
   onTimerStop,
   onDisposition,
   onEdit,
+  onArchive,
 }: Props) {
   const isComplete = occ.completionState.isComplete
   const timingLabel = formatTimingLabel(occ, buckets)
@@ -100,6 +102,17 @@ export function OccurrenceRow({
             title="Edit item"
           >
             ✎
+          </button>
+        )}
+        {onArchive && (
+          <button
+            className="disp-btn disp-btn--danger"
+            onClick={onArchive}
+            aria-label="Delete task"
+            data-testid="occ-archive-btn"
+            title="Delete task"
+          >
+            🗑
           </button>
         )}
         {occ.id && (

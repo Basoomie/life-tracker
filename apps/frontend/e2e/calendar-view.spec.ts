@@ -495,3 +495,147 @@ test.describe('§9 — Calendar view state persistence across navigation', () =>
   })
 
 })
+
+test.describe('§4 — Calendar complete keeps detail panel open', () => {
+
+  test('§4 completing an item in Calendar detail panel keeps panel open and updates block to done', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2025-06-16T07:00:00'))
+
+    const completedOcc: OccurrenceWithState = {
+      ...ONE_HOUR,
+      completionState: { ...ONE_HOUR.completionState, isComplete: true, completionPercent: 100 },
+      disposition: { type: 'completed', reasonId: null, comment: null, rescheduledToDay: null, derivedPercentAtClose: null },
+    }
+
+    await setupCalApiMocks(page, [ONE_HOUR])
+    await page.route(`/api/occurrences/${ONE_HOUR.id}/complete`, (route) =>
+      route.fulfill({ json: completedOcc })
+    )
+
+    await goToCalendarView(page)
+
+    const grid = desktopGrid(page)
+
+    // Click block to open detail panel
+    await grid.getByTestId('cal-block-occ-1h').click()
+    await expect(grid.getByTestId('cal-detail-panel')).toBeVisible()
+
+    // Click the (unchecked) checkbox to complete
+    await grid.getByTestId('cal-detail-panel').getByTestId('occ-check').click()
+
+    // Detail panel stays open (no modal, no close)
+    await expect(grid.getByTestId('cal-detail-panel')).toBeVisible()
+
+    // Block gains the done class
+    await expect(grid.getByTestId('cal-block-occ-1h')).toHaveClass(/cal-block--done/)
+  })
+
+})
+
+test.describe('§5.4 — Calendar complete works for unmaterialized (id=null) recurring occurrences', () => {
+
+  test('§5.4 completing a null-id occurrence calls complete-by-item-day and updates block to done', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2025-06-16T07:00:00'))
+
+    // Occurrence has no stored row yet — id is null
+    const nullIdOcc: OccurrenceWithState = {
+      ...ONE_HOUR,
+      id: null,
+      materializedAt: null,
+    }
+
+    const completedOcc: OccurrenceWithState = {
+      ...ONE_HOUR,
+      id: 'occ-materialized',
+      completionState: { ...ONE_HOUR.completionState, isComplete: true, completionPercent: 100 },
+      disposition: { type: 'completed', reasonId: null, comment: null, rescheduledToDay: null, derivedPercentAtClose: null },
+    }
+
+    await setupCalApiMocks(page, [nullIdOcc])
+
+    const calls: string[] = []
+    await page.route('/api/occurrences/complete-by-item-day', (route) => {
+      calls.push(JSON.stringify(route.request().postDataJSON()))
+      route.fulfill({ json: completedOcc })
+    })
+
+    await goToCalendarView(page)
+
+    const grid = desktopGrid(page)
+
+    // Block is keyed by itemId when occ.id is null
+    await grid.getByTestId(`cal-block-${nullIdOcc.itemId}`).click()
+    await expect(grid.getByTestId('cal-detail-panel')).toBeVisible()
+
+    await grid.getByTestId('cal-detail-panel').getByTestId('occ-check').click()
+
+    // complete-by-item-day was called with the correct payload
+    expect(calls.length).toBe(1)
+    const payload = JSON.parse(calls[0])
+    expect(payload.itemId).toBe(nullIdOcc.itemId)
+    expect(payload.appliesToDay).toBe(nullIdOcc.appliesToDay)
+
+    // Detail panel stays open
+    await expect(grid.getByTestId('cal-detail-panel')).toBeVisible()
+  })
+
+})
+
+test.describe('§3 — Archive / delete task (Calendar view)', () => {
+
+  test('§3 delete button in Calendar gutter shows confirmation modal', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2025-06-16T07:00:00'))
+    await setupCalApiMocks(page, [UNSCHEDULED])
+    await page.route('/api/items/item-read', (route) => route.fulfill({ status: 204, body: '' }))
+
+    await goToCalendarView(page)
+
+    const grid = desktopGrid(page)
+    const gutter = grid.getByTestId('cal-gutter-2025-06-16')
+    await expect(gutter).toBeVisible()
+
+    const row = gutter.getByTestId('occ-row-occ-read')
+    await row.getByTestId('occ-archive-btn').click()
+
+    await expect(page.getByTestId('confirm-modal')).toBeVisible()
+    await expect(page.getByTestId('confirm-modal')).toContainText('Reading')
+  })
+
+  test('§3 confirming delete in Calendar view calls DELETE and removes the task', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2025-06-16T07:00:00'))
+
+    let archived = false
+    await page.route(/\/api\/occurrences\?start=.*&end=.*/, (route) =>
+      route.fulfill({ json: archived ? [] : [UNSCHEDULED] })
+    )
+    await page.route('/api/occurrences/today', (route) => route.fulfill({ json: archived ? [] : [UNSCHEDULED] }))
+    await page.route('/api/buckets', (route) => route.fulfill({ json: BUCKETS }))
+    await page.route('/api/day-start', (route) => route.fulfill({ json: DAY_START_ENTRIES }))
+    await page.route('/api/categories', (route) => route.fulfill({ json: [] }))
+    await page.route('/api/reasons', (route) => route.fulfill({ json: [] }))
+    await page.route('/api/preferences', (route) => route.fulfill({ json: {} }))
+
+    const archiveCalls: string[] = []
+    await page.route('/api/items/item-read', (route) => {
+      archiveCalls.push(route.request().method())
+      archived = true
+      route.fulfill({ status: 204, body: '' })
+    })
+
+    await goToCalendarView(page)
+
+    const grid = desktopGrid(page)
+    const gutter = grid.getByTestId('cal-gutter-2025-06-16')
+    const row = gutter.getByTestId('occ-row-occ-read')
+
+    await row.getByTestId('occ-archive-btn').click()
+    await expect(page.getByTestId('confirm-modal')).toBeVisible()
+    await page.getByTestId('confirm-modal-confirm').click()
+
+    await expect(page.getByTestId('confirm-modal')).not.toBeVisible()
+    expect(archiveCalls.length).toBe(1)
+    expect(archiveCalls[0]).toBe('DELETE')
+    await expect(grid.getByTestId('occ-row-occ-read')).not.toBeVisible()
+  })
+
+})

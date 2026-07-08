@@ -516,3 +516,117 @@ test.describe('§4 — Uncomplete with confirmation (Now view)', () => {
   })
 
 })
+
+test.describe('§9.3 — Timer persistence across navigation', () => {
+
+  test('§9.3 running timer survives navigating away and back to Now view', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2025-06-16T05:00:00'))
+
+    // Set up both Now and List view endpoints
+    await page.route('/api/occurrences/today', (route) => route.fulfill({ json: [TRADING_OCC] }))
+    await page.route(/\/api\/occurrences\?start=.*&end=.*/, (route) => route.fulfill({ json: [TRADING_OCC] }))
+    await page.route('/api/buckets', (route) => route.fulfill({ json: BUCKETS }))
+    await page.route('/api/day-start', (route) => route.fulfill({ json: [] }))
+    await page.route('/api/categories', (route) => route.fulfill({ json: [] }))
+    await page.route('/api/reasons', (route) => route.fulfill({ json: [] }))
+    await page.route('/api/preferences', (route) => route.fulfill({ json: {} }))
+    await page.route('/api/sessions/start', (route) =>
+      route.fulfill({ json: { sessionId: 'sess-trading', occurrenceId: 'occ-trading' } })
+    )
+    await page.route('/api/sessions/*/stop', (route) =>
+      route.fulfill({ json: { sessionId: 'sess-trading', durationMin: 5 } })
+    )
+
+    await page.goto('/')
+
+    // Start timer on Day Trading
+    const tradingRow = page.getByTestId('occ-row-occ-trading')
+    await tradingRow.getByTestId('timer-start').click()
+    await expect(tradingRow.getByTestId('timer-running')).toBeVisible()
+
+    // Navigate away to List view, then back to Now
+    await page.getByTestId('view-nav-list').click()
+    await expect(page.getByTestId('list-view')).toBeVisible()
+    await page.getByTestId('view-nav-now').click()
+    await expect(page.locator('.now-view')).toBeVisible()
+
+    // Timer is still running after remount (loaded from localStorage)
+    await expect(page.getByTestId('occ-row-occ-trading').getByTestId('timer-running')).toBeVisible()
+  })
+
+})
+
+test.describe('§3 — Archive / delete task (Now view)', () => {
+
+  test('§3 delete button shows confirmation modal with task name', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2025-06-16T22:00:00'))
+    await setupApiMocks(page, [ROUTINE_OCC])
+    await page.route('/api/items/item-routine', (route) =>
+      route.fulfill({ status: 204, body: '' })
+    )
+
+    await page.goto('/')
+
+    const row = page.getByTestId(`occ-row-${ROUTINE_OCC.id}`)
+    await expect(row).toBeVisible()
+    await row.getByTestId('occ-archive-btn').click()
+
+    await expect(page.getByTestId('confirm-modal')).toBeVisible()
+    await expect(page.getByTestId('confirm-modal')).toContainText('Night Routine')
+  })
+
+  test('§3 cancelling delete modal makes no API call and item remains', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2025-06-16T22:00:00'))
+    await setupApiMocks(page, [ROUTINE_OCC])
+
+    const archiveCalls: string[] = []
+    await page.route('/api/items/item-routine', (route) => {
+      archiveCalls.push(route.request().url())
+      route.fulfill({ status: 204, body: '' })
+    })
+
+    await page.goto('/')
+
+    const row = page.getByTestId(`occ-row-${ROUTINE_OCC.id}`)
+    await row.getByTestId('occ-archive-btn').click()
+    await expect(page.getByTestId('confirm-modal')).toBeVisible()
+    await page.getByRole('button', { name: 'Cancel' }).click()
+
+    await expect(page.getByTestId('confirm-modal')).not.toBeVisible()
+    expect(archiveCalls.length).toBe(0)
+    await expect(row).toBeVisible()
+  })
+
+  test('§3 confirming delete calls DELETE /items/:id and removes the task', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2025-06-16T22:00:00'))
+
+    let archived = false
+    await page.route('/api/occurrences/today', (route) =>
+      route.fulfill({ json: archived ? [] : [ROUTINE_OCC] })
+    )
+    await page.route('/api/buckets', (route) => route.fulfill({ json: BUCKETS }))
+    await page.route('/api/categories', (route) => route.fulfill({ json: [] }))
+    await page.route('/api/reasons', (route) => route.fulfill({ json: [] }))
+    await page.route('/api/preferences', (route) => route.fulfill({ json: {} }))
+
+    const archiveCalls: string[] = []
+    await page.route('/api/items/item-routine', (route) => {
+      archiveCalls.push(route.request().method())
+      archived = true
+      route.fulfill({ status: 204, body: '' })
+    })
+
+    await page.goto('/')
+
+    const row = page.getByTestId(`occ-row-${ROUTINE_OCC.id}`)
+    await row.getByTestId('occ-archive-btn').click()
+    await expect(page.getByTestId('confirm-modal')).toBeVisible()
+    await page.getByTestId('confirm-modal-confirm').click()
+
+    await expect(page.getByTestId('confirm-modal')).not.toBeVisible()
+    expect(archiveCalls.length).toBe(1)
+    expect(archiveCalls[0]).toBe('DELETE')
+    await expect(page.getByTestId(`occ-row-${ROUTINE_OCC.id}`)).not.toBeVisible()
+  })
+
+})

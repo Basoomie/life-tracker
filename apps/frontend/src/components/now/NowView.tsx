@@ -9,6 +9,7 @@ import { AdHocModal } from './AdHocModal'
 import { DispositionModal } from './DispositionModal'
 import { ConfirmModal } from '../shared/ConfirmModal'
 import { api } from '../../lib/api'
+import { saveSessions, loadSessions } from '../../lib/sessions'
 import type { OccurrenceWithState } from '@tracker/shared'
 import type { Category, Reason } from '@tracker/shared'
 import type { SessionState } from './TimerControl'
@@ -56,8 +57,15 @@ export function NowView({ onEditItem }: Props) {
   // Pending uncomplete confirmation target
   const [pendingUncompletion, setPendingUncompletion] = useState<OccurrenceWithState | null>(null)
 
+  // Archive confirmation target
+  const [pendingArchive, setPendingArchive] = useState<OccurrenceWithState | null>(null)
+
   // Live session state: occurrenceId → SessionState
-  const [sessions, setSessions] = useState<Map<string, SessionState>>(new Map())
+  const [sessions, setSessions] = useState<Map<string, SessionState>>(() => loadSessions())
+
+  useEffect(() => {
+    saveSessions(sessions)
+  }, [sessions])
 
   // Disposition modal
   const [dispositionTarget, setDispositionTarget] = useState<OccurrenceWithState | null>(null)
@@ -75,11 +83,14 @@ export function NowView({ onEditItem }: Props) {
   // Always refresh after completion so parent derived % stays in sync (§6.1).
 
   const handleComplete = useCallback(async (occ: OccurrenceWithState) => {
-    if (!occ.id) return
-    const updated = await api.occurrences.complete(occ.id)
-    setOccurrences((prev) =>
-      prev.map((o) => (o.id !== null && o.id === updated.id ? updated : o))
-    )
+    const updated = occ.id
+      ? await api.occurrences.complete(occ.id)
+      : await api.occurrences.completeByItemDay(occ.itemId, occ.appliesToDay)
+    setOccurrences((prev) => prev.map((o) => {
+      if (o.id !== null && o.id === updated.id) return updated
+      if (o.id === null && o.itemId === updated.itemId && o.appliesToDay === updated.appliesToDay) return updated
+      return o
+    }))
     // If child, re-fetch so parent's derivedPercent reflects the new completion
     if (occ.snapshot.parentId) refresh()
   }, [setOccurrences, refresh])
@@ -173,6 +184,14 @@ export function NowView({ onEditItem }: Props) {
     refresh()
   }, [refresh])
 
+  // ── Archive ────────────────────────────────────────────────────────────────
+
+  const handleArchive = useCallback(async (occ: OccurrenceWithState) => {
+    await api.items.archive(occ.itemId)
+    setPendingArchive(null)
+    refresh()
+  }, [refresh])
+
   // ── Ad-hoc capture ─────────────────────────────────────────────────────────
 
   const handleAdHocCapture = useCallback(async (
@@ -225,6 +244,7 @@ export function NowView({ onEditItem }: Props) {
         onTimerStop={() => handleTimerStop(occ)}
         onDisposition={() => setDispositionTarget(occ)}
         onEdit={() => onEditItem(occ.itemId)}
+        onArchive={() => setPendingArchive(occ)}
       />
     )
   }
@@ -373,6 +393,17 @@ export function NowView({ onEditItem }: Props) {
             setPendingUncompletion(null)
           }}
           onCancel={() => setPendingUncompletion(null)}
+        />
+      )}
+
+      {/* Archive confirmation modal */}
+      {pendingArchive && (
+        <ConfirmModal
+          title="Delete task?"
+          message={`Delete "${pendingArchive.snapshot.name}"? History is preserved but the task will no longer appear.`}
+          confirmLabel="Delete"
+          onConfirm={() => handleArchive(pendingArchive)}
+          onCancel={() => setPendingArchive(null)}
         />
       )}
     </>

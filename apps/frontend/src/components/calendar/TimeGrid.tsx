@@ -24,6 +24,7 @@ type Props = {
   onTimerStop: (occ: OccurrenceWithState) => void
   onDisposition: (occ: OccurrenceWithState) => void
   onEdit: (itemId: string) => void
+  onArchive: (occ: OccurrenceWithState) => void
 }
 
 // Hour labels on the time axis (every 2 hours for readability)
@@ -63,6 +64,7 @@ export function TimeGrid({
   onTimerStop,
   onDisposition,
   onEdit,
+  onArchive,
 }: Props) {
   const layout: DayLayout = computeDayLayout(occs, buckets, dayStart)
   const hourLabels = buildHourLabels(dayStart)
@@ -82,6 +84,15 @@ export function TimeGrid({
     document.addEventListener('pointerdown', onPointerDown)
     return () => document.removeEventListener('pointerdown', onPointerDown)
   }, [selected])
+
+  // Keep detail panel in sync after complete/uncomplete updates the occurrence
+  useEffect(() => {
+    if (!selected) return
+    const latest = occs.find((o) =>
+      o.id !== null ? o.id === selected.id : o.itemId === selected.itemId
+    )
+    if (latest && latest !== selected) setSelected(latest)
+  }, [occs, selected])
 
   return (
     <div className="cal-day" data-testid={`cal-day-${day}`}>
@@ -164,14 +175,15 @@ export function TimeGrid({
             occ={selected}
             buckets={buckets}
             session={sessions.get(selected.id ?? selected.itemId)}
-            onComplete={() => { onComplete(selected); setSelected(null) }}
-            onUncomplete={() => { onUncomplete(selected); setSelected(null) }}
+            onComplete={() => onComplete(selected)}
+            onUncomplete={() => onUncomplete(selected)}
             onTimerStart={() => onTimerStart(selected)}
             onTimerPause={() => onTimerPause(selected)}
             onTimerResume={() => onTimerResume(selected)}
             onTimerStop={() => { onTimerStop(selected); setSelected(null) }}
             onDisposition={() => { onDisposition(selected); setSelected(null) }}
             onEdit={() => onEdit(selected.itemId)}
+            onArchive={() => { onArchive(selected); setSelected(null) }}
           />
         </div>
       )}
@@ -204,6 +216,7 @@ export function TimeGrid({
                 onTimerStop={() => onTimerStop(occ)}
                 onDisposition={() => onDisposition(occ)}
                 onEdit={() => onEdit(occ.itemId)}
+                onArchive={() => onArchive(occ)}
               />
             )
           })}
