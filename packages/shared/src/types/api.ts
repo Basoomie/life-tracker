@@ -154,6 +154,18 @@ export type RunBackgroundJobBody = {
   day: string   // YYYY-MM-DD — the logical day to close out
 }
 
+// ── Auth request/response types (§13.1) ──────────────────────────────────────
+
+export type LoginBody = {
+  email: string
+  password: string
+}
+
+export type ChangePasswordBody = {
+  currentPassword: string
+  newPassword: string
+}
+
 // ── Standard error shape ──────────────────────────────────────────────────────
 
 export type ApiError = {

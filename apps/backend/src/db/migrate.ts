@@ -74,6 +74,7 @@ export async function resetDatabase(pool: Pool): Promise<void> {
   await pool.query(`DROP TABLE IF EXISTS buckets             CASCADE`)
   await pool.query(`DROP TABLE IF EXISTS reasons             CASCADE`)
   await pool.query(`DROP TABLE IF EXISTS categories          CASCADE`)
+  await pool.query(`DROP TABLE IF EXISTS auth_sessions       CASCADE`)
   await pool.query(`DROP TABLE IF EXISTS users               CASCADE`)
   await pool.query(`DROP TABLE IF EXISTS ${MIGRATIONS_TABLE} CASCADE`)
   await migrateUp(pool)

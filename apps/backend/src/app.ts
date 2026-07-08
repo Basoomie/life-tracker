@@ -1,17 +1,19 @@
 // §13.4 — Application bootstrap with pluggable user-context resolver.
 //
 // The resolveUserId seam:
-//   - Production: read a real auth token (step 5).
-//   - v1 default: look up 'default@tracker.local' from the DB.
-//   - Tests: inject async () => testUserId directly.
+//   - Production: sessionResolveUserId reads the 'session' httpOnly cookie.
+//   - Tests: inject async () => testUserId directly (bypasses auth entirely).
 //
-// All routes are registered under /api (except /health which stays at the root).
+// All routes are registered under /api (except /health and /auth/* which are at root).
 
 import Fastify, { type FastifyRequest } from 'fastify'
 import cors from '@fastify/cors'
+import cookie from '@fastify/cookie'
 import { pool } from './db'
 import * as repos from './db/repos/index'
+import { sessionResolveUserId } from './auth/session-resolver'
 import { healthRoutes } from './routes/health'
+import { authRoutes } from './routes/auth'
 import { occurrenceRoutes } from './routes/occurrences'
 import { itemRoutes } from './routes/items'
 import { sessionRoutes } from './routes/sessions'
@@ -31,19 +33,9 @@ declare module 'fastify' {
   }
 }
 
-// ── Default user (v1 single-user) ─────────────────────────────────────────────
+// ── Public routes excluded from auth preHandler ───────────────────────────────
 
-const DEFAULT_USER_EMAIL = 'default@tracker.local'
-
-async function defaultResolveUserId(_req: FastifyRequest): Promise<string> {
-  const user = await repos.findUserByEmail(pool, DEFAULT_USER_EMAIL)
-  if (!user) {
-    throw new Error(
-      `Default user (${DEFAULT_USER_EMAIL}) not found — run the seed script first.`
-    )
-  }
-  return user.id
-}
+const PUBLIC_PATHS = new Set(['/health', '/auth/login'])
 
 // ── App factory ───────────────────────────────────────────────────────────────
 
@@ -56,17 +48,21 @@ export async function buildApp(
 
   // CORS — permissive in development so the Vite dev server can reach the API
   if (process.env.NODE_ENV !== 'production') {
-    await app.register(cors, { origin: true })
+    await app.register(cors, { origin: true, credentials: true })
   }
+
+  // Cookie parsing — required for session auth
+  await app.register(cookie)
 
   app.decorateRequest('userId', '')
 
   // ── User-context seam (§13.4) ──────────────────────────────────────────────
+  // In production: sessionResolveUserId (validates session cookie → user_id).
+  // In tests: caller injects a resolver that returns the test user_id directly.
 
-  const resolver = resolveUserId ?? defaultResolveUserId
-  // Skip /health — it doesn't need user context and is called by Docker health checks.
+  const resolver = resolveUserId ?? sessionResolveUserId
   app.addHook('preHandler', async (req) => {
-    if ((req.routerPath as string | undefined) === '/health') return
+    if (PUBLIC_PATHS.has(req.routerPath as string)) return
     req.userId = await resolver(req)
   })
 
@@ -75,7 +71,10 @@ export async function buildApp(
   // Health check at root (not under /api — used by Docker health checks)
   await app.register(healthRoutes)
 
-  // GET /me — user info
+  // Auth routes at /auth (login is public; logout + change-password need req.userId)
+  await app.register(authRoutes, { prefix: '/auth' })
+
+  // GET /me — user info (authenticated)
   app.get('/me', async (req, reply) => {
     const user = await repos.findUserById(pool, req.userId)
     return reply.send(user)

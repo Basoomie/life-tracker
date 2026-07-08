@@ -1,26 +1,42 @@
-// Seed script — populates realistic sample data for the default user.
+// Seed script — populates realistic sample data under the first user in the table.
 // From §14.2: Night Routine (daily parent) → MWF Tretinoin child,
 //             4×/week Workout with quota target,
 //             day-trading range item (04:00–06:30),
 //             one-time ad-hoc gaming item.
 // Plus the categories, reasons, buckets, and day-start they need.
 //
-// Idempotent on the default user's email: skips seeding if the user already exists.
+// Idempotent: skips if the user already has categories.
+// Designed to run after bootstrap() so the user exists.
 
 import { Pool } from 'pg'
 import * as repos from './repos/index'
 
-const DEFAULT_USER_EMAIL = 'default@tracker.local'
+export async function seed(pool: Pool, userId?: string): Promise<void> {
+  // ── Find the target user ──────────────────────────────────────────────────
+  let targetUserId = userId
+  if (!targetUserId) {
+    const { rows } = await pool.query<{ id: string }>(
+      `SELECT id FROM users ORDER BY created_at LIMIT 1`
+    )
+    if (!rows[0]) {
+      console.log('[seed] no users found — run bootstrap first, skipping demo data')
+      return
+    }
+    targetUserId = rows[0].id
+  }
 
-export async function seed(pool: Pool): Promise<void> {
-  // ── User ──────────────────────────────────────────────────────────────────
-  let user = await repos.findUserByEmail(pool, DEFAULT_USER_EMAIL)
-  if (user) {
-    console.log(`[seed] default user already exists (${user.id}), skipping`)
+  // Idempotency: skip if already seeded (categories exist for this user)
+  const { rows: catRows } = await pool.query<{ count: string }>(
+    `SELECT COUNT(*) FROM categories WHERE user_id = $1`,
+    [targetUserId]
+  )
+  if (parseInt(catRows[0].count) > 0) {
+    console.log('[seed] demo data already exists, skipping')
     return
   }
-  user = await repos.insertUser(pool, { email: DEFAULT_USER_EMAIL })
-  console.log(`[seed] created user ${user.id}`)
+
+  const user = { id: targetUserId }
+  console.log(`[seed] seeding demo data for user ${user.id}`)
 
   // ── Categories ────────────────────────────────────────────────────────────
   const catHealth  = await repos.insertCategory(pool, { userId: user.id, name: 'Health' })

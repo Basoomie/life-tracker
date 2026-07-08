@@ -24,6 +24,8 @@ export type {
   UpdateBucketBoundariesBody,
   CreateDayStartBody,
   RunBackgroundJobBody,
+  LoginBody,
+  ChangePasswordBody,
   ApiError,
 } from './types/api'
 

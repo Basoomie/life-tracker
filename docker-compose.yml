@@ -11,6 +11,8 @@ services:
       NODE_ENV: production
       PORT: "3000"
       DATABASE_URL: "postgresql://${POSTGRES_USER:?required}:${POSTGRES_PASSWORD:?required}@db:5432/${POSTGRES_DB:?required}"
+      INITIAL_USER_EMAIL: "${INITIAL_USER_EMAIL:?required}"
+      INITIAL_USER_PASSWORD: "${INITIAL_USER_PASSWORD:?required}"
     depends_on:
       db:
         condition: service_healthy

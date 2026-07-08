@@ -10,6 +10,7 @@ import type {
   ItemPrerequisite,
   Occurrence,
   DayStartEntry,
+  User,
   DispositionBody,
   CarryForwardBody,
   StartSessionBody,
@@ -18,11 +19,9 @@ import type {
   UpdateItemBody,
 } from '@tracker/shared'
 
-const BASE = '/api'
-
-async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
+async function typedFetch<T>(url: string, init?: RequestInit): Promise<T> {
   const hasBody = init?.body !== undefined
-  const res = await fetch(`${BASE}${path}`, {
+  const res = await fetch(url, {
     ...init,
     headers: {
       ...(hasBody ? { 'Content-Type': 'application/json' } : {}),
@@ -38,7 +37,33 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json() as Promise<T>
 }
 
+// Routes under /api
+const apiFetch = <T>(path: string, init?: RequestInit) => typedFetch<T>(`/api${path}`, init)
+// Auth routes at /auth/* and /me (not under /api)
+const authFetch = <T>(path: string, init?: RequestInit) => typedFetch<T>(path, init)
+
 export const api = {
+  auth: {
+    me: () => authFetch<User>('/me', { credentials: 'include' }),
+    login: (email: string, password: string) =>
+      authFetch<{ user: User }>('/auth/login', {
+        method: 'POST',
+        body: JSON.stringify({ email, password }),
+        credentials: 'include',
+      }),
+    logout: () =>
+      authFetch<{ ok: boolean }>('/auth/logout', {
+        method: 'POST',
+        credentials: 'include',
+      }),
+    changePassword: (currentPassword: string, newPassword: string) =>
+      authFetch<{ ok: boolean }>('/auth/change-password', {
+        method: 'POST',
+        body: JSON.stringify({ currentPassword, newPassword }),
+        credentials: 'include',
+      }),
+  },
+
   occurrences: {
     today: () =>
       apiFetch<OccurrenceWithState[]>('/occurrences/today'),

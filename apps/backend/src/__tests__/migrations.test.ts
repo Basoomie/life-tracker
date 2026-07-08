@@ -19,6 +19,7 @@ const DB_URL =
 // Tables created by the migrations, in dependency order
 const EXPECTED_TABLES = [
   'users',
+  'auth_sessions',
   'categories',
   'reasons',
   'buckets',
@@ -47,6 +48,7 @@ async function dropAllForTest(pool: Pool): Promise<void> {
   await pool.query(`DROP TABLE IF EXISTS buckets             CASCADE`)
   await pool.query(`DROP TABLE IF EXISTS reasons             CASCADE`)
   await pool.query(`DROP TABLE IF EXISTS categories          CASCADE`)
+  await pool.query(`DROP TABLE IF EXISTS auth_sessions       CASCADE`)
   await pool.query(`DROP TABLE IF EXISTS users               CASCADE`)
   await pool.query(`DROP TABLE IF EXISTS schema_migrations   CASCADE`)
 }

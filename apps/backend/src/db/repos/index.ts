@@ -1,4 +1,5 @@
 export * from './users'
+export * from './auth_sessions'
 export * from './categories'
 export * from './reasons'
 export * from './buckets'

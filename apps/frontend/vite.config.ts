@@ -14,6 +14,7 @@ export default defineConfig({
     proxy: {
       '/health': 'http://127.0.0.1:37801',
       '/api': 'http://127.0.0.1:37801',
+      '/auth': { target: 'http://127.0.0.1:37801', changeOrigin: true },
       '/me': 'http://127.0.0.1:37801',
     },
   },
@@ -22,6 +23,7 @@ export default defineConfig({
     proxy: {
       '/health': 'http://127.0.0.1:37801',
       '/api': 'http://127.0.0.1:37801',
+      '/auth': { target: 'http://127.0.0.1:37801', changeOrigin: true },
       '/me': 'http://127.0.0.1:37801',
     },
   },

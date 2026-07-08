@@ -8,12 +8,19 @@ type Props = {
   onToggleTheme: () => void
   onQuickAdd: () => void
   onNewItem: () => void
+  onLogout: () => void
+  onChangePassword: () => void
+  currentUserEmail: string
   activeView: ViewKey
   onViewChange: (v: ViewKey) => void
   children: ReactNode
 }
 
-export function AppShell({ theme, onToggleTheme, onQuickAdd, onNewItem, activeView, onViewChange, children }: Props) {
+export function AppShell({
+  theme, onToggleTheme, onQuickAdd, onNewItem,
+  onLogout, onChangePassword, currentUserEmail,
+  activeView, onViewChange, children,
+}: Props) {
   return (
     <>
       <header className="app-header">
@@ -46,6 +53,24 @@ export function AppShell({ theme, onToggleTheme, onQuickAdd, onNewItem, activeVi
           >
             + Quick
           </button>
+          <div className="app-header__user">
+            <button
+              className="btn btn--ghost btn--sm"
+              onClick={onChangePassword}
+              aria-label="Change password"
+              data-testid="change-password-btn"
+            >
+              {currentUserEmail}
+            </button>
+            <button
+              className="btn btn--ghost btn--sm"
+              onClick={onLogout}
+              aria-label="Sign out"
+              data-testid="logout-btn"
+            >
+              Sign out
+            </button>
+          </div>
         </div>
       </header>
       <ViewNav active={activeView} onChange={onViewChange} />
