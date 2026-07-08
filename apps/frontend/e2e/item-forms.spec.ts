@@ -116,6 +116,9 @@ const ITEM_HABIT = makeItem({
 // ── Common mock setup ─────────────────────────────────────────────────────────
 
 async function setupBase(page: Page, occurrences: OccurrenceWithState[] = []) {
+  await page.route('/me', (r) =>
+    r.fulfill({ json: { id: 'u1', email: 'test@tracker.local', createdAt: new Date().toISOString() } })
+  )
   await page.route('/api/occurrences/today', (r) => r.fulfill({ json: occurrences }))
   await page.route('/api/buckets',           (r) => r.fulfill({ json: BUCKETS }))
   await page.route('/api/categories',        (r) => r.fulfill({ json: CATEGORIES }))
@@ -350,6 +353,7 @@ test.describe('§4c-ii — Full-edit progressive disclosure', () => {
   // Helper: open the full-edit form via the edit button on an occurrence row
   async function openFullEditForItem(page: Page, item: Item) {
     const occ = makeOcc({ id: `occ-${item.id}`, itemId: item.id, name: item.name })
+    await page.route('/me', (r) => r.fulfill({ json: { id: 'u1', email: 'test@tracker.local', createdAt: new Date().toISOString() } }))
     await page.route('/api/occurrences/today', (r) => r.fulfill({ json: [occ] }))
     await page.route('/api/buckets',           (r) => r.fulfill({ json: BUCKETS }))
     await page.route('/api/categories',        (r) => r.fulfill({ json: CATEGORIES }))
@@ -524,6 +528,7 @@ test.describe('§4.2 / §4c-ii — Prerequisites in full-edit', () => {
 
   test('§4.2 / §4c-ii prereq picker excludes habits; includes only tasks', async ({ page }) => {
     await page.clock.setFixedTime(new Date('2026-07-07T08:00:00'))
+    await page.route('/me', (r) => r.fulfill({ json: { id: 'u1', email: 'test@tracker.local', createdAt: new Date().toISOString() } }))
 
     const occ = makeOcc({ id: 'occ-t', itemId: 'item-task', name: 'Morning Run' })
     await page.route('/api/occurrences/today', (r) => r.fulfill({ json: [occ] }))
@@ -564,6 +569,7 @@ test.describe('§4.2 / §4c-ii — Prerequisites in full-edit', () => {
 
   test('§4.2 / §4c-ii cycle-forming edge is rejected and error shown clearly', async ({ page }) => {
     await page.clock.setFixedTime(new Date('2026-07-07T08:00:00'))
+    await page.route('/me', (r) => r.fulfill({ json: { id: 'u1', email: 'test@tracker.local', createdAt: new Date().toISOString() } }))
 
     const occ = makeOcc({ id: 'occ-t2', itemId: 'item-task', name: 'Morning Run' })
     await page.route('/api/occurrences/today', (r) => r.fulfill({ json: [occ] }))
@@ -623,6 +629,7 @@ test.describe('§4c-ii — Full-edit: parent nesting, disposition, edit mode', (
 
   async function openEditForm(page: Page, item: Item, allItems: Item[] = [item]) {
     const occ = makeOcc({ id: `occ-${item.id}`, itemId: item.id, name: item.name })
+    await page.route('/me', (r) => r.fulfill({ json: { id: 'u1', email: 'test@tracker.local', createdAt: new Date().toISOString() } }))
     await page.route('/api/occurrences/today', (r) => r.fulfill({ json: [occ] }))
     await page.route('/api/buckets',     (r) => r.fulfill({ json: BUCKETS }))
     await page.route('/api/categories',  (r) => r.fulfill({ json: CATEGORIES }))

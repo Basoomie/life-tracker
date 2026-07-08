@@ -28,8 +28,8 @@ services:
     image: postgres:16-alpine
     restart: unless-stopped
     ports:
-      # Exposed so the backend can run locally (outside Docker) against the same Postgres.
-      # Useful for running integration tests and the migration CLI from the host.
+      # Dev convenience: exposes Postgres on the host for local backend runs and integration tests.
+      # Optional in production — comment out this block if direct host DB access is not needed.
       - "${POSTGRES_HOST_PORT:-5432}:5432"
     environment:
       POSTGRES_DB: ${POSTGRES_DB:?required}
@@ -42,6 +42,25 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+
+  backup:
+    container_name: tracker_backup
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      PGHOST: db
+      PGDATABASE: ${POSTGRES_DB:?required}
+      PGUSER: ${POSTGRES_USER:?required}
+      PGPASSWORD: ${POSTGRES_PASSWORD:?required}
+      BACKUP_SCHEDULE: "${BACKUP_SCHEDULE:-0 3 * * *}"
+      BACKUP_KEEP_DAYS: "${BACKUP_KEEP_DAYS:-14}"
+    volumes:
+      - ${BACKUP_DIR:-./backups}:/backups
+      - ./scripts/backup-entrypoint.sh:/entrypoint.sh:ro
+    entrypoint: ["/bin/sh", "/entrypoint.sh"]
+    depends_on:
+      db:
+        condition: service_healthy
 
 volumes:
   tracker_db_data:

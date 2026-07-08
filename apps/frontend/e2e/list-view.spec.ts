@@ -116,6 +116,9 @@ async function setupApiMocks(
   todayOccs: OccurrenceWithState[],
   buckets: Bucket[] = BUCKETS
 ) {
+  await page.route('/me', (route) =>
+    route.fulfill({ json: { id: 'u1', email: 'test@tracker.local', createdAt: new Date().toISOString() } })
+  )
   // Mock range endpoint (used by List view)
   await page.route(/\/api\/occurrences\?start=.*&end=.*/, (route) =>
     route.fulfill({ json: todayOccs })
@@ -129,6 +132,7 @@ async function setupApiMocks(
 }
 
 async function goToListView(page: Page) {
+  await page.route('/me', (r) => r.fulfill({ json: { id: 'u1', email: 'test@tracker.local', createdAt: new Date().toISOString() } }))
   await page.goto('/')
   await page.getByTestId('view-nav-list').click()
   await expect(page.getByTestId('list-view')).toBeVisible()
@@ -220,6 +224,7 @@ test.describe('§12.3 — List view', () => {
 
   test('§12.3 List view: range switch refetches occurrences for the new range', async ({ page }) => {
     await page.clock.setFixedTime(new Date('2025-06-16T09:00:00'))
+    await page.route('/me', (r) => r.fulfill({ json: { id: 'u1', email: 'test@tracker.local', createdAt: new Date().toISOString() } }))
 
     const fetchedRanges: string[] = []
     await page.route(/\/api\/occurrences\?start=.*&end=.*/, (route) => {
@@ -526,6 +531,7 @@ test.describe('§3 — Archive / delete task (List view)', () => {
 
   test('§3 confirming delete in List view calls DELETE and removes the task', async ({ page }) => {
     await page.clock.setFixedTime(new Date('2025-06-16T09:00:00'))
+    await page.route('/me', (r) => r.fulfill({ json: { id: 'u1', email: 'test@tracker.local', createdAt: new Date().toISOString() } }))
 
     let archived = false
     await page.route(/\/api\/occurrences\?start=.*&end=.*/, (route) =>

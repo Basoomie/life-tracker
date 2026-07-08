@@ -37,6 +37,9 @@ type MockState = {
 }
 
 async function setupMocks(page: Page, state: MockState) {
+  await page.route('/me', (route) =>
+    route.fulfill({ json: { id: 'u1', email: 'test@tracker.local', createdAt: new Date().toISOString() } })
+  )
   // Standard routes the app hits on load
   await page.route('/api/occurrences/today', (route) => route.fulfill({ json: [] }))
   await page.route('/api/preferences', (route) => route.fulfill({ json: {} }))

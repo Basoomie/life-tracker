@@ -126,6 +126,9 @@ async function setupApiMocks(
   occurrences: OccurrenceWithState[],
   buckets: Bucket[] = BUCKETS
 ) {
+  await page.route('/me', (route) =>
+    route.fulfill({ json: { id: 'u1', email: 'test@tracker.local', createdAt: new Date().toISOString() } })
+  )
   await page.route('/api/occurrences/today', (route) =>
     route.fulfill({ json: occurrences })
   )
@@ -195,6 +198,7 @@ test.describe('§12.2 — Now view tier ordering and rendering', () => {
 
   test('§6.1 completing a child updates parent derived % live', async ({ page }) => {
     await page.clock.setFixedTime(new Date('2025-06-16T22:00:00'))
+    await page.route('/me', (r) => r.fulfill({ json: { id: 'u1', email: 'test@tracker.local', createdAt: new Date().toISOString() } }))
 
     const completedTret: OccurrenceWithState = {
       ...TRETINOIN_OCC,
@@ -364,6 +368,7 @@ test.describe('§12.2 — Now view tier ordering and rendering', () => {
 
   test('§11 light/dark toggle persists via backend preference (truth) and cookie render hint', async ({ page }) => {
     await page.clock.setFixedTime(new Date('2025-06-16T05:00:00'))
+    await page.route('/me', (r) => r.fulfill({ json: { id: 'u1', email: 'test@tracker.local', createdAt: new Date().toISOString() } }))
 
     // Simulate backend persistence: GET returns whatever was last PUT
     let savedTheme: string | null = null
@@ -521,6 +526,7 @@ test.describe('§9.3 — Timer persistence across navigation', () => {
 
   test('§9.3 running timer survives navigating away and back to Now view', async ({ page }) => {
     await page.clock.setFixedTime(new Date('2025-06-16T05:00:00'))
+    await page.route('/me', (r) => r.fulfill({ json: { id: 'u1', email: 'test@tracker.local', createdAt: new Date().toISOString() } }))
 
     // Set up both Now and List view endpoints
     await page.route('/api/occurrences/today', (route) => route.fulfill({ json: [TRADING_OCC] }))
@@ -599,6 +605,7 @@ test.describe('§3 — Archive / delete task (Now view)', () => {
 
   test('§3 confirming delete calls DELETE /items/:id and removes the task', async ({ page }) => {
     await page.clock.setFixedTime(new Date('2025-06-16T22:00:00'))
+    await page.route('/me', (r) => r.fulfill({ json: { id: 'u1', email: 'test@tracker.local', createdAt: new Date().toISOString() } }))
 
     let archived = false
     await page.route('/api/occurrences/today', (route) =>

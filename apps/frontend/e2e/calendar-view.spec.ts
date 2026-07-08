@@ -133,6 +133,9 @@ async function setupCalApiMocks(
   buckets: Bucket[] = BUCKETS,
   dayStartEntries = DAY_START_ENTRIES
 ) {
+  await page.route('/me', (route) =>
+    route.fulfill({ json: { id: 'u1', email: 'test@tracker.local', createdAt: new Date().toISOString() } })
+  )
   await page.route(/\/api\/occurrences\?start=.*&end=.*/, (route) =>
     route.fulfill({ json: occs })
   )
@@ -145,6 +148,7 @@ async function setupCalApiMocks(
 }
 
 async function goToCalendarView(page: Page) {
+  await page.route('/me', (r) => r.fulfill({ json: { id: 'u1', email: 'test@tracker.local', createdAt: new Date().toISOString() } }))
   await page.goto('/')
   await page.getByTestId('view-nav-calendar').click()
   await expect(page.getByTestId('calendar-view')).toBeVisible()
@@ -603,6 +607,7 @@ test.describe('§3 — Archive / delete task (Calendar view)', () => {
 
   test('§3 confirming delete in Calendar view calls DELETE and removes the task', async ({ page }) => {
     await page.clock.setFixedTime(new Date('2025-06-16T07:00:00'))
+    await page.route('/me', (r) => r.fulfill({ json: { id: 'u1', email: 'test@tracker.local', createdAt: new Date().toISOString() } }))
 
     let archived = false
     await page.route(/\/api\/occurrences\?start=.*&end=.*/, (route) =>
