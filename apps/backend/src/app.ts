@@ -33,9 +33,17 @@ declare module 'fastify' {
   }
 }
 
-// ── Public routes excluded from auth preHandler ───────────────────────────────
+// ── Auth guard: only protect routes that need a user identity ────────────────
+// Everything else (health, static files, 404→index.html) is implicitly public.
+// /auth/login is the only /auth/* route that is public.
 
-const PUBLIC_PATHS = new Set(['/health', '/auth/login'])
+function requiresAuth(routerPath: string | undefined): boolean {
+  if (!routerPath) return false  // unmatched route (404) — no route to protect
+  if (routerPath === '/me') return true
+  if (routerPath.startsWith('/api')) return true
+  if (routerPath.startsWith('/auth') && routerPath !== '/auth/login') return true
+  return false
+}
 
 // ── App factory ───────────────────────────────────────────────────────────────
 
@@ -62,7 +70,7 @@ export async function buildApp(
 
   const resolver = resolveUserId ?? sessionResolveUserId
   app.addHook('preHandler', async (req) => {
-    if (PUBLIC_PATHS.has(req.routerPath as string)) return
+    if (!requiresAuth(req.routerPath as string)) return
     req.userId = await resolver(req)
   })
 
