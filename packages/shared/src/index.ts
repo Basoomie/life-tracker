@@ -77,4 +77,13 @@ export type {
   AdHocShareFinding,
   ProcrastinationFinding,
   DataQualityFinding,
+  Layer2Estimator,
+  SufficiencyStatus,
+  DayOfWeekScopeStatus,
+  ContextStabilityFinding,
+  AutocorrelationFinding,
+  TrajectoryFinding,
+  DayOfWeekFinding,
+  TwoConditionFinding,
+  Layer2Finding,
 } from './types/stats'
