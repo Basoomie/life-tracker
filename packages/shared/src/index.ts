@@ -64,3 +64,17 @@ export {
   buildParentCompletionState,
 } from './domain/index'
 export type { LeafCompletionState, ParentCompletionState } from './domain/index'
+
+export type {
+  DateWindow,
+  LeafAdherenceFinding,
+  ChildAdherenceFinding,
+  ParentAdherenceFinding,
+  AdherenceFinding,
+  StreakFinding,
+  SessionDistributionEntry,
+  TimeStatsFinding,
+  AdHocShareFinding,
+  ProcrastinationFinding,
+  DataQualityFinding,
+} from './types/stats'

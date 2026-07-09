@@ -153,6 +153,27 @@ export async function isItemEverCompleted(
   return rows[0].pct >= 100
 }
 
+// Bulk: occurrences for a set of item IDs within an inclusive date range.
+// Used by the stats observation layer to fetch parent + child occurrences in one shot.
+export async function findOccurrencesByItemsInRange(
+  pool: Pool,
+  itemIds: string[],
+  userId: string,
+  startDay: string,
+  endDay: string
+): Promise<Occurrence[]> {
+  if (itemIds.length === 0) return []
+  const { rows } = await pool.query<OccurrenceRow>(
+    `SELECT * FROM occurrences
+     WHERE user_id = $1
+       AND item_id = ANY($2::uuid[])
+       AND applies_to_day >= $3 AND applies_to_day <= $4
+     ORDER BY applies_to_day, item_id`,
+    [userId, itemIds, startDay, endDay]
+  )
+  return rows.map(toOccurrence)
+}
+
 // §5.3 — Delete future occurrences for an item that have no events attached.
 // Used during template edit: frozen past rows and rows already touched by events
 // are left in place; the rest are wiped so they can be re-materialized with the

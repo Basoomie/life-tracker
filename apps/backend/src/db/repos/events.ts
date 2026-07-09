@@ -118,6 +118,181 @@ export async function findEventsBySessionId(
   return rows.map(toEvent)
 }
 
+// Bulk: events for a set of occurrence IDs, grouped by occurrenceId.
+// Used by the stats observation layer to avoid N+1 queries across a window.
+export async function findEventsByOccurrenceIds(
+  pool: Pool,
+  occurrenceIds: string[],
+  userId: string
+): Promise<Map<string, TrackerEvent[]>> {
+  if (occurrenceIds.length === 0) return new Map()
+  const { rows } = await pool.query<EventRow>(
+    `SELECT * FROM events
+     WHERE occurrence_id = ANY($1::uuid[]) AND user_id = $2
+     ORDER BY occurrence_id, recorded_at`,
+    [occurrenceIds, userId]
+  )
+  const result = new Map<string, TrackerEvent[]>()
+  for (const row of rows) {
+    const occId = row.occurrence_id!
+    if (!result.has(occId)) result.set(occId, [])
+    result.get(occId)!.push(toEvent(row))
+  }
+  return result
+}
+
+// ── Session reconstruction ────────────────────────────────────────────────────
+
+export type SessionSummaryRow = {
+  sessionId: string
+  itemId: string
+  appliesToDay: string
+  durationMin: number
+  startedAt: Date
+  source: 'live' | 'manual'
+}
+
+type RawSessionEventRow = {
+  event_type: string
+  recorded_at: Date
+  applies_to_day: string
+  item_id: string
+  payload: Record<string, unknown>
+}
+
+// Reconstruct completed sessions from the event log for a date window.
+// Live sessions: session_started + session_stopped pair (incomplete omitted).
+// Manual sessions: latest session_created or session_edited per sessionId.
+// Optionally filtered to a single item.
+export async function findSessionSummaries(
+  pool: Pool,
+  userId: string,
+  startDay: string,
+  endDay: string,
+  itemId?: string
+): Promise<SessionSummaryRow[]> {
+  const params: (string | null)[] = [userId, startDay, endDay]
+  let extra = ''
+  if (itemId) {
+    params.push(itemId)
+    extra = ` AND item_id = $${params.length}`
+  }
+
+  const { rows } = await pool.query<RawSessionEventRow>(
+    `SELECT event_type, recorded_at, applies_to_day, item_id, payload
+     FROM events
+     WHERE user_id = $1
+       AND applies_to_day >= $2 AND applies_to_day <= $3
+       AND event_type IN ('session_started','session_stopped','session_created','session_edited')
+       ${extra}
+     ORDER BY recorded_at`,
+    params
+  )
+
+  // Group events by sessionId
+  const bySession = new Map<string, RawSessionEventRow[]>()
+  for (const row of rows) {
+    const sid = row.payload['sessionId'] as string
+    if (!bySession.has(sid)) bySession.set(sid, [])
+    bySession.get(sid)!.push(row)
+  }
+
+  const results: SessionSummaryRow[] = []
+  for (const [sessionId, events] of bySession) {
+    const startEvent = events.find(e => e.event_type === 'session_started')
+    const stopEvent  = events.find(e => e.event_type === 'session_stopped')
+    const manualEvents = events.filter(
+      e => e.event_type === 'session_created' || e.event_type === 'session_edited'
+    )
+
+    if (startEvent && stopEvent) {
+      results.push({
+        sessionId,
+        itemId: startEvent.item_id,
+        appliesToDay: startEvent.applies_to_day,
+        durationMin: stopEvent.payload['durationMin'] as number,
+        startedAt: startEvent.recorded_at,
+        source: 'live',
+      })
+    } else if (manualEvents.length > 0) {
+      // Latest manual event for this sessionId wins
+      const latest = manualEvents[manualEvents.length - 1]
+      const p = latest.payload as { sessionId: string; startedAt: string; durationMin: number }
+      results.push({
+        sessionId,
+        itemId: latest.item_id,
+        appliesToDay: latest.applies_to_day,
+        durationMin: p.durationMin,
+        startedAt: new Date(p.startedAt),
+        source: 'manual',
+      })
+    }
+    // Incomplete live sessions (started but not stopped) are intentionally skipped
+  }
+
+  return results
+}
+
+// Reschedule events for a date window (stats: procrastination counting).
+export async function findRescheduleEventsByRange(
+  pool: Pool,
+  userId: string,
+  startDay: string,
+  endDay: string,
+  itemId?: string
+): Promise<Array<{ originalDay: string; newDay: string; recordedAt: Date; reasonId: string | null }>> {
+  const params: (string | null)[] = [userId, startDay, endDay]
+  let extra = ''
+  if (itemId) {
+    params.push(itemId)
+    extra = ` AND item_id = $${params.length}`
+  }
+  const { rows } = await pool.query<{ applies_to_day: string; recorded_at: Date; payload: Record<string, unknown> }>(
+    `SELECT applies_to_day, recorded_at, payload
+     FROM events
+     WHERE user_id = $1
+       AND applies_to_day >= $2 AND applies_to_day <= $3
+       AND event_type = 'rescheduled'
+       ${extra}
+     ORDER BY recorded_at`,
+    params
+  )
+  return rows.map(r => ({
+    originalDay: r.applies_to_day,
+    newDay: r.payload['newDay'] as string,
+    recordedAt: r.recorded_at,
+    reasonId: (r.payload['reasonId'] as string | null) ?? null,
+  }))
+}
+
+// Retroactive completions in a date window (stats: backfill lateness).
+// Each row is a retroactive_completion event whose applies_to_day is in the window.
+export async function findRetroactiveCompletionsByRange(
+  pool: Pool,
+  userId: string,
+  startDay: string,
+  endDay: string,
+  itemId?: string
+): Promise<Array<{ day: string; recordedAt: Date; itemId: string }>> {
+  const params: (string | null)[] = [userId, startDay, endDay]
+  let extra = ''
+  if (itemId) {
+    params.push(itemId)
+    extra = ` AND item_id = $${params.length}`
+  }
+  const { rows } = await pool.query<{ applies_to_day: string; recorded_at: Date; item_id: string }>(
+    `SELECT applies_to_day, recorded_at, item_id
+     FROM events
+     WHERE user_id = $1
+       AND applies_to_day >= $2 AND applies_to_day <= $3
+       AND event_type = 'retroactive_completion'
+       ${extra}
+     ORDER BY applies_to_day`,
+    params
+  )
+  return rows.map(r => ({ day: r.applies_to_day, recordedAt: r.recorded_at, itemId: r.item_id }))
+}
+
 // Config-level events (no item, no occurrence), e.g. category changes, day-start
 export async function findConfigEvents(
   pool: Pool,
