@@ -7,6 +7,9 @@ docs/
 # Frontend build output
 apps/frontend/dist/
 
+# Local Postgres backup dumps (tracker_backup service; §11 DEPLOYMENT.md)
+backups/
+
 # Test output
 test-results/
 playwright-report/
