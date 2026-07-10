@@ -1,98 +1,186 @@
-// v2 §9.2 "fails safe under model substitution" / §9.6 Category 4 — llm-client.ts.
-// Determinism: the real Anthropic client is never constructed in these tests — every
-// test injects a fake client, so there is zero live network access, per §CLAUDE.md's
-// anti-flake rule and §9.6 Category 4's "no live model calls in CI".
+// v2 §CLAUDE.md v2 rule 11 / §9.2 / §9.6 Category 4 — llm-client.ts: the thin dispatcher.
+// Per-adapter behavior (tool-calling, JSON-mode fallback, fails-safe) is tested in
+// __tests__/review/llm/{anthropic-adapter,openai-compatible-adapter}.test.ts — this file
+// covers provider SELECTION and the guarantees that must hold regardless of provider.
 
 import { describe, it, expect, vi } from 'vitest'
-import { callReviewLLM, type ReviewLLMClient } from '../../review/llm-client'
+import * as fs from 'fs'
+import * as path from 'path'
+import { callReviewLLM } from '../../review/llm-client'
 import { buildPrompt } from '../../review/prompt-builder'
+import { verifyRecommendations } from '../../review/verification'
+import type { LLMAdapter } from '../../review/llm/types'
+import type { ReleasedEvidence, ReleasedFinding } from '../../review/types'
 
 const WINDOW = { startDay: '2026-01-01', endDay: '2026-01-07' }
 const PROMPT = buildPrompt({ cadence: 'weekly', window: WINDOW, facts: [], evidence: [], feedForward: [] })
 
-function fakeClient(response: unknown): ReviewLLMClient {
-  return { messages: { create: vi.fn(async () => response as never) } }
+function fakeAdapter(result: unknown): LLMAdapter {
+  return { generateRecommendations: vi.fn(async () => result as never) }
 }
 
-describe('§9.2 model configurability — REVIEW_LLM_MODEL is read, never hardcoded', () => {
-  it('passes the configured model through to the API call', async () => {
-    const create = vi.fn(async () => ({ content: [{ type: 'tool_use', input: { narrative: '', recommendations: [] } }] }))
-    await callReviewLLM(PROMPT, { client: { messages: { create } }, model: 'claude-haiku-4-5' })
-    expect(create).toHaveBeenCalledWith(expect.objectContaining({ model: 'claude-haiku-4-5' }))
+describe('§CLAUDE.md v2 rule 11 — provider is selected by env, defaulting to anthropic', () => {
+  it('an injected adapter overrides provider resolution entirely', async () => {
+    const adapter = fakeAdapter({ narrative: 'via injected adapter', recommendations: [] })
+    const result = await callReviewLLM(PROMPT, { adapter })
+    expect(result.narrative).toBe('via injected adapter')
+    expect(adapter.generateRecommendations).toHaveBeenCalledWith(PROMPT)
   })
 
-  it('falls back to REVIEW_LLM_MODEL env var, then to a sane default, when no model is injected', async () => {
-    const create = vi.fn(async () => ({ content: [{ type: 'tool_use', input: { narrative: '', recommendations: [] } }] }))
-    const original = process.env.REVIEW_LLM_MODEL
-    process.env.REVIEW_LLM_MODEL = 'claude-sonnet-5'
+  it('provider: "anthropic" dispatches to the Anthropic adapter (verified via its injected client)', async () => {
+    const create = vi.fn(async () => ({ content: [{ type: 'tool_use', input: { narrative: 'anthropic path', recommendations: [] } }] }))
+    const result = await callReviewLLM(PROMPT, { provider: 'anthropic', anthropic: { client: { messages: { create } } } })
+    expect(result.narrative).toBe('anthropic path')
+    expect(create).toHaveBeenCalled()
+  })
+
+  it('provider: "openai-compatible" dispatches to that adapter (verified via its injected fetch)', async () => {
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({
+      choices: [{ message: { tool_calls: [{ function: { arguments: JSON.stringify({ narrative: 'openai-compatible path', recommendations: [] }) } }] } }],
+    }), { status: 200 }))
+    const result = await callReviewLLM(PROMPT, {
+      provider: 'openai-compatible',
+      openaiCompatible: { baseURL: 'http://localhost:11434/v1', fetchImpl: fetchImpl as unknown as typeof fetch },
+    })
+    expect(result.narrative).toBe('openai-compatible path')
+    expect(fetchImpl).toHaveBeenCalled()
+  })
+
+  it('an unrecognized provider fails CLEARLY — it rejects, it does not silently fall back to anthropic', async () => {
+    await expect(callReviewLLM(PROMPT, { provider: 'not-a-real-provider' as never })).rejects.toThrow(/Unknown REVIEW_LLM_PROVIDER/)
+  })
+
+  it('reads REVIEW_LLM_PROVIDER from the environment when not overridden by deps', async () => {
+    const original = process.env.REVIEW_LLM_PROVIDER
+    process.env.REVIEW_LLM_PROVIDER = 'openai-compatible'
     try {
-      await callReviewLLM(PROMPT, { client: { messages: { create } } })
-      expect(create).toHaveBeenCalledWith(expect.objectContaining({ model: 'claude-sonnet-5' }))
+      const fetchImpl = vi.fn(async () => new Response(JSON.stringify({
+        choices: [{ message: { tool_calls: [{ function: { arguments: JSON.stringify({ narrative: 'from env', recommendations: [] }) } }] } }],
+      }), { status: 200 }))
+      const result = await callReviewLLM(PROMPT, { openaiCompatible: { baseURL: 'http://localhost:11434/v1', fetchImpl: fetchImpl as unknown as typeof fetch } })
+      expect(result.narrative).toBe('from env')
     } finally {
-      if (original === undefined) delete process.env.REVIEW_LLM_MODEL
-      else process.env.REVIEW_LLM_MODEL = original
+      if (original === undefined) delete process.env.REVIEW_LLM_PROVIDER
+      else process.env.REVIEW_LLM_PROVIDER = original
+    }
+  })
+})
+
+describe('§CLAUDE.md v2 rule 1 follow-up — the engine has no provider wire-format leakage', () => {
+  const engineFiles = [
+    '../../review/generate.ts',
+    '../../review/prompt-builder.ts',
+    '../../review/verification.ts',
+    '../../review/render.ts',
+    '../../review/schedule.ts',
+    '../../review/feed-forward.ts',
+    '../../review/llm/types.ts',
+    '../../review/llm-client.ts',
+  ]
+  const wireFormatTerms = ['tool_use', 'input_schema', 'function_call', 'tool_choice']
+
+  it.each(engineFiles)('%s never mentions a provider wire-format term in actual code', (file) => {
+    const src = fs.readFileSync(path.resolve(__dirname, file), 'utf8')
+    // Strip full-line comments — this test is about the CODE, not about being able to
+    // discuss the constraint in a doc comment (which several of these files do, by name,
+    // to explain why the constraint exists).
+    const code = src
+      .split('\n')
+      .filter((line) => !line.trimStart().startsWith('//'))
+      .join('\n')
+    for (const term of wireFormatTerms) {
+      expect(code, `${file} should not mention "${term}" outside of comments`).not.toContain(term)
+    }
+  })
+})
+
+describe('§9.2 — missing API key fails only the review call, never app boot', () => {
+  it('the app builds successfully with no LLM provider, model, base URL, or API key configured', async () => {
+    const saved = {
+      REVIEW_LLM_PROVIDER: process.env.REVIEW_LLM_PROVIDER,
+      REVIEW_LLM_MODEL: process.env.REVIEW_LLM_MODEL,
+      REVIEW_LLM_BASE_URL: process.env.REVIEW_LLM_BASE_URL,
+      ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
+      REVIEW_LLM_API_KEY: process.env.REVIEW_LLM_API_KEY,
+    }
+    delete process.env.REVIEW_LLM_PROVIDER
+    delete process.env.REVIEW_LLM_MODEL
+    delete process.env.REVIEW_LLM_BASE_URL
+    delete process.env.ANTHROPIC_API_KEY
+    delete process.env.REVIEW_LLM_API_KEY
+    try {
+      const { buildApp } = await import('../../app')
+      const app = await buildApp(async () => 'test-user-id')
+      expect(app).toBeDefined()
+      await app.close()
+    } finally {
+      for (const [key, value] of Object.entries(saved)) {
+        if (value === undefined) delete process.env[key]
+        else process.env[key] = value
+      }
     }
   })
 
-  it('forces the emit_review tool via tool_choice — the model cannot respond with free text instead', async () => {
-    const create = vi.fn(async (_params: unknown) => ({ content: [{ type: 'tool_use', input: { narrative: '', recommendations: [] } }] }))
-    await callReviewLLM(PROMPT, { client: { messages: { create } } })
-    const params = create.mock.calls[0][0] as { tool_choice: { type: string; name: string } }
-    expect(params.tool_choice).toEqual({ type: 'tool', name: 'emit_review' })
+  it('a missing ANTHROPIC_API_KEY degrades the anthropic adapter to empty output, not a crash', async () => {
+    const original = process.env.ANTHROPIC_API_KEY
+    delete process.env.ANTHROPIC_API_KEY
+    try {
+      // No client injected: this constructs a real (keyless) Anthropic client and lets
+      // the SDK's own auth-resolution failure surface — caught internally by the
+      // adapter's fails-safe try/catch, same as any other transport/API error.
+      const result = await callReviewLLM(PROMPT, { provider: 'anthropic' })
+      expect(result).toEqual({ narrative: '', recommendations: [] })
+    } finally {
+      if (original === undefined) delete process.env.ANTHROPIC_API_KEY
+      else process.env.ANTHROPIC_API_KEY = original
+    }
   })
 })
 
-describe('§9.2 "fails safe under model substitution" — malformed / missing output degrades gracefully, never throws', () => {
-  it('no tool_use block at all (model answered in plain text instead) yields empty output', async () => {
-    const client = fakeClient({ content: [{ type: 'text', text: 'sorry, I will just talk instead' }] })
-    const result = await callReviewLLM(PROMPT, { client })
-    expect(result).toEqual({ narrative: '', recommendations: [] })
+describe('§9.4 gate still holds through the new client layer, for every adapter', () => {
+  const evidence: ReleasedEvidence[] = [{
+    id: 'ev-real', claim: 'real claim', mechanism: 'real mechanism',
+    sourceIdentifier: '23211256', sourceIdentifierType: 'pmid', evidenceQuality: 'observational',
+    groundedJustification: 'real justification',
+  }]
+  const facts: ReleasedFinding[] = []
+
+  it('a fabricated source_identifier from the anthropic adapter is dropped before prose', async () => {
+    const create = vi.fn(async () => ({
+      content: [{ type: 'tool_use', input: { narrative: '', recommendations: [{ evidenceEntryId: 'ev-FABRICATED', recommendationText: 'x', confidence: 'high', targetedMetricFactId: null }] } }],
+    }))
+    const raw = await callReviewLLM(PROMPT, { provider: 'anthropic', anthropic: { client: { messages: { create } } } })
+    const verified = verifyRecommendations(raw.recommendations, evidence, facts)
+    expect(verified).toEqual([])
   })
 
-  it('a tool_use block with a non-object input yields empty output', async () => {
-    const client = fakeClient({ content: [{ type: 'tool_use', input: 'not an object' }] })
-    const result = await callReviewLLM(PROMPT, { client })
-    expect(result).toEqual({ narrative: '', recommendations: [] })
+  it('a fabricated source_identifier from the openai-compatible adapter (tool-calling path) is dropped before prose', async () => {
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({
+      choices: [{ message: { tool_calls: [{ function: { arguments: JSON.stringify({ narrative: '', recommendations: [{ evidenceEntryId: 'ev-FABRICATED', recommendationText: 'x', confidence: 'high', targetedMetricFactId: null }] }) } }] } }],
+    }), { status: 200 }))
+    const raw = await callReviewLLM(PROMPT, { provider: 'openai-compatible', openaiCompatible: { baseURL: 'http://localhost:11434/v1', fetchImpl: fetchImpl as unknown as typeof fetch } })
+    const verified = verifyRecommendations(raw.recommendations, evidence, facts)
+    expect(verified).toEqual([])
   })
 
-  it('recommendations missing required fields are dropped individually, not the whole response', async () => {
-    const client = fakeClient({
-      content: [{
-        type: 'tool_use',
-        input: {
-          narrative: 'Adherence looks steady this week.',
-          recommendations: [
-            { evidenceEntryId: 'ev-1', recommendationText: 'Anchor it to a fixed time', confidence: 'medium', targetedMetricFactId: null },
-            { evidenceEntryId: 'ev-2', recommendationText: 'missing confidence field', targetedMetricFactId: null },
-            { recommendationText: 'missing evidenceEntryId', confidence: 'low', targetedMetricFactId: null },
-          ],
-        },
-      }],
-    })
-    const result = await callReviewLLM(PROMPT, { client })
-    expect(result.narrative).toBe('Adherence looks steady this week.')
-    expect(result.recommendations).toHaveLength(1)
-    expect(result.recommendations[0].evidenceEntryId).toBe('ev-1')
+  it('a fabricated source_identifier from the openai-compatible adapter (JSON-mode fallback path) is dropped before prose', async () => {
+    const fetchImpl = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: {} }] }), { status: 200 })) // tool calling unsupported
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        choices: [{ message: { content: JSON.stringify({ narrative: '', recommendations: [{ evidenceEntryId: 'ev-FABRICATED', recommendationText: 'x', confidence: 'high', targetedMetricFactId: null }] }) } }],
+      }), { status: 200 }))
+    const raw = await callReviewLLM(PROMPT, { provider: 'openai-compatible', openaiCompatible: { baseURL: 'http://localhost:11434/v1', fetchImpl: fetchImpl as unknown as typeof fetch } })
+    const verified = verifyRecommendations(raw.recommendations, evidence, facts)
+    expect(verified).toEqual([])
   })
 
-  it('a thrown network/API error degrades to empty output rather than propagating', async () => {
-    const client: ReviewLLMClient = { messages: { create: vi.fn(async () => { throw new Error('network down') }) } }
-    const result = await callReviewLLM(PROMPT, { client })
-    expect(result).toEqual({ narrative: '', recommendations: [] })
-  })
-
-  it('a non-string narrative field falls back to an empty string rather than propagating garbage', async () => {
-    const client = fakeClient({ content: [{ type: 'tool_use', input: { narrative: 12345, recommendations: [] } }] })
-    const result = await callReviewLLM(PROMPT, { client })
-    expect(result.narrative).toBe('')
-  })
-})
-
-describe('§CLAUDE.md determinism — same mocked input, same output, every time', () => {
-  it('two calls with identical mocked responses produce identical parsed output', async () => {
-    const response = { content: [{ type: 'tool_use', input: { narrative: 'steady', recommendations: [] } }] }
-    const r1 = await callReviewLLM(PROMPT, { client: fakeClient(response) })
-    const r2 = await callReviewLLM(PROMPT, { client: fakeClient(response) })
-    expect(r1).toEqual(r2)
+  it('a legitimate source_identifier from any adapter still survives verification (the gate isn\'t over-tightened)', async () => {
+    const create = vi.fn(async () => ({
+      content: [{ type: 'tool_use', input: { narrative: '', recommendations: [{ evidenceEntryId: 'ev-real', recommendationText: 'x', confidence: 'high', targetedMetricFactId: null }] } }],
+    }))
+    const raw = await callReviewLLM(PROMPT, { provider: 'anthropic', anthropic: { client: { messages: { create } } } })
+    const verified = verifyRecommendations(raw.recommendations, evidence, facts)
+    expect(verified).toHaveLength(1)
+    expect(verified[0].sourceIdentifier).toBe('23211256')
   })
 })

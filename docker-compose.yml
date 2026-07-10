@@ -17,12 +17,19 @@ services:
       NCBI_EUTILS_BASE_URL: "${NCBI_EUTILS_BASE_URL:-}"
       NCBI_API_KEY: "${NCBI_API_KEY:-}"
       NCBI_REQUEST_TIMEOUT_MS: "${NCBI_REQUEST_TIMEOUT_MS:-}"
-      # v2 §9.2 / §CLAUDE.md v2 rule 11 — model choice is configurable, never frozen in code.
-      # Optional: review generation is admin-triggered (not on the app's critical boot
-      # path), so a missing ANTHROPIC_API_KEY does not block startup — it only fails the
-      # specific /admin/generate-reviews call, cleanly, until a key is set.
+      # v2 §9.2 / §CLAUDE.md v2 rule 11 — provider-neutral, model choice never frozen in
+      # code. Optional: review generation is admin-triggered (not on the app's critical
+      # boot path), so nothing here blocks startup — a missing/misconfigured value only
+      # fails the specific /admin/generate-reviews call, cleanly, until it's set.
+      REVIEW_LLM_PROVIDER: "${REVIEW_LLM_PROVIDER:-anthropic}"
       REVIEW_LLM_MODEL: "${REVIEW_LLM_MODEL:-claude-opus-4-8}"
       ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
+      # Used only when REVIEW_LLM_PROVIDER=openai-compatible (OpenAI, Gemini's compat
+      # endpoint, or a local runtime). If pointing at a model server on the NAS host
+      # itself, "localhost" here means THIS CONTAINER — use the host's LAN address or
+      # Docker's host-gateway, not localhost, e.g. http://host.docker.internal:11434/v1.
+      REVIEW_LLM_BASE_URL: "${REVIEW_LLM_BASE_URL:-}"
+      REVIEW_LLM_API_KEY: "${REVIEW_LLM_API_KEY:-}"
     depends_on:
       db:
         condition: service_healthy

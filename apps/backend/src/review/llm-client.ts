@@ -1,95 +1,56 @@
-// v2 §9.2 / §9.2 "fails safe under model substitution" — the only module that talks to
-// Anthropic. Model is configurable via REVIEW_LLM_MODEL (no code freeze on today's model,
-// per §CLAUDE.md v2 rule 11); the Anthropic client itself is injectable so tests never
-// make a live network call (§CLAUDE.md: strict green gate, zero flaky tests, and per
-// §9.6 Category 4 "no live model calls in CI").
+// v2 §9.2 / provider-neutrality follow-up — the thin dispatcher.
 //
-// Forces a single tool call (emit_review) rather than free text, so the response is
-// always either a well-formed structured object or absent — there is no free-form prose
-// path for the model to slip an unstructured recommendation through on.
+// This module used to BE the Anthropic client directly; it is now just provider
+// selection. All provider-specific wire format lives in ./llm/anthropic.ts and
+// ./llm/openai-compatible.ts — this file (and everything upstream of it: generate.ts,
+// prompt-builder.ts, verification.ts, render.ts) never mentions tool_use, input_schema,
+// or function_call. That is grep-tested in __tests__/review/llm-client.test.ts.
 //
-// Every failure mode (network error, API error, malformed/missing tool call, a field of
-// the wrong type) degrades to { narrative: '', recommendations: [] } — NEVER a thrown
-// error, and NEVER fabricated content. A weak or misbehaving model therefore yields fewer
-// recommendations (verification in verification.ts drops anything that doesn't check out
-// downstream too), never bad ones.
+// Two distinct failure classes, deliberately handled differently:
+//   - Provider MISCONFIGURATION (an unrecognized REVIEW_LLM_PROVIDER, or a missing
+//     REVIEW_LLM_BASE_URL for openai-compatible) is a deployment bug. It fails loudly —
+//     callReviewLLM rejects — so it's visible immediately rather than silently masquerading
+//     as "the model had nothing to say." It never reaches app boot (routes/admin.ts is the
+//     only caller, and only when a review is actually requested), so a bad or absent LLM
+//     config still lets the app start.
+//   - MODEL BEHAVIOR (a weak/local model that mishandles structured output, a network
+//     hiccup, an invalid API key) is §9.2's "fails safe under model substitution" — each
+//     adapter degrades that to an empty RawReviewOutput, never a thrown error.
 
-import Anthropic from '@anthropic-ai/sdk'
 import type { BuiltPrompt } from './prompt-builder'
-import { REVIEW_TOOL_NAME } from './prompt-builder'
-import type { RawRecommendationCandidate, RawReviewOutput } from './types'
-
-const EMPTY_OUTPUT: RawReviewOutput = { narrative: '', recommendations: [] }
-
-// Minimal shape of what we actually use from the SDK client — lets tests inject a plain
-// object instead of constructing a real Anthropic client.
-export type ReviewLLMClient = {
-  messages: {
-    create: (params: unknown) => Promise<{ content: Array<{ type: string; input?: unknown }> }>
-  }
-}
+import type { RawReviewOutput } from './types'
+import type { LLMAdapter, LLMProvider } from './llm/types'
+import { createAnthropicAdapter, type AnthropicAdapterOptions } from './llm/anthropic'
+import { createOpenAICompatibleAdapter, type OpenAICompatibleAdapterOptions } from './llm/openai-compatible'
 
 export type ReviewLLMDeps = {
-  client?: ReviewLLMClient
-  model?: string
+  // Full override — tests (and any future caller that wants total control) inject a
+  // ready-made adapter directly, bypassing provider resolution entirely.
+  adapter?: LLMAdapter
+  provider?: LLMProvider
+  anthropic?: AnthropicAdapterOptions
+  openaiCompatible?: OpenAICompatibleAdapterOptions
 }
 
-function resolveModel(deps?: ReviewLLMDeps): string {
-  return deps?.model ?? process.env.REVIEW_LLM_MODEL ?? 'claude-opus-4-8'
+function resolveProvider(deps?: ReviewLLMDeps): string {
+  return deps?.provider ?? process.env.REVIEW_LLM_PROVIDER ?? 'anthropic'
 }
 
-function resolveClient(deps?: ReviewLLMDeps): ReviewLLMClient {
-  return deps?.client ?? (new Anthropic() as unknown as ReviewLLMClient)
-}
-
-function isWellFormedCandidate(c: unknown): c is RawRecommendationCandidate {
-  if (typeof c !== 'object' || c === null) return false
-  const r = c as Record<string, unknown>
-  return (
-    typeof r.evidenceEntryId === 'string' &&
-    typeof r.recommendationText === 'string' &&
-    (r.confidence === 'low' || r.confidence === 'medium' || r.confidence === 'high') &&
-    (r.targetedMetricFactId === null || typeof r.targetedMetricFactId === 'string')
-  )
-}
-
-// Parses the tool_use input defensively — the model is untrusted, and per §9.2 a broken
-// structured-output contract must degrade gracefully, never throw.
-function parseToolInput(input: unknown): RawReviewOutput {
-  if (typeof input !== 'object' || input === null) return EMPTY_OUTPUT
-  const obj = input as Record<string, unknown>
-  const narrative = typeof obj.narrative === 'string' ? obj.narrative : ''
-  const recommendations = Array.isArray(obj.recommendations)
-    ? obj.recommendations.filter(isWellFormedCandidate)
-    : []
-  return { narrative, recommendations }
+function createAdapter(deps?: ReviewLLMDeps): LLMAdapter {
+  const provider = resolveProvider(deps)
+  switch (provider) {
+    case 'anthropic':
+      return createAnthropicAdapter(deps?.anthropic)
+    case 'openai-compatible':
+      return createOpenAICompatibleAdapter(deps?.openaiCompatible)
+    default:
+      throw new Error(
+        `Unknown REVIEW_LLM_PROVIDER: "${provider}" (expected "anthropic" or "openai-compatible")`
+      )
+  }
 }
 
 export async function callReviewLLM(prompt: BuiltPrompt, deps?: ReviewLLMDeps): Promise<RawReviewOutput> {
-  const client = resolveClient(deps)
-  const model = resolveModel(deps)
-
-  let response: { content: Array<{ type: string; input?: unknown }> }
-  try {
-    response = await client.messages.create({
-      model,
-      max_tokens: 4096,
-      system: prompt.system,
-      messages: [{ role: 'user', content: prompt.userMessage }],
-      tools: [
-        {
-          name: REVIEW_TOOL_NAME,
-          description: 'Emit the synthesized review narrative and any evidence-backed recommendations.',
-          input_schema: prompt.inputSchema,
-        },
-      ],
-      tool_choice: { type: 'tool', name: REVIEW_TOOL_NAME },
-    })
-  } catch {
-    return EMPTY_OUTPUT
-  }
-
-  const toolUse = response.content?.find((b) => b.type === 'tool_use')
-  if (!toolUse) return EMPTY_OUTPUT
-  return parseToolInput(toolUse.input)
+  const adapter = deps?.adapter ?? createAdapter(deps)
+  return adapter.generateRecommendations(prompt)
 }

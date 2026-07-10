@@ -9,7 +9,7 @@ import { generateReview } from '../../review/generate'
 import { proposeEvidenceEntry, approveEvidenceEntry, archiveEvidenceEntryWithEvent } from '../../evidence/pipeline'
 import { ensureOccurrenceMaterialized } from '../../domain/materialization'
 import { completeLeaf } from '../../domain/completion'
-import type { ReviewLLMClient } from '../../review/llm-client'
+import type { AnthropicClientLike } from '../../review/llm/anthropic'
 import type { Item } from '@tracker/shared'
 import type { PubmedClientDeps } from '../../evidence/pubmed-client'
 
@@ -58,7 +58,7 @@ async function makeApprovedEvidence(userId: string, claim = 'Repetition in a sta
   return approveEvidenceEntry(getTestPool(), userId, entry.id, true)
 }
 
-function mockClient(toolInput: unknown): ReviewLLMClient {
+function mockClient(toolInput: unknown): AnthropicClientLike {
   return { messages: { create: async () => ({ content: [{ type: 'tool_use', input: toolInput }] }) } }
 }
 
@@ -84,7 +84,7 @@ describe('§9.5.2 — reviews are stored and retrievable', () => {
       }],
     })
 
-    const stored = await generateReview(pool, u.id, 'weekly', WINDOW_1, { llm: { client: llm } })
+    const stored = await generateReview(pool, u.id, 'weekly', WINDOW_1, { llm: { anthropic: { client: llm } } })
 
     expect(stored.narrative).toBe('Adherence is on track this week.')
     expect(stored.recommendations).toHaveLength(1)
@@ -102,7 +102,7 @@ describe('§9.5.2 — reviews are stored and retrievable', () => {
   it('logs a review_generated event with the recommendation count', async () => {
     const pool = getTestPool()
     const u = await makeUser('review-event@test.com')
-    const stored = await generateReview(pool, u.id, 'weekly', WINDOW_1, { llm: { client: mockClient({ narrative: '', recommendations: [] }) } })
+    const stored = await generateReview(pool, u.id, 'weekly', WINDOW_1, { llm: { anthropic: { client: mockClient({ narrative: '', recommendations: [] }) } } })
 
     const events = await repos.findConfigEvents(pool, u.id, 'review_generated')
     const forThisReview = events.filter((e) => (e.payload as { reviewId?: string }).reviewId === stored.id)
@@ -116,7 +116,7 @@ describe('§13.4 — reviews are strictly user_id-scoped', () => {
     const pool = getTestPool()
     const u1 = await makeUser('review-scope-1@test.com')
     const u2 = await makeUser('review-scope-2@test.com')
-    const stored = await generateReview(pool, u1.id, 'weekly', WINDOW_1, { llm: { client: mockClient({ narrative: '', recommendations: [] }) } })
+    const stored = await generateReview(pool, u1.id, 'weekly', WINDOW_1, { llm: { anthropic: { client: mockClient({ narrative: '', recommendations: [] }) } } })
 
     const asOther = await repos.findReviewById(pool, stored.id, u2.id)
     expect(asOther).toBeNull()
@@ -133,7 +133,7 @@ describe('§CLAUDE.md / §9.4.1 — a past review\'s citation resolves even afte
       narrative: '',
       recommendations: [{ evidenceEntryId: evidence.id, recommendationText: 'A suggestion', confidence: 'low', targetedMetricFactId: null }],
     })
-    const stored = await generateReview(pool, u.id, 'weekly', WINDOW_1, { llm: { client: llm } })
+    const stored = await generateReview(pool, u.id, 'weekly', WINDOW_1, { llm: { anthropic: { client: llm } } })
     expect(stored.recommendations).toHaveLength(1)
 
     await archiveEvidenceEntryWithEvent(pool, u.id, evidence.id)
@@ -149,9 +149,9 @@ describe('a duplicate (cadence, window) pair for the same user is rejected — p
   it('inserting the same cadence/window twice violates the unique constraint', async () => {
     const pool = getTestPool()
     const u = await makeUser('review-dup@test.com')
-    await generateReview(pool, u.id, 'weekly', WINDOW_1, { llm: { client: mockClient({ narrative: '', recommendations: [] }) } })
+    await generateReview(pool, u.id, 'weekly', WINDOW_1, { llm: { anthropic: { client: mockClient({ narrative: '', recommendations: [] }) } } })
     await expect(
-      generateReview(pool, u.id, 'weekly', WINDOW_1, { llm: { client: mockClient({ narrative: '', recommendations: [] }) } })
+      generateReview(pool, u.id, 'weekly', WINDOW_1, { llm: { anthropic: { client: mockClient({ narrative: '', recommendations: [] }) } } })
     ).rejects.toThrow()
   })
 })
@@ -165,10 +165,10 @@ describe('§CLAUDE.md determinism — identical mocked LLM input yields identica
     const e2 = await makeApprovedEvidence(u2.id)
 
     const r1 = await generateReview(pool, u1.id, 'weekly', WINDOW_1, {
-      llm: { client: mockClient({ narrative: 'steady', recommendations: [{ evidenceEntryId: e1.id, recommendationText: 'x', confidence: 'low', targetedMetricFactId: null }] }) },
+      llm: { anthropic: { client: mockClient({ narrative: 'steady', recommendations: [{ evidenceEntryId: e1.id, recommendationText: 'x', confidence: 'low', targetedMetricFactId: null }] }) } },
     })
     const r2 = await generateReview(pool, u2.id, 'weekly', WINDOW_1, {
-      llm: { client: mockClient({ narrative: 'steady', recommendations: [{ evidenceEntryId: e2.id, recommendationText: 'x', confidence: 'low', targetedMetricFactId: null }] }) },
+      llm: { anthropic: { client: mockClient({ narrative: 'steady', recommendations: [{ evidenceEntryId: e2.id, recommendationText: 'x', confidence: 'low', targetedMetricFactId: null }] }) } },
     })
 
     expect(r1.narrative).toBe(r2.narrative)
@@ -194,7 +194,7 @@ describe('§9.2.1 — feed-forward carries across sequential reviews of the same
     }
 
     const week1 = await generateReview(pool, u.id, 'weekly', WINDOW_1, {
-      llm: { client: mockClient({ narrative: '', recommendations: [{ evidenceEntryId: evidence.id, recommendationText: 'Anchor it to mornings', confidence: 'medium', targetedMetricFactId: factId }] }) },
+      llm: { anthropic: { client: mockClient({ narrative: '', recommendations: [{ evidenceEntryId: evidence.id, recommendationText: 'Anchor it to mornings', confidence: 'medium', targetedMetricFactId: factId }] }) } },
     })
     expect(week1.feedForwardOut).toHaveLength(1)
     expect(week1.feedForwardOut[0].timesRecommended).toBe(1)
@@ -202,7 +202,7 @@ describe('§9.2.1 — feed-forward carries across sequential reviews of the same
 
     // Week 2: still nothing improves (same completion pattern) — metric stays put
     const week2 = await generateReview(pool, u.id, 'weekly', WINDOW_2, {
-      llm: { client: mockClient({ narrative: '', recommendations: [{ evidenceEntryId: evidence.id, recommendationText: 'Anchor it to mornings', confidence: 'medium', targetedMetricFactId: factId }] }) },
+      llm: { anthropic: { client: mockClient({ narrative: '', recommendations: [{ evidenceEntryId: evidence.id, recommendationText: 'Anchor it to mornings', confidence: 'medium', targetedMetricFactId: factId }] }) } },
     })
 
     expect(week2.feedForwardOut).toHaveLength(1)
