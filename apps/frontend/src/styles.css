@@ -1858,3 +1858,618 @@ input, select, textarea {
   padding: var(--space-1) var(--space-2);
   font-size: var(--text-xs);
 }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   v2 §9.5.1 — Stats views (Global triage + Per-item diagnostic)
+   ══════════════════════════════════════════════════════════════════════════ */
+
+.stats-view {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.stats-view__toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.stats-subnav {
+  display: flex;
+  gap: var(--space-1);
+  background: var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  padding: 2px;
+}
+
+.stats-subnav__tab {
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  border-radius: var(--radius-sm);
+}
+
+.stats-subnav__tab--active {
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  box-shadow: var(--shadow-sm);
+}
+
+.stats-subnav__tab:disabled { opacity: 0.4; pointer-events: none; }
+
+.stats-window-select,
+.stats-item-select {
+  padding: var(--space-1) var(--space-2);
+  font-size: var(--text-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+}
+
+/* ── Global triage table ──────────────────────────────────────────────────── */
+
+.global-stats-table {
+  display: flex;
+  flex-direction: column;
+}
+
+.global-stats-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-2) var(--space-1);
+  border-bottom: 1px solid var(--color-border-subtle);
+  text-align: left;
+  transition: background var(--transition-fast);
+}
+
+.global-stats-row:last-child { border-bottom: none; }
+.global-stats-row:hover { background: var(--color-border-subtle); }
+
+.global-stats-row__name {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--text-sm);
+  color: var(--color-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.global-stats-row__adherence {
+  min-width: 44px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  font-size: var(--text-sm);
+  color: var(--color-text-primary);
+}
+
+.global-stats-row__trajectory {
+  min-width: 20px;
+  text-align: center;
+  color: var(--color-text-tertiary);
+}
+
+.global-stats-row__flags {
+  display: flex;
+  gap: var(--space-1);
+  flex-shrink: 0;
+}
+
+.global-stats-row__flag {
+  font-size: var(--text-xs);
+  padding: 1px var(--space-2);
+  border-radius: var(--radius-full);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.global-stats-row__flag--logging {
+  background: var(--color-warning-subtle);
+  color: var(--color-warning-fg);
+}
+
+.global-stats-row__flag--attention {
+  background: var(--color-danger-subtle);
+  color: var(--color-danger-fg);
+}
+
+.cross-item-fact {
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+  line-height: var(--leading-normal);
+}
+
+/* ── Per-item diagnostic view ─────────────────────────────────────────────── */
+
+.item-stats-view {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.item-stats-view__header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.item-stats-view__title {
+  font-size: var(--text-lg);
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.item-stats-view__findings {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+/* ── Adherence card ───────────────────────────────────────────────────────── */
+
+.adherence-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.adherence-card__headline {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.adherence-card__pct {
+  font-size: var(--text-2xl);
+  font-weight: 700;
+  color: var(--color-text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.adherence-card__label {
+  font-size: var(--text-xs);
+  color: var(--color-text-secondary);
+}
+
+.adherence-card__secondary {
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+}
+
+.adherence-card__children {
+  margin-top: var(--space-2);
+  border-top: 1px solid var(--color-border-subtle);
+  padding-top: var(--space-2);
+}
+
+.adherence-card__children-title {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-tertiary);
+  margin-bottom: var(--space-1);
+}
+
+.adherence-card__child-row {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-1) 0;
+  font-size: var(--text-sm);
+}
+
+.adherence-card__child-name { color: var(--color-text-primary); }
+.adherence-card__child-pct { color: var(--color-text-secondary); font-variant-numeric: tabular-nums; }
+
+/* ── Streak line (fact only — never framed as fragile) ───────────────────── */
+
+.streak-line {
+  display: flex;
+  gap: var(--space-4);
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+}
+
+/* ── Time stats + histogram ───────────────────────────────────────────────── */
+
+.time-stats-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.time-stats-card__row {
+  display: flex;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+}
+
+.time-histogram {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.time-histogram__bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 1px;
+  height: 56px;
+  background: var(--color-border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 2px;
+}
+
+.time-histogram__bar {
+  flex: 1;
+  min-height: 2px;
+  background: var(--color-accent);
+  border-radius: 2px 2px 0 0;
+}
+
+.time-histogram__axis {
+  display: flex;
+  justify-content: space-between;
+  font-size: var(--text-xs);
+  color: var(--color-text-tertiary);
+}
+
+.time-histogram__caption {
+  font-size: var(--text-xs);
+  color: var(--color-text-secondary);
+}
+
+/* ── Procrastination card ─────────────────────────────────────────────────── */
+
+.procrastination-card {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+}
+
+/* ── Data quality strip (Layer 1.5 — always shown) ────────────────────────── */
+
+.dq-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+  font-size: var(--text-xs);
+  color: var(--color-text-secondary);
+}
+
+.dq-strip--full {
+  font-size: var(--text-sm);
+  gap: var(--space-2);
+  flex-direction: column;
+}
+
+.dq-strip__item--warning {
+  color: var(--color-warning-fg);
+  background: var(--color-warning-subtle);
+  padding: 1px var(--space-2);
+  border-radius: var(--radius-sm);
+}
+
+/* ── Power meter — power ALWAYS visible as text, never hover-only ─────────── */
+
+.power-meter {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.power-meter__track {
+  width: 80px;
+  height: 6px;
+  background: var(--color-border-subtle);
+  border-radius: var(--radius-full);
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.power-meter__fill {
+  height: 100%;
+  border-radius: var(--radius-full);
+}
+
+.power-meter--weak .power-meter__fill { background: var(--color-text-tertiary); }
+.power-meter--moderate .power-meter__fill { background: var(--color-warning); }
+.power-meter--strong .power-meter__fill { background: var(--color-success); }
+
+.power-meter__label {
+  font-size: var(--text-xs);
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+}
+
+.power-meter--weak .power-meter__label {
+  color: var(--color-text-tertiary);
+  font-style: italic;
+}
+
+/* ── Sufficiency badge — three visually distinct states ───────────────────── */
+
+.sufficiency-badge--reported {
+  display: inline-block;
+  font-size: var(--text-xs);
+  padding: 1px var(--space-2);
+  background: var(--color-success-subtle);
+  color: var(--color-success-fg);
+  border-radius: var(--radius-full);
+  font-weight: 600;
+  width: fit-content;
+}
+
+.sufficiency-badge--not-yet,
+.sufficiency-badge--not-applicable {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.sufficiency-badge--not-yet .sufficiency-badge__tag {
+  display: inline-block;
+  width: fit-content;
+  font-size: var(--text-xs);
+  padding: 1px var(--space-2);
+  background: var(--color-warning-subtle);
+  color: var(--color-warning-fg);
+  border-radius: var(--radius-full);
+  font-weight: 600;
+}
+
+.sufficiency-badge--not-applicable .sufficiency-badge__tag {
+  display: inline-block;
+  width: fit-content;
+  font-size: var(--text-xs);
+  padding: 1px var(--space-2);
+  background: var(--color-border-subtle);
+  color: var(--color-text-tertiary);
+  border-radius: var(--radius-full);
+  font-weight: 600;
+}
+
+.sufficiency-badge__detail {
+  font-size: var(--text-xs);
+  color: var(--color-text-secondary);
+}
+
+/* ── Finding card shell ────────────────────────────────────────────────────── */
+
+.finding-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+}
+
+/* Low power is de-emphasized in the primary visual encoding itself, not footnoted. */
+.finding-card--weak {
+  opacity: 0.7;
+  border-style: dashed;
+}
+
+.finding-card--strong {
+  border-color: var(--color-accent-subtle);
+}
+
+.finding-card__header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.finding-card__title {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.finding-card__estimator {
+  font-size: var(--text-xs);
+  color: var(--color-text-tertiary);
+}
+
+.finding-card__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.finding-card__effect {
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--color-text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.finding-card__null-narrative {
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+  font-style: italic;
+}
+
+.finding-card__narrative {
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+}
+
+.finding-card__raw-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+  font-size: var(--text-xs);
+  color: var(--color-text-tertiary);
+}
+
+/* ── Day-of-week table (deliberately a table, not a bar chart — §9.5) ─────── */
+
+.day-of-week-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+}
+
+.day-of-week-table th {
+  text-align: left;
+  font-size: var(--text-xs);
+  color: var(--color-text-tertiary);
+  font-weight: 600;
+  padding: var(--space-1) var(--space-2);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.day-of-week-table td {
+  padding: var(--space-1) var(--space-2);
+  border-bottom: 1px solid var(--color-border-subtle);
+  color: var(--color-text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   v2 §9.5.2 — Reviews
+   ══════════════════════════════════════════════════════════════════════════ */
+
+.reviews-view {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.review-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.review-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+}
+
+.review-card__header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.review-card__cadence {
+  font-size: var(--text-xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-accent);
+}
+
+.review-card__window {
+  font-size: var(--text-xs);
+  color: var(--color-text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+.review-card__prose {
+  font-size: var(--text-sm);
+  color: var(--color-text-primary);
+  line-height: var(--leading-normal);
+  white-space: pre-wrap;
+}
+
+.review-card__no-recs {
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+  font-style: italic;
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-border-subtle);
+  border-radius: var(--radius-md);
+}
+
+.review-card__recommendations {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.recommendation-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+}
+
+.recommendation-card__header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.recommendation-card__quality-badge {
+  font-size: var(--text-xs);
+  padding: 1px var(--space-2);
+  background: var(--color-success-subtle);
+  color: var(--color-success-fg);
+  border-radius: var(--radius-full);
+  font-weight: 600;
+}
+
+/* Weaker evidence tiers (incl. mechanistic_plausibility_only) are deliberately
+   NOT styled to look like settled science — muted, not a confident green pill. */
+.recommendation-card__quality-badge--weak {
+  background: var(--color-border-subtle);
+  color: var(--color-text-secondary);
+}
+
+.recommendation-card__confidence {
+  font-size: var(--text-xs);
+  color: var(--color-text-tertiary);
+}
+
+.recommendation-card__text {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.recommendation-card__mechanism,
+.recommendation-card__justification,
+.recommendation-card__target {
+  font-size: var(--text-xs);
+  color: var(--color-text-secondary);
+}
+
+.recommendation-card__source-link {
+  font-size: var(--text-xs);
+  color: var(--color-accent);
+  width: fit-content;
+}
+
+@media (max-width: 480px) {
+  .stats-view__toolbar { flex-direction: column; align-items: stretch; }
+  .global-stats-row__name { font-size: var(--text-sm); }
+  .power-meter__track { width: 56px; }
+}

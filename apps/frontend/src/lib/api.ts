@@ -19,6 +19,20 @@ import type {
   UpdateItemBody,
   EvidenceEntry,
   ApproveEvidenceBody,
+  DateWindow,
+  AdherenceFinding,
+  StreakFinding,
+  TimeStatsFinding,
+  ProcrastinationFinding,
+  DataQualityFinding,
+  AdHocShareFinding,
+  ContextStabilityFinding,
+  AutocorrelationFinding,
+  TrajectoryFinding,
+  DayOfWeekFinding,
+  TwoConditionFinding,
+  Review,
+  ReviewCadence,
 } from '@tracker/shared'
 
 async function typedFetch<T>(url: string, init?: RequestInit): Promise<T> {
@@ -193,5 +207,43 @@ export const api = {
       }),
     reject: (id: string) =>
       apiFetch<EvidenceEntry>(`/evidence/${id}/reject`, { method: 'POST' }),
+  },
+
+  // v2 §3/§4/§5 — Stats: Layer 1 (descriptive), Layer 1.5 (data quality), Layer 2 (inference).
+  // Every route takes the same DateWindow query shape.
+  stats: {
+    itemAdherence: (itemId: string, w: DateWindow) =>
+      apiFetch<AdherenceFinding>(`/stats/items/${itemId}/adherence?startDay=${w.startDay}&endDay=${w.endDay}`),
+    itemStreaks: (itemId: string, w: DateWindow) =>
+      apiFetch<StreakFinding>(`/stats/items/${itemId}/streaks?startDay=${w.startDay}&endDay=${w.endDay}`),
+    itemTime: (itemId: string, w: DateWindow) =>
+      apiFetch<TimeStatsFinding>(`/stats/items/${itemId}/time?startDay=${w.startDay}&endDay=${w.endDay}`),
+    itemProcrastination: (itemId: string, w: DateWindow) =>
+      apiFetch<ProcrastinationFinding>(`/stats/items/${itemId}/procrastination?startDay=${w.startDay}&endDay=${w.endDay}`),
+    itemQuality: (itemId: string, w: DateWindow) =>
+      apiFetch<DataQualityFinding>(`/stats/items/${itemId}/quality?startDay=${w.startDay}&endDay=${w.endDay}`),
+    crossItemTime: (w: DateWindow) =>
+      apiFetch<AdHocShareFinding>(`/stats/time?startDay=${w.startDay}&endDay=${w.endDay}`),
+    userQuality: (w: DateWindow) =>
+      apiFetch<DataQualityFinding>(`/stats/quality?startDay=${w.startDay}&endDay=${w.endDay}`),
+    categoryTime: (categoryId: string, w: DateWindow) =>
+      apiFetch<TimeStatsFinding>(`/stats/categories/${categoryId}/time?startDay=${w.startDay}&endDay=${w.endDay}`),
+    itemContextStability: (itemId: string, w: DateWindow) =>
+      apiFetch<ContextStabilityFinding>(`/stats/items/${itemId}/context-stability?startDay=${w.startDay}&endDay=${w.endDay}`),
+    itemAutocorrelation: (itemId: string, w: DateWindow) =>
+      apiFetch<AutocorrelationFinding>(`/stats/items/${itemId}/autocorrelation?startDay=${w.startDay}&endDay=${w.endDay}`),
+    itemTrajectory: (itemId: string, w: DateWindow) =>
+      apiFetch<TrajectoryFinding>(`/stats/items/${itemId}/trajectory?startDay=${w.startDay}&endDay=${w.endDay}`),
+    itemDayOfWeek: (itemId: string, w: DateWindow) =>
+      apiFetch<DayOfWeekFinding>(`/stats/items/${itemId}/day-of-week?startDay=${w.startDay}&endDay=${w.endDay}`),
+    itemWeekdayVsWeekend: (itemId: string, w: DateWindow) =>
+      apiFetch<TwoConditionFinding>(`/stats/items/${itemId}/weekday-vs-weekend?startDay=${w.startDay}&endDay=${w.endDay}`),
+  },
+
+  // v2 §9.5.2 — Reviews: read-only list + detail.
+  reviews: {
+    list: (cadence?: ReviewCadence) =>
+      apiFetch<Review[]>(`/reviews${cadence ? `?cadence=${cadence}` : ''}`),
+    get: (id: string) => apiFetch<Review>(`/reviews/${id}`),
   },
 }

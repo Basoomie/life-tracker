@@ -12,19 +12,19 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      '/health': 'http://127.0.0.1:37801',
-      '/api': 'http://127.0.0.1:37801',
-      '/auth': { target: 'http://127.0.0.1:37801', changeOrigin: true },
-      '/me': 'http://127.0.0.1:37801',
+      '/health': 'http://localhost:37801',
+      '/api': 'http://localhost:37801',
+      '/auth': { target: 'http://localhost:37801', changeOrigin: true },
+      '/me': 'http://localhost:37801',
     },
   },
   preview: {
     port: 4173,
     proxy: {
-      '/health': 'http://127.0.0.1:37801',
-      '/api': 'http://127.0.0.1:37801',
-      '/auth': { target: 'http://127.0.0.1:37801', changeOrigin: true },
-      '/me': 'http://127.0.0.1:37801',
+      '/health': 'http://localhost:37801',
+      '/api': 'http://localhost:37801',
+      '/auth': { target: 'http://localhost:37801', changeOrigin: true },
+      '/me': 'http://localhost:37801',
     },
   },
 })

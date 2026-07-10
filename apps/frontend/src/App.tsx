@@ -8,6 +8,8 @@ import { ListView } from './components/list/ListView'
 import { CalendarView } from './components/calendar/CalendarView'
 import { SettingsView } from './components/settings/SettingsView'
 import { EvidenceApprovalView } from './components/evidence/EvidenceApprovalView'
+import { StatsView } from './components/stats/StatsView'
+import { ReviewsView } from './components/reviews/ReviewsView'
 import { QuickAddModal } from './components/item/QuickAddModal'
 import { ItemFormModal } from './components/item/ItemFormModal'
 import { api } from './lib/api'
@@ -110,6 +112,8 @@ export function App() {
         )}
         {activeView === 'list' && <ListView onEditItem={(id) => setEditItemId(id)} />}
         {activeView === 'calendar' && <CalendarView onEditItem={(id) => setEditItemId(id)} />}
+        {activeView === 'stats' && <StatsView />}
+        {activeView === 'reviews' && <ReviewsView />}
         {activeView === 'evidence' && <EvidenceApprovalView />}
         {activeView === 'settings' && (
           <SettingsView theme={theme} onToggleTheme={toggleTheme} />
