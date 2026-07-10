@@ -310,12 +310,20 @@ test.describe('v2 §9.5.1 Stats views', () => {
   })
 
   test('§5.3.1/§9.5.1 three sufficiency states render distinctly; day-of-week on a non-daily habit is a permanent "not detectable" state, never "accumulating"', async ({ page }) => {
+    const pageErrors: Error[] = []
+    page.on('pageerror', (err) => pageErrors.push(err))
+
     const daily = makeItem({ id: 'daily-item', name: 'Meditation', recurrenceRule: { type: 'daily' } })
     const quota = makeItem({ id: 'quota-item', name: 'Workout', recurrenceRule: { type: 'days_of_week', days: [1, 3, 5, 6] } })
 
     const dailyFixture = fullItemFixture('daily-item', {
       contextStability: makeContextStability('daily-item', { sufficiency: { status: 'computable' } }),
       autocorrelation: makeAutocorrelation('daily-item', {
+        // standardError: Infinity mirrors the real below-floor (n<2) calculator
+        // output — route.fulfill's JSON encoding turns it into `null` on the
+        // wire, same as a real fetch response would. Regression coverage for a
+        // real crash: the card must never format this field when not 'reported'.
+        standardError: Infinity,
         sufficiency: { status: 'below_floor', reason: 'need at least 7 weeks of daily data', nObserved: 5, nNeeded: 14 },
       }),
     })
@@ -348,6 +356,8 @@ test.describe('v2 §9.5.1 Stats views', () => {
     await expect(notApplicable).toBeVisible()
     await expect(notApplicable).toContainText('Not detectable for this recurrence')
     await expect(page.getByTestId('finding-day-of-week').getByTestId('sufficiency-not-yet')).toHaveCount(0)
+
+    expect(pageErrors).toEqual([])
   })
 
   test('§3.1 parent adherence ships with a per-child breakdown BY DEFAULT — no interaction required', async ({ page }) => {

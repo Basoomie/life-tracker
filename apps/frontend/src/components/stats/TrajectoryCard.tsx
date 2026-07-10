@@ -21,7 +21,11 @@ export function TrajectoryCard({ finding }: Props) {
       rawCounts={finding.rawCounts}
       isNull={isNull}
       minimumDetectableEffect={finding.minimumDetectableEffect}
-      effectSizeLabel={`Slope: ${finding.slope >= 0 ? '+' : ''}${(finding.slope * 100).toFixed(1)} pts/month (R²=${finding.rSquared.toFixed(2)}, p=${finding.pValue.toFixed(3)})`}
+      effectSizeLabel={
+        sufficiency.kind === 'reported'
+          ? `Slope: ${finding.slope >= 0 ? '+' : ''}${(finding.slope * 100).toFixed(1)} pts/month (R²=${finding.rSquared.toFixed(2)}, p=${finding.pValue.toFixed(3)})`
+          : undefined
+      }
     >
       {!isNull && (
         <p className="finding-card__narrative">

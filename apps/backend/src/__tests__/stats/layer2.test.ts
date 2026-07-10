@@ -411,6 +411,23 @@ describe('§5.2 null results must ship with MDE and dataQuality (never bare)', (
     expect(f.sufficiency.status).toBe('below_floor')
     expect(f.dataQuality).toBeDefined()
   })
+
+  // A zero-observation item (e.g. an ad-hoc item with no events at all) hits the
+  // n=0 below-floor branch. Every numeric field must be finite: `Infinity`
+  // JSON-serializes to `null` over HTTP, silently violating the shared type's
+  // non-nullable `number` contract and crashing frontend cards that format the
+  // field unconditionally (regression: AutocorrelationCard rendered `null.toFixed()`
+  // for a real zero-event item in the running app).
+  it('autocorrelation below-floor result (zero observations) has only finite numeric fields', () => {
+    const f = computeAutocorrelation(ITEM_ID, USER_ID, WINDOW, [], STUB_DQ)
+    expect(f.sufficiency.status).toBe('below_floor')
+    expect(Number.isFinite(f.lag1)).toBe(true)
+    expect(Number.isFinite(f.standardError)).toBe(true)
+    expect(Number.isFinite(f.pValue)).toBe(true)
+    expect(Number.isFinite(f.effectSize)).toBe(true)
+    expect(Number.isFinite(f.power)).toBe(true)
+    expect(Number.isFinite(f.minimumDetectableEffect)).toBe(true)
+  })
 })
 
 // ══════════════════════════════════════════════════════════════════════════════

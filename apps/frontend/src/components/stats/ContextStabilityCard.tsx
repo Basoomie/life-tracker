@@ -22,7 +22,11 @@ export function ContextStabilityCard({ finding }: Props) {
       dataQuality={finding.dataQuality}
       rawCounts={finding.rawCounts}
       minimumDetectableEffect={finding.minimumDetectableEffect}
-      effectSizeLabel={`Variance: ${finding.circularVariance.toFixed(2)} (0 = always the same time, 1 = maximally spread)`}
+      effectSizeLabel={
+        sufficiency.kind === 'reported'
+          ? `Variance: ${finding.circularVariance.toFixed(2)} (0 = always the same time, 1 = maximally spread)`
+          : undefined
+      }
     >
       <p className="finding-card__narrative">Typically starts around {hourLabel}.</p>
     </FindingShell>

@@ -61,7 +61,10 @@ export function computeAutocorrelation(
       itemId,
       window,
       lag1: 0,
-      standardError: n === 1 ? 1 : Infinity,
+      // Sentinel, not a real estimate — below_floor already gates this from
+      // rendering. Must stay finite: `Infinity` JSON-serializes to `null` over
+      // the wire and silently breaks the `number` (non-nullable) field contract.
+      standardError: 1,
       pValue: 1,
       effectSize: 0,
       power: 0,

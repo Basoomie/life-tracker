@@ -23,7 +23,11 @@ export function AutocorrelationCard({ finding }: Props) {
       rawCounts={finding.rawCounts}
       isNull={isNull}
       minimumDetectableEffect={finding.minimumDetectableEffect}
-      effectSizeLabel={`ρ = ${finding.lag1.toFixed(2)} (SE ${finding.standardError.toFixed(2)}, p=${finding.pValue.toFixed(3)})`}
+      effectSizeLabel={
+        sufficiency.kind === 'reported'
+          ? `ρ = ${finding.lag1.toFixed(2)} (SE ${finding.standardError.toFixed(2)}, p=${finding.pValue.toFixed(3)})`
+          : undefined
+      }
     >
       {!isNull && (
         <p className="finding-card__narrative">
