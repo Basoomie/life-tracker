@@ -17,6 +17,12 @@ services:
       NCBI_EUTILS_BASE_URL: "${NCBI_EUTILS_BASE_URL:-}"
       NCBI_API_KEY: "${NCBI_API_KEY:-}"
       NCBI_REQUEST_TIMEOUT_MS: "${NCBI_REQUEST_TIMEOUT_MS:-}"
+      # v2 §9.2 / §CLAUDE.md v2 rule 11 — model choice is configurable, never frozen in code.
+      # Optional: review generation is admin-triggered (not on the app's critical boot
+      # path), so a missing ANTHROPIC_API_KEY does not block startup — it only fails the
+      # specific /admin/generate-reviews call, cleanly, until a key is set.
+      REVIEW_LLM_MODEL: "${REVIEW_LLM_MODEL:-claude-opus-4-8}"
+      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
     depends_on:
       db:
         condition: service_healthy

@@ -352,6 +352,21 @@ type EvidenceEntryArchivedEvent = EventBase & {
   }
 }
 
+// ── v2 §6 / §9.2 — The AI Review (step 3b) ────────────────────────────────────
+// Config-level event (itemId/occurrenceId null) — a review is a user-wide artifact,
+// not scoped to one item. Fired once per generated review; reviews are immutable
+// once stored (§CLAUDE.md), so there is no corresponding "edited" event.
+type ReviewGeneratedEvent = EventBase & {
+  eventType: 'review_generated'
+  payload: {
+    reviewId: string
+    cadence: 'weekly' | 'monthly' | 'quarterly'
+    windowStart: string
+    windowEnd: string
+    recommendationCount: number
+  }
+}
+
 // ── Discriminated union ───────────────────────────────────────────────────────
 
 export type TrackerEvent =
@@ -391,6 +406,7 @@ export type TrackerEvent =
   | EvidenceEntryApprovedEvent
   | EvidenceEntryApprovalRejectedEvent
   | EvidenceEntryArchivedEvent
+  | ReviewGeneratedEvent
 
 // Literal union of all event type strings — useful for DB CHECK constraints and
 // exhaustive switch guards in domain logic.

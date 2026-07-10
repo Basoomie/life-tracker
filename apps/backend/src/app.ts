@@ -26,6 +26,7 @@ import { adminRoutes } from './routes/admin'
 import { preferencesRoutes } from './routes/preferences'
 import { statsRoutes } from './routes/stats'
 import { evidenceRoutes } from './routes/evidence'
+import { reviewRoutes } from './routes/reviews'
 
 // ── Type augmentation: add userId to every request ────────────────────────────
 
@@ -104,6 +105,7 @@ export async function buildApp(
     await api.register(preferencesRoutes)
     await api.register(statsRoutes)
     await api.register(evidenceRoutes)
+    await api.register(reviewRoutes)
   }, { prefix: '/api' })
 
   // In production the built frontend is served as static files

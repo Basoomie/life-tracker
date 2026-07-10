@@ -97,3 +97,10 @@ export type {
   TwoConditionFinding,
   Layer2Finding,
 } from './types/stats'
+
+export type {
+  ReviewCadence,
+  Recommendation,
+  FeedForwardRecord,
+  Review,
+} from './types/review'

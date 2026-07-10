@@ -65,6 +65,7 @@ export async function migrateDown(pool: Pool): Promise<void> {
 // Drops all known tables then re-runs all migrations.  Used in tests for a clean slate.
 export async function resetDatabase(pool: Pool): Promise<void> {
   // Drop in reverse FK dependency order; CASCADE handles anything we miss
+  await pool.query(`DROP TABLE IF EXISTS reviews             CASCADE`)
   await pool.query(`DROP TABLE IF EXISTS evidence_entries    CASCADE`)
   await pool.query(`DROP TABLE IF EXISTS user_preferences    CASCADE`)
   await pool.query(`DROP TABLE IF EXISTS events              CASCADE`)
