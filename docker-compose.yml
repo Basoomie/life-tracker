@@ -13,6 +13,10 @@ services:
       DATABASE_URL: "postgresql://${POSTGRES_USER:?required}:${POSTGRES_PASSWORD:?required}@db:5432/${POSTGRES_DB:?required}"
       INITIAL_USER_EMAIL: "${INITIAL_USER_EMAIL:?required}"
       INITIAL_USER_PASSWORD: "${INITIAL_USER_PASSWORD:?required}"
+      # v2 §9.4 — optional; the evidence-verification gate has working defaults without these
+      NCBI_EUTILS_BASE_URL: "${NCBI_EUTILS_BASE_URL:-}"
+      NCBI_API_KEY: "${NCBI_API_KEY:-}"
+      NCBI_REQUEST_TIMEOUT_MS: "${NCBI_REQUEST_TIMEOUT_MS:-}"
     depends_on:
       db:
         condition: service_healthy

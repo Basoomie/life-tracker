@@ -17,7 +17,7 @@ import { setupTestDb, teardownTestDb, getTestPool } from '../helpers/test-db'
 import * as repos from '../../db/repos/index'
 import { ensureOccurrenceMaterialized } from '../../domain/materialization'
 import { getItemAdherence } from '../../stats/index'
-import type { Item } from '@tracker/shared'
+import type { Item, RecurrenceRule } from '@tracker/shared'
 import type { DateWindow } from '@tracker/shared'
 
 beforeAll(async () => { await setupTestDb() })
@@ -58,7 +58,7 @@ async function makeParent(userId: string, name = 'Parent') {
   })
 }
 
-async function makeChild(userId: string, parentId: string, name = 'Child', rule = { type: 'daily' as const }) {
+async function makeChild(userId: string, parentId: string, name = 'Child', rule: RecurrenceRule = { type: 'daily' }) {
   return repos.insertItem(getTestPool(), {
     userId, name, recurrenceRule: rule, parentId, creationSource: 'planned',
   })

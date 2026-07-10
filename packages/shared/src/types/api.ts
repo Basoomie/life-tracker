@@ -154,6 +154,15 @@ export type RunBackgroundJobBody = {
   day: string   // YYYY-MM-DD — the logical day to close out
 }
 
+// v2 §9.4.1 follow-up — diagnostic only, not enforced. Reports whether the abstract
+// panel was open in the reviewer's UI at the moment Approve was clicked; the server is
+// authoritative about whether an abstract existed at all (never trusts the client for
+// that fact — see evidence/pipeline.ts). Omitting this field is fine; approval is never
+// blocked by it.
+export type ApproveEvidenceBody = {
+  abstractVisible?: boolean
+}
+
 // ── Auth request/response types (§13.1) ──────────────────────────────────────
 
 export type LoginBody = {

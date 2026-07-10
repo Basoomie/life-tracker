@@ -27,6 +27,7 @@ const EXPECTED_TABLES = [
   'occurrences',
   'events',
   'user_preferences',
+  'evidence_entries',
 ]
 
 async function getPublicTables(pool: Pool): Promise<string[]> {
@@ -37,6 +38,7 @@ async function getPublicTables(pool: Pool): Promise<string[]> {
 }
 
 async function dropAllForTest(pool: Pool): Promise<void> {
+  await pool.query(`DROP TABLE IF EXISTS evidence_entries    CASCADE`)
   await pool.query(`DROP TABLE IF EXISTS user_preferences    CASCADE`)
   await pool.query(`DROP TABLE IF EXISTS events              CASCADE`)
   await pool.query(`DROP TABLE IF EXISTS occurrences         CASCADE`)

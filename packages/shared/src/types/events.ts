@@ -7,7 +7,15 @@
 // Event types follow §10.2 verbatim.  Every event is immutable — corrections are new
 // events, never edits-in-place.
 
-import type { CreationSource, Priority } from './enums'
+import type {
+  AbstractVisibilityAtApproval,
+  CreationSource,
+  EvidenceProvenance,
+  EvidenceQuality,
+  Priority,
+  SourceIdentifierType,
+  VerificationFailureReason,
+} from './enums'
 import type { ItemSnapshot } from './entities'
 
 // Re-export so callers only need one import
@@ -284,6 +292,66 @@ type ReasonArchivedEvent = EventBase & {
   }
 }
 
+// ── v2 §9.4 — Evidence base (generate → verify → approve; §9.4.1) ─────────────
+// Config-level events (itemId/occurrenceId null), same pattern as category/reason events.
+
+type EvidenceEntryProposedEvent = EventBase & {
+  eventType: 'evidence_entry_proposed'
+  payload: {
+    evidenceEntryId: string
+    provenance: EvidenceProvenance
+    sourceIdentifierType: SourceIdentifierType
+    sourceIdentifier: string
+    claimedEvidenceQuality: EvidenceQuality
+  }
+}
+
+// Fired by the verification gate itself — never by a human action (§9.4: "code verifies").
+type EvidenceEntryVerifiedEvent = EventBase & {
+  eventType: 'evidence_entry_verified'
+  payload: {
+    evidenceEntryId: string
+    actualEvidenceQuality: EvidenceQuality
+    resolvedPmid: string
+  }
+}
+
+type EvidenceEntryVerificationRejectedEvent = EventBase & {
+  eventType: 'evidence_entry_verification_rejected'
+  payload: {
+    evidenceEntryId: string
+    reason: VerificationFailureReason
+    detail: string
+  }
+}
+
+// Human relevance/fairness step (§9.4.1 step 3) — only reachable once verified.
+// abstractVisibleAtApproval is diagnostic, not a gate (§9.4.1 follow-up): it records
+// whether the abstract panel was open in the UI at the moment of the click — visibility,
+// not reading. Never used to block or warn; exists so a bad entry surfacing months later
+// can be retrospectively traced to "was the abstract even in view when this was approved."
+type EvidenceEntryApprovedEvent = EventBase & {
+  eventType: 'evidence_entry_approved'
+  payload: {
+    evidenceEntryId: string
+    abstractVisibleAtApproval: AbstractVisibilityAtApproval
+  }
+}
+
+type EvidenceEntryApprovalRejectedEvent = EventBase & {
+  eventType: 'evidence_entry_approval_rejected'
+  payload: {
+    evidenceEntryId: string
+  }
+}
+
+type EvidenceEntryArchivedEvent = EventBase & {
+  eventType: 'evidence_entry_archived'
+  payload: {
+    evidenceEntryId: string
+  }
+}
+
 // ── Discriminated union ───────────────────────────────────────────────────────
 
 export type TrackerEvent =
@@ -317,6 +385,12 @@ export type TrackerEvent =
   | ReasonCreatedEvent
   | ReasonRenamedEvent
   | ReasonArchivedEvent
+  | EvidenceEntryProposedEvent
+  | EvidenceEntryVerifiedEvent
+  | EvidenceEntryVerificationRejectedEvent
+  | EvidenceEntryApprovedEvent
+  | EvidenceEntryApprovalRejectedEvent
+  | EvidenceEntryArchivedEvent
 
 // Literal union of all event type strings — useful for DB CHECK constraints and
 // exhaustive switch guards in domain logic.

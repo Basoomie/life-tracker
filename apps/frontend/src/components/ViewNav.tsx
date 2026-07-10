@@ -1,6 +1,6 @@
 // Tab navigation between Now / List / Calendar / Settings views.
 
-export type ViewKey = 'now' | 'list' | 'calendar' | 'settings'
+export type ViewKey = 'now' | 'list' | 'calendar' | 'evidence' | 'settings'
 
 type Props = {
   active: ViewKey
@@ -11,6 +11,7 @@ const TABS: { key: ViewKey; label: string }[] = [
   { key: 'now',      label: 'Now' },
   { key: 'list',     label: 'List' },
   { key: 'calendar', label: 'Calendar' },
+  { key: 'evidence', label: 'Evidence' },
   { key: 'settings', label: 'Settings' },
 ]
 

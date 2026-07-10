@@ -43,8 +43,6 @@ export function computeDataQuality(
   let autoClosedCount = 0
   let missingCount = 0
   const gapDays: string[] = []
-  let declaredOverrideTotal = 0
-  let declaredOverrideParentDays = 0   // days that had a parent observation
 
   for (const obs of dayObs) {
     if (obs.disposition === 'missing') {
@@ -56,16 +54,6 @@ export function computeDataQuality(
         autoClosedCount++
       } else if (obs.disposition !== 'pending') {
         explicitDispositionCount++
-      }
-      // Parent-override frequency: declaredPercent non-null means declared override used
-      if (obs.declaredPercent !== null) {
-        declaredOverrideTotal++
-      }
-      if (obs.declaredPercent !== null || obs.disposition !== 'missing') {
-        // Track only observations where declaredPercent could be applicable (i.e., parent obs)
-        if ('declaredPercent' in obs && obs.declaredPercent !== null) {
-          declaredOverrideParentDays++
-        }
       }
     }
   }

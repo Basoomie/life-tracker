@@ -24,6 +24,7 @@ export type {
   UpdateBucketBoundariesBody,
   CreateDayStartBody,
   RunBackgroundJobBody,
+  ApproveEvidenceBody,
   LoginBody,
   ChangePasswordBody,
   ApiError,
@@ -37,6 +38,13 @@ export type {
   DispositionPolicy,
   RecurrenceRule,
   QuotaTarget,
+  SourceIdentifierType,
+  EvidenceQuality,
+  EvidenceProvenance,
+  VerificationStatus,
+  ApprovalStatus,
+  VerificationFailureReason,
+  AbstractVisibilityAtApproval,
 } from './types/enums'
 
 export type {
@@ -50,6 +58,8 @@ export type {
   ItemPrerequisite,
   Occurrence,
   ComputedOccurrence,
+  EvidenceCandidate,
+  EvidenceEntry,
 } from './types/entities'
 
 export type { TrackerEvent, EventType } from './types/events'

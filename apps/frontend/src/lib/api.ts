@@ -17,6 +17,8 @@ import type {
   AdHocCaptureBody,
   CreateItemBody,
   UpdateItemBody,
+  EvidenceEntry,
+  ApproveEvidenceBody,
 } from '@tracker/shared'
 
 async function typedFetch<T>(url: string, init?: RequestInit): Promise<T> {
@@ -181,5 +183,15 @@ export const api = {
       apiFetch<{ ok: boolean }>(`/preferences/${key}`, {
         method: 'PUT', body: JSON.stringify({ value }),
       }),
+  },
+
+  evidence: {
+    pendingApproval: () => apiFetch<EvidenceEntry[]>('/evidence/pending-approval'),
+    approve: (id: string, body: ApproveEvidenceBody) =>
+      apiFetch<EvidenceEntry>(`/evidence/${id}/approve`, {
+        method: 'POST', body: JSON.stringify(body),
+      }),
+    reject: (id: string) =>
+      apiFetch<EvidenceEntry>(`/evidence/${id}/reject`, { method: 'POST' }),
   },
 }

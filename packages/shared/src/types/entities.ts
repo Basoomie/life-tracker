@@ -1,11 +1,18 @@
 import type {
+  AbstractVisibilityAtApproval,
+  ApprovalStatus,
   CreationSource,
   DispositionPolicy,
+  EvidenceProvenance,
+  EvidenceQuality,
   Priority,
   QuotaTarget,
   RecurrenceRule,
+  SourceIdentifierType,
   TimingPrecision,
   Valence,
+  VerificationFailureReason,
+  VerificationStatus,
 } from './enums'
 
 // Frozen snapshot of mutable item fields stored inside each occurrence row (§5.3).
@@ -126,4 +133,53 @@ export type ComputedOccurrence = {
   appliesToDay: string        // YYYY-MM-DD
   snapshot: ItemSnapshot
   materializedAt: Date | null
+}
+
+// ── v2 §9.4 — Evidence base ───────────────────────────────────────────────────
+
+// What a "generate" step (script/fixture in step 3a; an LLM in 3b) produces.
+// This is the untrusted input to the verification gate — nothing here is trusted
+// until verifyCandidate() (apps/backend/src/evidence/verify.ts) checks it.
+export type EvidenceCandidate = {
+  claim: string                                  // the finding, in plain language
+  mechanism: string                               // the causal story — why it works
+  sourceIdentifierType: SourceIdentifierType
+  sourceIdentifier: string                        // raw PMID or DOI as proposed
+  claimedEvidenceQuality: EvidenceQuality          // the proposer's claimed tier
+  groundedJustification: string                    // §9.4.2 — what the source actually reports
+}
+
+// A stored evidence-base row. user_id-scoped (§13.4); soft-deleted, never hard-deleted
+// (§CLAUDE.md, §9.4.1) — a recommendation in a past review must always resolve its source.
+//
+// Usable (citable by a future review) iff verificationStatus === 'verified' AND
+// approvalStatus === 'approved' AND archivedAt === null. Every other combination is inert.
+export type EvidenceEntry = EvidenceCandidate & {
+  id: string
+  userId: string
+  provenance: EvidenceProvenance
+  proposedAt: Date
+
+  // ── Verification (code; the fraud detector) ──────────────────────────────────
+  verificationStatus: VerificationStatus
+  verifiedAt: Date | null
+  rejectionReason: VerificationFailureReason | null
+  rejectionDetail: string | null          // human-readable explanation (§9.4: "must be explicable")
+  resolvedPmid: string | null             // the PMID actually resolved to (DOIs resolve through PubMed too)
+  resolvedTitle: string | null
+  resolvedJournal: string | null
+  resolvedYear: number | null
+  resolvedPublicationTypes: string[] | null   // raw PubMed pubtype tags, for audit
+  resolvedAbstract: string | null             // §9.4.2 — what the human checks the claim against
+  actualEvidenceQuality: EvidenceQuality | null  // derived from the record, never trusted from the entry
+
+  // ── Approval (human; relevance and fairness) ─────────────────────────────────
+  approvalStatus: ApprovalStatus
+  approvedAt: Date | null
+  // Diagnostic only, never a gate (see AbstractVisibilityAtApproval) — null until
+  // approved. Set once, at approval time; never touched by a later rejection.
+  abstractVisibleAtApproval: AbstractVisibilityAtApproval | null
+
+  archivedAt: Date | null
+  createdAt: Date
 }
