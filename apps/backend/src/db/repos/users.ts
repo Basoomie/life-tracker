@@ -52,6 +52,17 @@ export async function findUserByEmail(
   return rows[0] ? toUser(rows[0]) : null
 }
 
+// v1 is single-user (CLAUDE.md multi-user scoping rule: v1 always uses the same
+// user). Used by the background scheduler, which needs a userId but has no
+// request/session to read one from. Picks the earliest-created row so behavior
+// is stable even if a second user row is ever added ahead of v2's multi-user work.
+export async function findSoleUser(pool: Pool): Promise<User | null> {
+  const { rows } = await pool.query<UserRow>(
+    `SELECT * FROM users ORDER BY created_at ASC LIMIT 1`
+  )
+  return rows[0] ? toUser(rows[0]) : null
+}
+
 // Used by auth login — includes password_hash for verification
 export async function findUserByEmailWithHash(
   pool: Pool,

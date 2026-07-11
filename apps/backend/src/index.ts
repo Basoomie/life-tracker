@@ -8,6 +8,7 @@ import { buildApp } from './app'
 import { migrateUp } from './db/migrate'
 import { bootstrap } from './db/bootstrap'
 import { pool } from './db'
+import { startScheduler } from './scheduler'
 
 const port = parseInt(process.env.PORT ?? '3000', 10)
 
@@ -16,6 +17,7 @@ async function main() {
   await bootstrap(pool)  // §13.1: create initial user if table is empty
   const app = await buildApp()
   await app.listen({ port, host: '0.0.0.0' })
+  startScheduler(pool)  // §8.4/v2 §9.3: daily materialization/dispositions/reviews
 }
 
 main().catch((err) => {
