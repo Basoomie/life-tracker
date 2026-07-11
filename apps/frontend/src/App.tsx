@@ -18,11 +18,19 @@ import type { ViewKey } from './components/ViewNav'
 
 type AuthState = 'checking' | 'authenticated' | 'unauthenticated'
 
+const ACTIVE_VIEW_STORAGE_KEY = 'tracker-active-view'
+const VIEW_KEYS: ViewKey[] = ['now', 'list', 'calendar', 'stats', 'reviews', 'evidence', 'settings']
+
+function getInitialView(): ViewKey {
+  const stored = localStorage.getItem(ACTIVE_VIEW_STORAGE_KEY)
+  return VIEW_KEYS.includes(stored as ViewKey) ? (stored as ViewKey) : 'now'
+}
+
 export function App() {
   const { theme, toggleTheme } = useTheme()
   const [authState, setAuthState] = useState<AuthState>('checking')
   const [currentUser, setCurrentUser] = useState<User | null>(null)
-  const [activeView, setActiveView] = useState<ViewKey>('now')
+  const [activeView, setActiveView] = useState<ViewKey>(getInitialView)
 
   // Shared reference data for item modals
   const [categories, setCategories] = useState<Category[]>([])
@@ -94,6 +102,11 @@ export function App() {
     setEditItemId(null)
   }
 
+  function handleViewChange(view: ViewKey) {
+    setActiveView(view)
+    localStorage.setItem(ACTIVE_VIEW_STORAGE_KEY, view)
+  }
+
   return (
     <>
       <AppShell
@@ -105,7 +118,7 @@ export function App() {
         onChangePassword={() => setShowChangePassword(true)}
         currentUserEmail={currentUser?.email ?? ''}
         activeView={activeView}
-        onViewChange={setActiveView}
+        onViewChange={handleViewChange}
       >
         {activeView === 'now' && (
           <NowView onEditItem={(id) => setEditItemId(id)} />
