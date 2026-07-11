@@ -96,99 +96,103 @@ export function TimeGrid({
 
   return (
     <div className="cal-day" data-testid={`cal-day-${day}`}>
-      {/* Time grid — primary element */}
-      <div className="cal-grid-wrap">
-        {/* Hour axis */}
-        <div className="cal-time-axis" aria-hidden="true" style={{ height: `${TOTAL_PX}px` }}>
-          {hourLabels.map(({ label, topPx }) => (
-            <span
-              key={label}
-              className="cal-hour-label"
-              style={{ top: `${topPx}px` }}
-            >
-              {label}
-            </span>
-          ))}
-        </div>
-
-        {/* Grid inner */}
-        <div className="cal-grid" style={{ height: `${TOTAL_PX}px` }}>
-          {/* Hour lines */}
-          {hourLabels.map(({ topPx, label }) => (
-            <div key={label} className="cal-hour-line" style={{ top: `${topPx}px` }} />
-          ))}
-
-          {/* Now indicator */}
-          {nowPx !== null && (
-            <div
-              className="cal-now-line"
-              style={{ top: `${nowPx}px` }}
-              data-testid="cal-now-line"
-              aria-label="Current time"
-            />
-          )}
-
-          {/* Blocks */}
-          {layout.blocks.map((block) => {
-            const occId = block.occ.id ?? block.occ.itemId
-            const isSelected = selected?.id === block.occ.id && selected?.itemId === block.occ.itemId
-            return (
-              <button
-                key={occId}
-                className={[
-                  'cal-block',
-                  `cal-block--${block.kind}`,
-                  block.occ.completionState.isComplete ? 'cal-block--done' : '',
-                  isSelected ? 'cal-block--selected' : '',
-                ].filter(Boolean).join(' ')}
-                style={{
-                  top:    `${block.topPx}px`,
-                  height: `${block.heightPx}px`,
-                  left:   `${block.leftPct}%`,
-                  width:  `${block.widthPct}%`,
-                }}
-                onClick={() => setSelected(isSelected ? null : block.occ)}
-                title={blockTitle(block)}
-                data-testid={`cal-block-${occId}`}
-                data-kind={block.kind}
-                data-top-px={Math.round(block.topPx)}
-                data-height-px={Math.round(block.heightPx)}
-                aria-label={blockTitle(block)}
+      {/* Grid column — time grid + its detail panel, grouped so the unscheduled gutter can sit beside it as a sidebar */}
+      <div className="cal-grid-col">
+        {/* Time grid — primary element */}
+        <div className="cal-grid-wrap">
+          {/* Hour axis */}
+          <div className="cal-time-axis" aria-hidden="true" style={{ height: `${TOTAL_PX}px` }}>
+            {hourLabels.map(({ label, topPx }) => (
+              <span
+                key={label}
+                className="cal-hour-label"
+                style={{ top: `${topPx}px` }}
               >
-                <span className="cal-block__name">{block.occ.snapshot.name}</span>
-                {block.kind === 'range' && block.occ.snapshot.timingStartTime && (
-                  <span className="cal-block__time">
-                    {block.occ.snapshot.timingStartTime}
-                    {block.occ.snapshot.timingEndTime ? `–${block.occ.snapshot.timingEndTime}` : ''}
-                  </span>
-                )}
-              </button>
-            )
-          })}
+                {label}
+              </span>
+            ))}
+          </div>
+
+          {/* Grid inner */}
+          <div className="cal-grid" style={{ height: `${TOTAL_PX}px` }}>
+            {/* Hour lines */}
+            {hourLabels.map(({ topPx, label }) => (
+              <div key={label} className="cal-hour-line" style={{ top: `${topPx}px` }} />
+            ))}
+
+            {/* Now indicator */}
+            {nowPx !== null && (
+              <div
+                className="cal-now-line"
+                style={{ top: `${nowPx}px` }}
+                data-testid="cal-now-line"
+                aria-label="Current time"
+              />
+            )}
+
+            {/* Blocks */}
+            {layout.blocks.map((block) => {
+              const occId = block.occ.id ?? block.occ.itemId
+              const isSelected = selected?.id === block.occ.id && selected?.itemId === block.occ.itemId
+              return (
+                <button
+                  key={occId}
+                  className={[
+                    'cal-block',
+                    `cal-block--${block.kind}`,
+                    block.occ.completionState.isComplete ? 'cal-block--done' : '',
+                    isSelected ? 'cal-block--selected' : '',
+                  ].filter(Boolean).join(' ')}
+                  style={{
+                    top:    `${block.topPx}px`,
+                    height: `${block.heightPx}px`,
+                    left:   `${block.leftPct}%`,
+                    width:  `${block.widthPct}%`,
+                  }}
+                  onClick={() => setSelected(isSelected ? null : block.occ)}
+                  title={blockTitle(block)}
+                  data-testid={`cal-block-${occId}`}
+                  data-kind={block.kind}
+                  data-top-px={Math.round(block.topPx)}
+                  data-height-px={Math.round(block.heightPx)}
+                  aria-label={blockTitle(block)}
+                >
+                  <span className="cal-block__name">{block.occ.snapshot.name}</span>
+                  {block.kind === 'range' && block.occ.snapshot.timingStartTime && (
+                    <span className="cal-block__time">
+                      {block.occ.snapshot.timingStartTime}
+                      {block.occ.snapshot.timingEndTime ? `–${block.occ.snapshot.timingEndTime}` : ''}
+                    </span>
+                  )}
+                </button>
+              )
+            })}
+          </div>
         </div>
+
+        {/* Detail panel — shown when a block is selected */}
+        {selected && (
+          <div ref={panelRef} className="cal-detail-panel" data-testid="cal-detail-panel">
+            <OccurrenceRow
+              occ={selected}
+              buckets={buckets}
+              isToday={isToday}
+              session={sessions.get(selected.id ?? selected.itemId)}
+              onComplete={() => onComplete(selected)}
+              onUncomplete={() => onUncomplete(selected)}
+              onTimerStart={() => onTimerStart(selected)}
+              onTimerPause={() => onTimerPause(selected)}
+              onTimerResume={() => onTimerResume(selected)}
+              onTimerStop={() => { onTimerStop(selected); setSelected(null) }}
+              onDisposition={() => { onDisposition(selected); setSelected(null) }}
+              onEdit={() => onEdit(selected.itemId)}
+              onArchive={() => { onArchive(selected); setSelected(null) }}
+            />
+          </div>
+        )}
       </div>
 
-      {/* Detail panel — shown when a block is selected */}
-      {selected && (
-        <div ref={panelRef} className="cal-detail-panel" data-testid="cal-detail-panel">
-          <OccurrenceRow
-            occ={selected}
-            buckets={buckets}
-            session={sessions.get(selected.id ?? selected.itemId)}
-            onComplete={() => onComplete(selected)}
-            onUncomplete={() => onUncomplete(selected)}
-            onTimerStart={() => onTimerStart(selected)}
-            onTimerPause={() => onTimerPause(selected)}
-            onTimerResume={() => onTimerResume(selected)}
-            onTimerStop={() => { onTimerStop(selected); setSelected(null) }}
-            onDisposition={() => { onDisposition(selected); setSelected(null) }}
-            onEdit={() => onEdit(selected.itemId)}
-            onArchive={() => { onArchive(selected); setSelected(null) }}
-          />
-        </div>
-      )}
-
-      {/* Unscheduled gutter — below the time grid so the grid stays primary */}
+      {/* Unscheduled gutter — beside the grid on wide layouts, below it on narrow ones */}
       {layout.gutter.length > 0 && (
         <div className="cal-gutter" data-testid={`cal-gutter-${day}`}>
           <button
@@ -207,6 +211,7 @@ export function TimeGrid({
                 key={occId}
                 occ={occ}
                 buckets={buckets}
+                isToday={isToday}
                 session={sessions.get(occId)}
                 onComplete={() => onComplete(occ)}
                 onUncomplete={() => onUncomplete(occ)}

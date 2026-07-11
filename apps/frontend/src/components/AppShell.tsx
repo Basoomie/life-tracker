@@ -74,7 +74,7 @@ export function AppShell({
         </div>
       </header>
       <ViewNav active={activeView} onChange={onViewChange} />
-      <main className="app-main">
+      <main className={`app-main${activeView === 'calendar' ? ' app-main--wide' : ''}`}>
         {children}
       </main>
     </>
