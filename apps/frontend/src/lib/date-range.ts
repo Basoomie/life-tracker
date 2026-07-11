@@ -1,7 +1,7 @@
 // §12.3 / §12.4 — Range computation for List and Calendar views.
 // All dates are UTC to match backend todayUTC().
 
-export type RangeKey = 'today' | 'tomorrow' | 'this-week' | 'this-month'
+export type RangeKey = 'today' | 'tomorrow' | 'this-week' | 'this-month' | 'custom'
 
 export function todayStr(ref: Date = new Date()): string {
   return ref.toISOString().slice(0, 10)
@@ -15,9 +15,15 @@ export function addDays(dateStr: string, n: number): string {
 
 export function getRangeDates(
   key: RangeKey,
-  ref: Date = new Date()
+  ref: Date = new Date(),
+  customDate?: string
 ): { start: string; end: string } {
   const today = todayStr(ref)
+
+  if (key === 'custom') {
+    const day = customDate ?? today
+    return { start: day, end: day }
+  }
 
   if (key === 'today') return { start: today, end: today }
 

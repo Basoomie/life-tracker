@@ -9,7 +9,7 @@ import { ConfirmModal } from '../shared/ConfirmModal'
 import { FilterBar } from '../FilterBar'
 import { sortByTiming, groupByPriority } from '../../lib/list-sort'
 import { applyFilters, makeDefaultFilters, serializeFilters, deserializeFilters } from '../../lib/filters'
-import { getRangeDates, getDaysInRange, formatDayLabel } from '../../lib/date-range'
+import { getRangeDates, getDaysInRange, formatDayLabel, todayStr } from '../../lib/date-range'
 import { api } from '../../lib/api'
 import type { RangeKey } from '../../lib/date-range'
 import type { OccurrenceWithState, Category, Reason } from '@tracker/shared'
@@ -21,6 +21,9 @@ type Props = {
 export function ListView({ onEditItem }: Props) {
   const [range, setRange] = useState<RangeKey>(() => {
     return (localStorage.getItem('tracker:list-range') as RangeKey | null) ?? 'today'
+  })
+  const [customDate, setCustomDate] = useState<string>(() => {
+    return localStorage.getItem('tracker:list-customDate') ?? todayStr()
   })
   const [priorityFlip, setPriorityFlip] = useState(() => {
     return localStorage.getItem('tracker:list-priorityFlip') === 'true'
@@ -36,10 +39,11 @@ export function ListView({ onEditItem }: Props) {
   const [pendingArchive, setPendingArchive] = useState<OccurrenceWithState | null>(null)
 
   useEffect(() => { localStorage.setItem('tracker:list-range', range) }, [range])
+  useEffect(() => { localStorage.setItem('tracker:list-customDate', customDate) }, [customDate])
   useEffect(() => { localStorage.setItem('tracker:list-priorityFlip', String(priorityFlip)) }, [priorityFlip])
   useEffect(() => { localStorage.setItem('tracker:list-filters', serializeFilters(filters)) }, [filters])
 
-  const { start, end } = useMemo(() => getRangeDates(range), [range])
+  const { start, end } = useMemo(() => getRangeDates(range, undefined, customDate), [range, customDate])
 
   const {
     occurrences,
@@ -178,7 +182,17 @@ export function ListView({ onEditItem }: Props) {
           <option value="tomorrow">Tomorrow</option>
           <option value="this-week">This Week</option>
           <option value="this-month">This Month</option>
+          <option value="custom">Custom date</option>
         </select>
+
+        <input
+          type="date"
+          className="field__input range-toolbar__date"
+          value={customDate}
+          onChange={(e) => { setCustomDate(e.target.value); setRange('custom'); setPriorityFlip(false) }}
+          aria-label="Custom date"
+          data-testid="range-custom-date"
+        />
 
         <label className="now-view__toggle-label" data-testid="priority-flip-toggle">
           <span className="toggle">

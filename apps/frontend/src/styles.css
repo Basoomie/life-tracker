@@ -707,7 +707,8 @@ input, select, textarea {
   margin-bottom: var(--space-4);
 }
 
-.range-toolbar__select {
+.range-toolbar__select,
+.range-toolbar__date {
   font-size: var(--text-sm);
   padding: var(--space-2) var(--space-3);
   width: auto;

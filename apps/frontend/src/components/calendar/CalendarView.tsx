@@ -23,6 +23,9 @@ export function CalendarView({ onEditItem }: Props) {
   const [range, setRange] = useState<RangeKey>(() => {
     return (localStorage.getItem('tracker:cal-range') as RangeKey | null) ?? 'today'
   })
+  const [customDate, setCustomDate] = useState<string>(() => {
+    return localStorage.getItem('tracker:cal-customDate') ?? todayStr()
+  })
   const [showFilters, setShowFilters] = useState(false)
   const [filters, setFilters] = useState(() => {
     const saved = localStorage.getItem('tracker:cal-filters')
@@ -35,6 +38,7 @@ export function CalendarView({ onEditItem }: Props) {
   const [pendingArchive, setPendingArchive] = useState<OccurrenceWithState | null>(null)
 
   useEffect(() => { localStorage.setItem('tracker:cal-range', range) }, [range])
+  useEffect(() => { localStorage.setItem('tracker:cal-customDate', customDate) }, [customDate])
   useEffect(() => { localStorage.setItem('tracker:cal-filters', serializeFilters(filters)) }, [filters])
 
   // Mobile single-day navigation: which day within range is focused
@@ -48,7 +52,7 @@ export function CalendarView({ onEditItem }: Props) {
     return () => clearInterval(id)
   }, [])
 
-  const { start, end } = useMemo(() => getRangeDates(range), [range])
+  const { start, end } = useMemo(() => getRangeDates(range, undefined, customDate), [range, customDate])
 
   const {
     occurrences,
@@ -164,7 +168,16 @@ export function CalendarView({ onEditItem }: Props) {
           <option value="tomorrow">Tomorrow</option>
           <option value="this-week">This Week</option>
           <option value="this-month">This Month</option>
+          <option value="custom">Custom date</option>
         </select>
+        <input
+          type="date"
+          className="field__input range-toolbar__date"
+          value={customDate}
+          onChange={(e) => { setCustomDate(e.target.value); setRange('custom') }}
+          aria-label="Custom date"
+          data-testid="cal-range-custom-date"
+        />
         <button
           className="btn btn--ghost"
           onClick={() => setShowFilters((v) => !v)}

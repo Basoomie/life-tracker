@@ -464,6 +464,35 @@ test.describe('§4 — Uncomplete with confirmation (Calendar view)', () => {
 
 })
 
+test.describe('§12.4 — Calendar view custom date picker', () => {
+
+  test('§12.4 Calendar view: picking a custom date fetches that single day and switches the dropdown to Custom', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2025-06-16T07:00:00'))
+
+    const fetchedRanges: string[] = []
+    await page.route('/me', (r) => r.fulfill({ json: { id: 'u1', email: 'test@tracker.local', createdAt: new Date().toISOString() } }))
+    await page.route(/\/api\/occurrences\?start=.*&end=.*/, (route) => {
+      fetchedRanges.push(route.request().url())
+      route.fulfill({ json: [] })
+    })
+    await page.route('/api/occurrences/today', (route) => route.fulfill({ json: [] }))
+    await page.route('/api/buckets',     (route) => route.fulfill({ json: BUCKETS }))
+    await page.route('/api/day-start',   (route) => route.fulfill({ json: DAY_START_ENTRIES }))
+    await page.route('/api/categories',  (route) => route.fulfill({ json: [] }))
+    await page.route('/api/reasons',     (route) => route.fulfill({ json: [] }))
+    await page.route('/api/preferences', (route) => route.fulfill({ json: {} }))
+
+    await goToCalendarView(page)
+
+    const customReq = page.waitForRequest(/\/api\/occurrences\?start=2025-07-04&end=2025-07-04/)
+    await page.getByTestId('cal-range-custom-date').fill('2025-07-04')
+    await customReq
+
+    await expect(page.getByTestId('cal-range-select')).toHaveValue('custom')
+    expect(fetchedRanges.some((u) => u.includes('start=2025-07-04&end=2025-07-04'))).toBe(true)
+  })
+})
+
 test.describe('§9 — Calendar view state persistence across navigation', () => {
 
   test('§9 Calendar view range persists after navigating to Now and back', async ({ page }) => {

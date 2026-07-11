@@ -263,6 +263,33 @@ test.describe('§12.3 — List view', () => {
     }
   })
 
+  test('§12.3 List view: picking a custom date fetches that single day and switches the dropdown to Custom', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2025-06-16T09:00:00'))
+    await page.route('/me', (r) => r.fulfill({ json: { id: 'u1', email: 'test@tracker.local', createdAt: new Date().toISOString() } }))
+
+    const fetchedRanges: string[] = []
+    await page.route(/\/api\/occurrences\?start=.*&end=.*/, (route) => {
+      fetchedRanges.push(route.request().url())
+      route.fulfill({ json: [] })
+    })
+    await page.route('/api/occurrences/today', (route) => route.fulfill({ json: [] }))
+    await page.route('/api/buckets',     (route) => route.fulfill({ json: [] }))
+    await page.route('/api/day-start',   (route) => route.fulfill({ json: [] }))
+    await page.route('/api/categories',  (route) => route.fulfill({ json: [] }))
+    await page.route('/api/reasons',     (route) => route.fulfill({ json: [] }))
+    await page.route('/api/preferences', (route) => route.fulfill({ json: {} }))
+
+    await page.goto('/')
+    await page.getByTestId('view-nav-list').click()
+
+    const customReq = page.waitForRequest(/\/api\/occurrences\?start=2025-07-04&end=2025-07-04/)
+    await page.getByTestId('range-custom-date').fill('2025-07-04')
+    await customReq
+
+    await expect(page.getByTestId('range-select')).toHaveValue('custom')
+    expect(fetchedRanges.some((u) => u.includes('start=2025-07-04&end=2025-07-04'))).toBe(true)
+  })
+
   // ── Filter bar (§12.5) ─────────────────────────────────────────────────
 
   test('§12.5 Filter: priority filter narrows to matching items only', async ({ page }) => {
