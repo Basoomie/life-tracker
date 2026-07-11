@@ -13,6 +13,7 @@ type MakeOccOverrides = {
   name: string
   appliesToDay?: string
   isBlocked?: boolean
+  hasChildren?: boolean
   snapshot?: Partial<OccurrenceWithState['snapshot']>
   completionState?: Partial<OccurrenceWithState['completionState']>
   disposition?: Partial<OccurrenceWithState['disposition']>
@@ -64,7 +65,7 @@ function makeOcc(overrides: MakeOccOverrides): OccurrenceWithState {
       derivedPercentAtClose: null,
       ...overrides.disposition,
     },
-    hasChildren: false,
+    hasChildren: overrides.hasChildren ?? false,
   } as OccurrenceWithState
 }
 
@@ -109,6 +110,18 @@ const DONE_OCC = makeOcc({
     completedAt: null, wasRetroactive: false, derivedPercent: null, declaredPercent: null,
   },
   disposition: { type: 'completed', reasonId: null, comment: null, rescheduledToDay: null, derivedPercentAtClose: null },
+})
+
+// Parent with a child, high priority, unscheduled (mirrors seed data's Night Routine/Tretinoin)
+const ROUTINE_OCC = makeOcc({
+  id: 'occ-routine', itemId: 'item-routine', name: 'Night Routine',
+  snapshot: { priority: 'high' },
+  completionState: { isLeaf: false, derivedPercent: 50, completionPercent: 50, isComplete: false, completedAt: null, wasRetroactive: false, declaredPercent: null },
+  hasChildren: true,
+})
+const TRETINOIN_OCC = makeOcc({
+  id: 'occ-tret', itemId: 'item-tret', name: 'Tretinoin',
+  snapshot: { parentId: 'item-routine', priority: 'low' },
 })
 
 async function setupApiMocks(
@@ -619,6 +632,44 @@ test.describe('§3 — Archive / delete task (List view)', () => {
     expect(archiveCalls.length).toBe(1)
     expect(archiveCalls[0]).toBe('DELETE')
     await expect(page.getByTestId('occ-row-occ-read')).not.toBeVisible()
+  })
+
+})
+
+test.describe('Occurrence nesting — parent/child cards (List view)', () => {
+
+  test('parent with children renders as a closed card by default in the default day-group view', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2025-06-16T09:00:00'))
+    await setupApiMocks(page, [ROUTINE_OCC, TRETINOIN_OCC, UNSCHEDULED])
+    await goToListView(page)
+
+    const card = page.getByTestId(`occ-card-${ROUTINE_OCC.itemId}`)
+    await expect(card).toBeVisible()
+    await expect(card).toHaveAttribute('data-expanded', 'false')
+    await expect(page.getByTestId(`occ-row-${TRETINOIN_OCC.id}`)).toHaveCount(0)
+    // Plain leaf occurrence: no card chrome
+    await expect(page.getByTestId(`occ-card-${UNSCHEDULED.itemId}`)).toHaveCount(0)
+
+    await page.getByTestId(`occ-card-toggle-${ROUTINE_OCC.itemId}`).click()
+    await expect(page.getByTestId(`occ-row-${TRETINOIN_OCC.id}`)).toBeVisible()
+  })
+
+  test('priority-flip groups by the parent\'s priority only; the child (low) stays nested inside the high-priority parent\'s card', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2025-06-16T09:00:00'))
+    await setupApiMocks(page, [ROUTINE_OCC, TRETINOIN_OCC, LOW_OCC])
+    await goToListView(page)
+
+    await page.getByTestId('priority-flip-toggle').click()
+    await expect(page.getByTestId('list-priority-view')).toBeVisible()
+
+    // Parent (high) lands in the high group as a card; the standalone low item lands in low
+    await expect(page.getByTestId('priority-group-high').getByTestId(`occ-card-${ROUTINE_OCC.itemId}`)).toBeVisible()
+    await expect(page.getByTestId('priority-group-low').getByText('Low Priority Task')).toBeVisible()
+    // Tretinoin (itself priority 'low') never gets its own top-level row in any priority group —
+    // it only exists nested inside the parent's card
+    await expect(page.getByTestId(`occ-row-${TRETINOIN_OCC.id}`)).toHaveCount(0)
+    await page.getByTestId(`occ-card-toggle-${ROUTINE_OCC.itemId}`).click()
+    await expect(page.getByTestId('priority-group-high').getByTestId(`occ-row-${TRETINOIN_OCC.id}`)).toBeVisible()
   })
 
 })

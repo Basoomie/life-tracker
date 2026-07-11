@@ -106,6 +106,20 @@ const TRETINOIN_OCC = makeOcc({
   snapshot: { parentId: 'item-routine' },
 })
 
+// Child of Night Routine that is itself a parent: Skincare
+const SKINCARE_OCC = makeOcc({
+  id: 'occ-skincare', itemId: 'item-skincare', name: 'Skincare',
+  snapshot: { parentId: 'item-routine' },
+  completionState: { isLeaf: false, derivedPercent: 50, completionPercent: 50, isComplete: false, completedAt: null, wasRetroactive: false, declaredPercent: null },
+  hasChildren: true,
+})
+
+// Grandchild of Night Routine, child of Skincare: Cleanse
+const CLEANSE_OCC = makeOcc({
+  id: 'occ-cleanse', itemId: 'item-cleanse', name: 'Cleanse',
+  snapshot: { parentId: 'item-skincare' },
+})
+
 // A blocked item
 const BLOCKED_OCC = makeOcc({
   id: 'occ-blocked', itemId: 'item-blocked', name: 'Blocked Task',
@@ -235,10 +249,11 @@ test.describe('§12.2 — Now view tier ordering and rendering', () => {
 
     await page.goto('/')
 
-    // Initial state: 50% shown on Night Routine
+    // Initial state: 50% shown on Night Routine (rendered in the card header)
     await expect(page.getByTestId('derived-pct').first()).toContainText('50%')
 
-    // Complete the Tretinoin child (it is a child, so handleComplete will call refresh())
+    // Child is nested inside the parent's card — expand it first
+    await page.getByTestId(`occ-card-toggle-${ROUTINE_OCC.itemId}`).click()
     const tretRow = page.getByTestId(`occ-row-${TRETINOIN_OCC.id}`)
     await tretRow.getByTestId('occ-check').click()
 
@@ -634,6 +649,86 @@ test.describe('§3 — Archive / delete task (Now view)', () => {
     expect(archiveCalls.length).toBe(1)
     expect(archiveCalls[0]).toBe('DELETE')
     await expect(page.getByTestId(`occ-row-${ROUTINE_OCC.id}`)).not.toBeVisible()
+  })
+
+})
+
+test.describe('Occurrence nesting — parent/child cards (Now view)', () => {
+
+  test('parent with children renders as a closed card by default; plain leaf rows get no card chrome', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2025-06-16T22:00:00'))
+    await setupApiMocks(page, [ROUTINE_OCC, TRETINOIN_OCC, TRADING_OCC])
+
+    await page.goto('/')
+
+    const card = page.getByTestId(`occ-card-${ROUTINE_OCC.itemId}`)
+    await expect(card).toBeVisible()
+    await expect(card).toHaveAttribute('data-expanded', 'false')
+    // Collapsed: children not in the DOM at all
+    await expect(page.getByTestId(`occ-row-${TRETINOIN_OCC.id}`)).toHaveCount(0)
+    // Leaf occurrence (no children) never gets card treatment
+    await expect(page.getByTestId(`occ-card-${TRADING_OCC.itemId}`)).toHaveCount(0)
+  })
+
+  test('expanding a parent card reveals its children and adds border/shadow', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2025-06-16T22:00:00'))
+    await setupApiMocks(page, [ROUTINE_OCC, TRETINOIN_OCC])
+
+    await page.goto('/')
+
+    const card = page.getByTestId(`occ-card-${ROUTINE_OCC.itemId}`)
+    await expect(card).not.toHaveClass(/occ-card--expanded/)
+
+    await page.getByTestId(`occ-card-toggle-${ROUTINE_OCC.itemId}`).click()
+
+    await expect(card).toHaveClass(/occ-card--expanded/)
+    await expect(card).toHaveAttribute('data-expanded', 'true')
+    await expect(page.getByTestId(`occ-row-${TRETINOIN_OCC.id}`)).toBeVisible()
+  })
+
+  test('grandchild (child-with-its-own-children) renders as its own nested card', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2025-06-16T22:00:00'))
+    await setupApiMocks(page, [ROUTINE_OCC, SKINCARE_OCC, CLEANSE_OCC])
+
+    await page.goto('/')
+
+    await page.getByTestId(`occ-card-toggle-${ROUTINE_OCC.itemId}`).click()
+    const skincareCard = page.getByTestId(`occ-card-${SKINCARE_OCC.itemId}`)
+    await expect(skincareCard).toBeVisible()
+    await expect(skincareCard).toHaveClass(/occ-card--nested/)
+    // Still closed — Cleanse isn't in the DOM until Skincare itself expands
+    await expect(page.getByTestId(`occ-row-${CLEANSE_OCC.id}`)).toHaveCount(0)
+
+    await page.getByTestId(`occ-card-toggle-${SKINCARE_OCC.itemId}`).click()
+    await expect(page.getByTestId(`occ-row-${CLEANSE_OCC.id}`)).toBeVisible()
+  })
+
+  test('a child whose parent occurrence is not materialized today renders as a plain top-level row, not nested', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2025-06-16T22:00:00'))
+    // Tretinoin only — Night Routine did not materialize for today (off-schedule day)
+    await setupApiMocks(page, [TRETINOIN_OCC])
+
+    await page.goto('/')
+
+    await expect(page.getByTestId(`occ-row-${TRETINOIN_OCC.id}`)).toBeVisible()
+    await expect(page.getByTestId(`occ-card-${TRETINOIN_OCC.itemId}`)).toHaveCount(0)
+  })
+
+  test('a completed child stays nested in its still-incomplete parent card instead of moving to Done today', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2025-06-16T22:00:00'))
+    const completedTret: OccurrenceWithState = {
+      ...TRETINOIN_OCC,
+      completionState: { ...TRETINOIN_OCC.completionState, isComplete: true, completionPercent: 100 },
+      disposition: { ...TRETINOIN_OCC.disposition, type: 'completed' },
+    }
+    await setupApiMocks(page, [ROUTINE_OCC, completedTret])
+
+    await page.goto('/')
+
+    // Parent (still <100%) is not in Done today
+    await expect(page.getByTestId('tier-done')).toHaveCount(0)
+    await page.getByTestId(`occ-card-toggle-${ROUTINE_OCC.itemId}`).click()
+    await expect(page.getByTestId(`occ-row-${completedTret.id}`).getByTestId('occ-check')).toHaveClass(/occ-check--checked/)
   })
 
 })

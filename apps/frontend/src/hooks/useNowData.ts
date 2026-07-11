@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useMemo, type Dispatch, type SetStateAction } from 'react'
 import { api } from '../lib/api'
 import { tierOccurrences, type TieredOccurrences } from '../lib/now-ordering'
+import { buildOccurrenceTree } from '../lib/occurrence-tree'
 import type { OccurrenceWithState } from '@tracker/shared'
 import type { Bucket } from '@tracker/shared'
 
@@ -61,9 +62,16 @@ export function useNowData(
     return () => clearInterval(id)
   }, [])
 
+  // Children never get their own tier slot — they render nested inside their
+  // parent's card. Only roots (occurrences with no same-day parent) are tiered.
+  const roots = useMemo(
+    () => buildOccurrenceTree(occurrences, buckets).map((n) => n.occ),
+    [occurrences, buckets]
+  )
+
   const tiers = useMemo(
-    () => tierOccurrences(occurrences, buckets, now, imminentWindowMin, alwaysShowNext),
-    [occurrences, buckets, now, imminentWindowMin, alwaysShowNext]
+    () => tierOccurrences(roots, buckets, now, imminentWindowMin, alwaysShowNext),
+    [roots, buckets, now, imminentWindowMin, alwaysShowNext]
   )
 
   const refresh = useCallback(() => {

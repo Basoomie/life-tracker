@@ -6,10 +6,12 @@ import { useOccurrenceActions } from '../../hooks/useOccurrenceActions'
 import { OccurrenceRow } from '../now/OccurrenceRow'
 import { DispositionModal } from '../now/DispositionModal'
 import { ConfirmModal } from '../shared/ConfirmModal'
+import { OccurrenceCard } from '../shared/OccurrenceCard'
 import { FilterBar } from '../FilterBar'
 import { sortByTiming, groupByPriority } from '../../lib/list-sort'
 import { applyFilters, makeDefaultFilters, serializeFilters, deserializeFilters } from '../../lib/filters'
 import { getRangeDates, getDaysInRange, formatDayLabel, todayStr } from '../../lib/date-range'
+import { buildOccurrenceTree, type OccurrenceNode } from '../../lib/occurrence-tree'
 import { api } from '../../lib/api'
 import type { RangeKey } from '../../lib/date-range'
 import type { OccurrenceWithState, Category, Reason } from '@tracker/shared'
@@ -90,6 +92,26 @@ export function ListView({ onEditItem }: Props) {
     return map
   }, [occurrences, days])
 
+  // Parent/child matching is same-day, so the tree is built per day. Filters
+  // and sorting apply to roots only — once a parent passes the filter, its
+  // full unfiltered children render inside its card (the progress bar stays
+  // accurate to what's actually shown, rather than to a filtered subset).
+  const treesByDay = useMemo(() => {
+    const map = new Map<string, OccurrenceNode[]>()
+    for (const day of days) map.set(day, buildOccurrenceTree(occsByDay.get(day) ?? [], buckets))
+    return map
+  }, [days, occsByDay, buckets])
+
+  const nodeByKey = useMemo(() => {
+    const map = new Map<string, OccurrenceNode>()
+    function walk(node: OccurrenceNode) {
+      map.set(node.occ.id ?? node.occ.itemId, node)
+      node.children.forEach(walk)
+    }
+    for (const roots of treesByDay.values()) roots.forEach(walk)
+    return map
+  }, [treesByDay])
+
   function renderRow(occ: OccurrenceWithState, isChild = false) {
     const occId = occ.id ?? occ.itemId
     return (
@@ -113,6 +135,16 @@ export function ListView({ onEditItem }: Props) {
     )
   }
 
+  // Roots with ≥1 materialized child today render as a collapsible card;
+  // plain leaves render exactly as before.
+  function renderNode(occ: OccurrenceWithState) {
+    const node = nodeByKey.get(occ.id ?? occ.itemId)
+    if (node && node.children.length > 0) {
+      return <OccurrenceCard key={occ.id ?? occ.itemId} node={node} depth={0} renderLeaf={(o) => renderRow(o)} />
+    }
+    return renderRow(occ)
+  }
+
   function renderPriorityGroups(occs: OccurrenceWithState[]) {
     const groups = groupByPriority(occs)
     const sections: Array<{ label: string; key: string; items: OccurrenceWithState[] }> = [
@@ -125,7 +157,7 @@ export function ListView({ onEditItem }: Props) {
       <div key={s.key} className="priority-group" data-testid={`priority-group-${s.key}`}>
         <div className="priority-group__label">{s.label}</div>
         <div className="list-section__rows">
-          {s.items.map((occ) => renderRow(occ))}
+          {s.items.map((occ) => renderNode(occ))}
         </div>
       </div>
     ))
@@ -133,8 +165,10 @@ export function ListView({ onEditItem }: Props) {
 
   function renderContent() {
     if (priorityFlip) {
-      // All occurrences across all days grouped by priority
-      const filtered = applyFilters(occurrences, filters)
+      // All roots across all days grouped by priority (children stay nested
+      // in their card regardless of their own priority)
+      const allRoots = days.flatMap((day) => (treesByDay.get(day) ?? []).map((n) => n.occ))
+      const filtered = applyFilters(allRoots, filters)
       const sorted = sortByTiming(filtered, buckets)
       return <div data-testid="list-priority-view">{renderPriorityGroups(sorted)}</div>
     }
@@ -143,8 +177,8 @@ export function ListView({ onEditItem }: Props) {
     return (
       <div data-testid="list-timing-view">
         {days.map((day) => {
-          const dayOccs = occsByDay.get(day) ?? []
-          const filtered = applyFilters(dayOccs, filters)
+          const dayRoots = (treesByDay.get(day) ?? []).map((n) => n.occ)
+          const filtered = applyFilters(dayRoots, filters)
           const sorted = sortByTiming(filtered, buckets)
           if (sorted.length === 0 && isMultiDay) return null
           return (
@@ -158,7 +192,7 @@ export function ListView({ onEditItem }: Props) {
                 {sorted.length === 0 ? (
                   <div className="list-empty">Nothing for this day</div>
                 ) : (
-                  sorted.map((occ) => renderRow(occ))
+                  sorted.map((occ) => renderNode(occ))
                 )}
               </div>
             </div>

@@ -8,6 +8,8 @@ import { OccurrenceRow } from './OccurrenceRow'
 import { AdHocModal } from './AdHocModal'
 import { DispositionModal } from './DispositionModal'
 import { ConfirmModal } from '../shared/ConfirmModal'
+import { OccurrenceCard } from '../shared/OccurrenceCard'
+import { buildOccurrenceTree, type OccurrenceNode } from '../../lib/occurrence-tree'
 import { api } from '../../lib/api'
 import { saveSessions, loadSessions } from '../../lib/sessions'
 import type { OccurrenceWithState } from '@tracker/shared'
@@ -40,9 +42,25 @@ export function NowView({ onEditItem }: Props) {
   const { tiers, occurrences, buckets, loading, error, refresh, setOccurrences } =
     useNowData(imminentWindow, alwaysNext)
 
+  // Full parent/child tree for rendering (NowView only ever shows today, so
+  // no per-day bucketing needed). Children never appear as independent tier
+  // rows — they nest inside their parent's OccurrenceCard.
+  const treeRoots = useMemo(() => buildOccurrenceTree(occurrences, buckets), [occurrences, buckets])
+  const nodeByKey = useMemo(() => {
+    const map = new Map<string, OccurrenceNode>()
+    function walk(node: OccurrenceNode) {
+      map.set(node.occ.id ?? node.occ.itemId, node)
+      node.children.forEach(walk)
+    }
+    treeRoots.forEach(walk)
+    return map
+  }, [treeRoots])
+
+  // Only root occurrences get their own "Done today" entry; a completed
+  // child stays nested in its (possibly still-incomplete) parent's card.
   const doneToday = useMemo(
-    () => occurrences.filter((o) => o.completionState.isComplete),
-    [occurrences]
+    () => treeRoots.map((n) => n.occ).filter((o) => o.completionState.isComplete),
+    [treeRoots]
   )
 
   // Auto-expand Done Today when the first item is completed in this session
@@ -249,6 +267,16 @@ export function NowView({ onEditItem }: Props) {
     )
   }
 
+  // Roots with ≥1 materialized child today render as a collapsible card;
+  // plain leaves render exactly as before.
+  function renderNode(occ: OccurrenceWithState) {
+    const node = nodeByKey.get(occ.id ?? occ.itemId)
+    if (node && node.children.length > 0) {
+      return <OccurrenceCard key={occ.id ?? occ.itemId} node={node} depth={0} renderLeaf={(o) => renderRow(o)} />
+    }
+    return renderRow(occ)
+  }
+
   // ── Loading / error states ─────────────────────────────────────────────────
 
   if (loading) {
@@ -322,7 +350,7 @@ export function NowView({ onEditItem }: Props) {
           count={tiers.active.length}
           emptyText="Nothing active right now"
         >
-          {tiers.active.map((occ) => renderRow(occ))}
+          {tiers.active.map((occ) => renderNode(occ))}
         </TierSection>
 
         {/* §12.2 — Imminent tier */}
@@ -331,7 +359,7 @@ export function NowView({ onEditItem }: Props) {
           count={tiers.imminent.length}
           emptyText="Nothing coming up soon"
         >
-          {tiers.imminent.map((occ) => renderRow(occ))}
+          {tiers.imminent.map((occ) => renderNode(occ))}
         </TierSection>
 
         {/* §12.2 — Unscheduled tier */}
@@ -340,7 +368,7 @@ export function NowView({ onEditItem }: Props) {
           count={tiers.unscheduled.length}
           emptyText="No unscheduled tasks for today"
         >
-          {tiers.unscheduled.map((occ) => renderRow(occ))}
+          {tiers.unscheduled.map((occ) => renderNode(occ))}
         </TierSection>
 
         {/* Done today — auto-expands on first completion; click checkbox to undo */}
@@ -356,7 +384,7 @@ export function NowView({ onEditItem }: Props) {
               <span className="tier-count">{doneToday.length}</span>
               <span className="tier-header__chevron" aria-hidden="true">{showDone ? '▲' : '▼'}</span>
             </button>
-            {showDone && doneToday.map((occ) => renderRow(occ))}
+            {showDone && doneToday.map((occ) => renderNode(occ))}
           </section>
         )}
       </div>

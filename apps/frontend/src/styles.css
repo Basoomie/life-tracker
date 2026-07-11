@@ -371,6 +371,101 @@ input, select, textarea {
   flex-shrink: 0;
 }
 
+/* ── Occurrence card — parent occurrences with ≥1 materialized child ─────────
+   Depth 0: flush with sibling rows when closed, promoted to a bordered/
+   shadowed widget only when expanded (keeps a day full of parents from
+   reading as a stack of boxes). Depth ≥1 (nested inside an already-open
+   card): always a light border, never a shadow — it's already inside an
+   elevated container and just needs to read as distinct from a plain leaf
+   row next to it. ─────────────────────────────────────────────────────────── */
+
+.occ-card {
+  border-radius: var(--radius-lg);
+  margin: var(--space-2) 0;
+}
+
+.occ-card--expanded {
+  border: 1px solid var(--color-border);
+  box-shadow: var(--shadow-md);
+  background: var(--color-surface-raised);
+  padding: var(--space-2);
+}
+
+.occ-card--nested {
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+}
+
+.occ-card__header {
+  display: flex;
+  align-items: flex-start;
+}
+
+.occ-card__header > .occ-row {
+  flex: 1;
+  min-width: 0;
+  border-bottom: none;
+}
+
+.occ-card__toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  margin-top: var(--space-2);
+  border-radius: var(--radius-full);
+  color: var(--color-text-tertiary);
+  font-size: var(--text-xs);
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.occ-card__toggle:hover {
+  background: var(--color-border-subtle);
+  color: var(--color-text-primary);
+}
+
+.occ-card__progress {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-4) var(--space-2);
+}
+
+.occ-card--nested > .occ-card__progress { padding: 0 var(--space-3) var(--space-2); }
+
+.occ-card__progress-track {
+  flex: 1;
+  max-width: 160px;
+  height: 6px;
+  background: var(--color-border-subtle);
+  border-radius: var(--radius-full);
+  overflow: hidden;
+}
+
+.occ-card__progress-fill {
+  height: 100%;
+  background: var(--color-accent);
+  border-radius: var(--radius-full);
+}
+
+.occ-card__progress-label {
+  font-size: var(--text-xs);
+  color: var(--color-text-secondary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.occ-card__children {
+  padding-left: var(--space-6);
+}
+
+.occ-card__leaf > .occ-row {
+  padding-left: var(--space-2);
+}
+
 /* ── Timer control ─────────────────────────────────────────────────────────── */
 .timer-control {
   display: flex;
