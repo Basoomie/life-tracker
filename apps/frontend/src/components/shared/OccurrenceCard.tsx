@@ -24,6 +24,10 @@ type Props = {
   // (unlike completing a child, which needs the server-computed parent
   // derived %), so a local patch is both correct and avoids that unmount.
   onReordered: (parentItemId: string, orderedChildItemIds: string[]) => void
+  // Now/List leave this unset (collapsed by default). Calendar's detail
+  // panel passes true — opening the panel is already a deliberate "tell me
+  // more" click, so a second click just to see children would be redundant.
+  defaultExpanded?: boolean
 }
 
 // Recursive card wrapper for an occurrence that has ≥1 materialized child
@@ -33,8 +37,8 @@ type Props = {
 // Children are manually reorderable via drag-and-drop, scoped to this card's
 // own DndContext — that's what confines a drag to one parent's list without
 // extra validation code (no shared DndContext exists between sibling cards).
-export function OccurrenceCard({ node, depth, renderLeaf, onReordered }: Props) {
-  const [expanded, setExpanded] = useState(false)
+export function OccurrenceCard({ node, depth, renderLeaf, onReordered, defaultExpanded = false }: Props) {
+  const [expanded, setExpanded] = useState(defaultExpanded)
   // Optimistic reorder: set immediately on drop, cleared once onReordered's
   // local state patch lands (or reverted on API failure).
   const [orderOverride, setOrderOverride] = useState<string[] | null>(null)

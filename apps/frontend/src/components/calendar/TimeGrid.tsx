@@ -3,19 +3,22 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { OccurrenceRow } from '../now/OccurrenceRow'
+import { OccurrenceCard } from '../shared/OccurrenceCard'
 import { computeDayLayout, nowLinePx, TOTAL_PX, PX_PER_HOUR } from '../../lib/calendar-layout'
 import type { GridBlock, DayLayout } from '../../lib/calendar-layout'
+import type { OccurrenceNode } from '../../lib/occurrence-tree'
 import type { OccurrenceWithState, Bucket } from '@tracker/shared'
 import type { SessionState } from '../now/TimerControl'
 
 type Props = {
   day: string       // YYYY-MM-DD
   isToday: boolean
-  occs: OccurrenceWithState[]
+  occs: OccurrenceWithState[]   // roots only — CalendarView filters children out
   buckets: Bucket[]
   dayStart: string  // HH:MM
   now: Date
   sessions: Map<string, SessionState>
+  nodeByKey: Map<string, OccurrenceNode>
   onComplete: (occ: OccurrenceWithState) => void
   onUncomplete: (occ: OccurrenceWithState) => void
   onTimerStart: (occ: OccurrenceWithState) => void
@@ -25,6 +28,7 @@ type Props = {
   onDisposition: (occ: OccurrenceWithState) => void
   onEdit: (itemId: string) => void
   onArchive: (occ: OccurrenceWithState) => void
+  onReordered: (parentItemId: string, orderedChildItemIds: string[]) => void
 }
 
 // Hour labels on the time axis (every 2 hours for readability)
@@ -56,6 +60,7 @@ export function TimeGrid({
   dayStart,
   now,
   sessions,
+  nodeByKey,
   onComplete,
   onUncomplete,
   onTimerStart,
@@ -65,6 +70,7 @@ export function TimeGrid({
   onDisposition,
   onEdit,
   onArchive,
+  onReordered,
 }: Props) {
   const layout: DayLayout = computeDayLayout(occs, buckets, dayStart)
   const hourLabels = buildHourLabels(dayStart)
@@ -93,6 +99,53 @@ export function TimeGrid({
     )
     if (latest && latest !== selected) setSelected(latest)
   }, [occs, selected])
+
+  // closeAfterAction: the detail panel's original behavior — stopping the
+  // timer / setting a disposition / archiving dismisses the panel. Only
+  // applies to a plain leaf row; a parent-with-children selection stays
+  // open regardless (you're likely interacting with several children in a
+  // row, so auto-closing after any one of them would be disruptive).
+  function renderRow(occ: OccurrenceWithState, closeAfterAction = false) {
+    const occId = occ.id ?? occ.itemId
+    return (
+      <OccurrenceRow
+        key={occId}
+        occ={occ}
+        buckets={buckets}
+        isToday={isToday}
+        session={sessions.get(occId)}
+        onComplete={() => onComplete(occ)}
+        onUncomplete={() => onUncomplete(occ)}
+        onTimerStart={() => onTimerStart(occ)}
+        onTimerPause={() => onTimerPause(occ)}
+        onTimerResume={() => onTimerResume(occ)}
+        onTimerStop={() => { onTimerStop(occ); if (closeAfterAction) setSelected(null) }}
+        onDisposition={() => { onDisposition(occ); if (closeAfterAction) setSelected(null) }}
+        onEdit={() => onEdit(occ.itemId)}
+        onArchive={() => { onArchive(occ); if (closeAfterAction) setSelected(null) }}
+      />
+    )
+  }
+
+  // Roots with ≥1 materialized child today render as a collapsible card
+  // (unscheduled children never appear as independent top-level entries —
+  // same rule as Now/List); plain leaves render exactly as before.
+  function renderNode(occ: OccurrenceWithState, defaultExpanded = false, closeAfterAction = false) {
+    const node = nodeByKey.get(occ.id ?? occ.itemId)
+    if (node && node.children.length > 0) {
+      return (
+        <OccurrenceCard
+          key={occ.id ?? occ.itemId}
+          node={node}
+          depth={0}
+          renderLeaf={(o) => renderRow(o)}
+          onReordered={onReordered}
+          defaultExpanded={defaultExpanded}
+        />
+      )
+    }
+    return renderRow(occ, closeAfterAction)
+  }
 
   return (
     <div className="cal-day" data-testid={`cal-day-${day}`}>
@@ -173,21 +226,7 @@ export function TimeGrid({
         {/* Detail panel — shown when a block is selected */}
         {selected && (
           <div ref={panelRef} className="cal-detail-panel" data-testid="cal-detail-panel">
-            <OccurrenceRow
-              occ={selected}
-              buckets={buckets}
-              isToday={isToday}
-              session={sessions.get(selected.id ?? selected.itemId)}
-              onComplete={() => onComplete(selected)}
-              onUncomplete={() => onUncomplete(selected)}
-              onTimerStart={() => onTimerStart(selected)}
-              onTimerPause={() => onTimerPause(selected)}
-              onTimerResume={() => onTimerResume(selected)}
-              onTimerStop={() => { onTimerStop(selected); setSelected(null) }}
-              onDisposition={() => { onDisposition(selected); setSelected(null) }}
-              onEdit={() => onEdit(selected.itemId)}
-              onArchive={() => { onArchive(selected); setSelected(null) }}
-            />
+            {renderNode(selected, true, true)}
           </div>
         )}
       </div>
@@ -204,27 +243,7 @@ export function TimeGrid({
             <span className="tier-count">{layout.gutter.length}</span>
             <span className="tier-header__chevron" aria-hidden="true">{showGutter ? '▲' : '▼'}</span>
           </button>
-          {showGutter && layout.gutter.map((occ) => {
-            const occId = occ.id ?? occ.itemId
-            return (
-              <OccurrenceRow
-                key={occId}
-                occ={occ}
-                buckets={buckets}
-                isToday={isToday}
-                session={sessions.get(occId)}
-                onComplete={() => onComplete(occ)}
-                onUncomplete={() => onUncomplete(occ)}
-                onTimerStart={() => onTimerStart(occ)}
-                onTimerPause={() => onTimerPause(occ)}
-                onTimerResume={() => onTimerResume(occ)}
-                onTimerStop={() => onTimerStop(occ)}
-                onDisposition={() => onDisposition(occ)}
-                onEdit={() => onEdit(occ.itemId)}
-                onArchive={() => onArchive(occ)}
-              />
-            )
-          })}
+          {showGutter && layout.gutter.map((occ) => renderNode(occ))}
         </div>
       )}
     </div>

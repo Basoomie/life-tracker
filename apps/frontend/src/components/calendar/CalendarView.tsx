@@ -2,7 +2,7 @@
 // Mobile (<640px): single-day focus with prev/next navigation within the range.
 // Desktop: all days side-by-side (horizontal scroll for week/month).
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useRangeData, effectiveDayStart } from '../../hooks/useRangeData'
 import { useOccurrenceActions } from '../../hooks/useOccurrenceActions'
 import { DispositionModal } from '../now/DispositionModal'
@@ -11,6 +11,7 @@ import { FilterBar } from '../FilterBar'
 import { TimeGrid } from './TimeGrid'
 import { applyFilters, makeDefaultFilters, serializeFilters, deserializeFilters } from '../../lib/filters'
 import { getRangeDates, getDaysInRange, formatDayLabel, todayStr } from '../../lib/date-range'
+import { buildOccurrenceTree, type OccurrenceNode } from '../../lib/occurrence-tree'
 import { api } from '../../lib/api'
 import type { RangeKey } from '../../lib/date-range'
 import type { OccurrenceWithState, Category, Reason } from '@tracker/shared'
@@ -97,9 +98,38 @@ export function CalendarView({ onEditItem }: Props) {
     return map
   }, [occurrences, days])
 
+  // Parent/child matching is same-day, so the tree is built per day — same
+  // pattern as ListView.tsx. Filters apply to roots only: a filtered-in
+  // parent shows its full, unfiltered children.
+  const treesByDay = useMemo(() => {
+    const map = new Map<string, OccurrenceNode[]>()
+    for (const day of days) map.set(day, buildOccurrenceTree(occsByDay.get(day) ?? [], buckets))
+    return map
+  }, [days, occsByDay, buckets])
+
+  const nodeByKey = useMemo(() => {
+    const map = new Map<string, OccurrenceNode>()
+    function walk(node: OccurrenceNode) {
+      map.set(node.occ.id ?? node.occ.itemId, node)
+      node.children.forEach(walk)
+    }
+    for (const roots of treesByDay.values()) roots.forEach(walk)
+    return map
+  }, [treesByDay])
+
+  // Local patch, not refresh() — see OccurrenceCard's onReordered doc comment
+  // for why (refresh() unmounts the tree via the loading flag, collapsing
+  // every expanded card).
+  const handleChildrenReordered = useCallback((_parentItemId: string, orderedChildItemIds: string[]) => {
+    setOccurrences((prev) => prev.map((o) => {
+      const idx = orderedChildItemIds.indexOf(o.itemId)
+      return idx === -1 ? o : { ...o, sortOrder: idx }
+    }))
+  }, [setOccurrences])
+
   function renderDay(day: string) {
-    const dayOccs = occsByDay.get(day) ?? []
-    const filtered = applyFilters(dayOccs, filters)
+    const dayRoots = (treesByDay.get(day) ?? []).map((n) => n.occ)
+    const filtered = applyFilters(dayRoots, filters)
     const dayStart = effectiveDayStart(dayStartEntries, day)
     const isToday = day === today
 
@@ -113,6 +143,7 @@ export function CalendarView({ onEditItem }: Props) {
         dayStart={dayStart}
         now={now}
         sessions={sessions}
+        nodeByKey={nodeByKey}
         onComplete={handleComplete}
         onUncomplete={setPendingUncompletion}
         onTimerStart={handleTimerStart}
@@ -122,6 +153,7 @@ export function CalendarView({ onEditItem }: Props) {
         onDisposition={setDispositionTarget}
         onEdit={onEditItem}
         onArchive={setPendingArchive}
+        onReordered={handleChildrenReordered}
       />
     )
   }

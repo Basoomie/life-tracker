@@ -18,6 +18,7 @@ type MakeOccOverrides = {
   name: string
   appliesToDay?: string
   isBlocked?: boolean
+  hasChildren?: boolean
   snapshot?: Partial<OccurrenceWithState['snapshot']>
   completionState?: Partial<OccurrenceWithState['completionState']>
   disposition?: Partial<OccurrenceWithState['disposition']>
@@ -69,7 +70,7 @@ function makeOcc(overrides: MakeOccOverrides): OccurrenceWithState {
       derivedPercentAtClose: null,
       ...overrides.disposition,
     },
-    hasChildren: false,
+    hasChildren: overrides.hasChildren ?? false,
   } as OccurrenceWithState
 }
 
@@ -125,6 +126,36 @@ const OVERLAP_A = makeOcc({
 const OVERLAP_B = makeOcc({
   id: 'occ-ov-b', itemId: 'item-ov-b', name: 'Overlap B',
   snapshot: { timingPrecision: 'range', timingStartTime: '08:00', timingEndTime: '10:00' },
+})
+
+// Unscheduled parent + unscheduled child (both land in the gutter)
+const UNSCHEDULED_PARENT = makeOcc({
+  id: 'occ-uparent', itemId: 'item-uparent', name: 'Evening Routine',
+  completionState: { isLeaf: false, derivedPercent: 0, completionPercent: 0, isComplete: false, completedAt: null, wasRetroactive: false, declaredPercent: null },
+  hasChildren: true,
+})
+const UNSCHEDULED_CHILD = makeOcc({
+  id: 'occ-uchild', itemId: 'item-uchild', name: 'Floss',
+  snapshot: { parentId: 'item-uparent' },
+})
+
+// Scheduled parent (grid block) + unscheduled child (only reachable via the detail panel)
+const SCHEDULED_PARENT = makeOcc({
+  id: 'occ-sparent', itemId: 'item-sparent', name: 'Morning Routine',
+  snapshot: { timingPrecision: 'point', timingStartTime: '04:00' },
+  completionState: { isLeaf: false, derivedPercent: 0, completionPercent: 0, isComplete: false, completedAt: null, wasRetroactive: false, declaredPercent: null },
+  hasChildren: true,
+})
+const SCHEDULED_CHILD = makeOcc({
+  id: 'occ-schild', itemId: 'item-schild', name: 'Stretching',
+  snapshot: { parentId: 'item-sparent' },
+})
+
+// Child of Morning Routine that happens to carry its own explicit time —
+// should still nest under the parent, never get an independent grid block
+const TIMED_CHILD = makeOcc({
+  id: 'occ-tchild', itemId: 'item-tchild', name: 'Timed Child',
+  snapshot: { parentId: 'item-sparent', timingPrecision: 'range', timingStartTime: '05:00', timingEndTime: '05:30' },
 })
 
 async function setupCalApiMocks(
@@ -702,6 +733,72 @@ test.describe('§12.4 — Timer + disposition menu are gated to today\'s occurre
     // Future day's row: neither should render
     await expect(futureRow.getByTestId('timer-start')).not.toBeVisible()
     await expect(futureRow.getByTestId('occ-disposition-btn')).not.toBeVisible()
+  })
+
+})
+
+test.describe('Occurrence nesting — parent/child cards (Calendar view)', () => {
+
+  test('an unscheduled child never renders as its own top-level gutter row', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2025-06-16T09:00:00'))
+    await setupCalApiMocks(page, [UNSCHEDULED_PARENT, UNSCHEDULED_CHILD])
+    await goToCalendarView(page)
+
+    const grid = desktopGrid(page)
+    // Child never gets its own top-level gutter row
+    await expect(grid.getByTestId(`occ-row-${UNSCHEDULED_CHILD.id}`)).toHaveCount(0)
+    // It's reachable once the parent's card is expanded
+    await grid.getByTestId(`occ-card-toggle-${UNSCHEDULED_PARENT.itemId}`).click()
+    await expect(grid.getByTestId(`occ-row-${UNSCHEDULED_CHILD.id}`)).toBeVisible()
+  })
+
+  test('an unscheduled parent with children renders as a collapsed card in the gutter, same as Now/List', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2025-06-16T09:00:00'))
+    await setupCalApiMocks(page, [UNSCHEDULED_PARENT, UNSCHEDULED_CHILD, UNSCHEDULED])
+    await goToCalendarView(page)
+
+    const grid = desktopGrid(page)
+    const card = grid.getByTestId(`occ-card-${UNSCHEDULED_PARENT.itemId}`)
+    await expect(card).toBeVisible()
+    await expect(card).toHaveAttribute('data-expanded', 'false')
+    // A plain leaf occurrence in the gutter is unaffected — no card chrome
+    await expect(grid.getByTestId(`occ-card-${UNSCHEDULED.itemId}`)).toHaveCount(0)
+    await expect(grid.getByTestId(`occ-row-${UNSCHEDULED.id}`)).toBeVisible()
+  })
+
+  test("a scheduled parent's children are reachable via the detail panel, expanded by default", async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2025-06-16T09:00:00'))
+    await setupCalApiMocks(page, [SCHEDULED_PARENT, SCHEDULED_CHILD])
+    await goToCalendarView(page)
+
+    const grid = desktopGrid(page)
+    // Parent shows as its own grid block; child never independently appears anywhere yet
+    await expect(grid.getByTestId(`cal-block-${SCHEDULED_PARENT.id}`)).toBeVisible()
+    await expect(page.getByTestId(`occ-row-${SCHEDULED_CHILD.id}`)).toHaveCount(0)
+
+    await grid.getByTestId(`cal-block-${SCHEDULED_PARENT.id}`).click()
+
+    const panel = page.getByTestId('cal-detail-panel')
+    await expect(panel).toBeVisible()
+    const panelCard = panel.getByTestId(`occ-card-${SCHEDULED_PARENT.itemId}`)
+    await expect(panelCard).toBeVisible()
+    // Expanded by default in the panel — no extra click needed
+    await expect(panelCard).toHaveAttribute('data-expanded', 'true')
+    await expect(panel.getByTestId(`occ-row-${SCHEDULED_CHILD.id}`)).toBeVisible()
+  })
+
+  test('a child with its own explicit time still nests under its parent instead of getting an independent grid block', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2025-06-16T09:00:00'))
+    await setupCalApiMocks(page, [SCHEDULED_PARENT, TIMED_CHILD])
+    await goToCalendarView(page)
+
+    const grid = desktopGrid(page)
+    // Only the parent gets a block — the timed child does not get its own
+    await expect(grid.getByTestId(`cal-block-${SCHEDULED_PARENT.id}`)).toBeVisible()
+    await expect(grid.getByTestId(`cal-block-${TIMED_CHILD.id}`)).toHaveCount(0)
+
+    await grid.getByTestId(`cal-block-${SCHEDULED_PARENT.id}`).click()
+    await expect(page.getByTestId('cal-detail-panel').getByTestId(`occ-row-${TIMED_CHILD.id}`)).toBeVisible()
   })
 
 })
