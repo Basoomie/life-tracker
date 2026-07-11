@@ -28,6 +28,7 @@ interface ItemRow {
   timing_end_time: string | null
   planned_duration_min: number | null
   parent_id: string | null
+  sort_order: number
   disposition_policy: DispositionPolicy
   creation_source: CreationSource
   archived_at: Date | null
@@ -59,6 +60,7 @@ function toItem(row: ItemRow): Item {
     timingEndTime: row.timing_end_time,
     plannedDurationMin: row.planned_duration_min,
     parentId: row.parent_id,
+    sortOrder: row.sort_order,
     dispositionPolicy: row.disposition_policy,
     creationSource: row.creation_source,
     archivedAt: row.archived_at,
@@ -91,6 +93,7 @@ export type InsertItemData = {
   timingEndTime?: string | null
   plannedDurationMin?: number | null
   parentId?: string | null
+  sortOrder?: number
   dispositionPolicy?: DispositionPolicy
   creationSource?: CreationSource
 }
@@ -104,8 +107,8 @@ export async function insertItem(
        user_id, name, description, category_id, valence, priority,
        recurrence_rule, anchor_day, quota_target, timing_precision, timing_bucket_id,
        timing_start_time, timing_end_time, planned_duration_min,
-       parent_id, disposition_policy, creation_source
-     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+       parent_id, sort_order, disposition_policy, creation_source
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
      RETURNING *`,
     [
       data.userId,
@@ -123,6 +126,7 @@ export async function insertItem(
       data.timingEndTime ?? null,
       data.plannedDurationMin ?? null,
       data.parentId ?? null,
+      data.sortOrder ?? 0,
       data.dispositionPolicy ?? 'skip',
       data.creationSource ?? 'planned',
     ]
@@ -274,7 +278,9 @@ export async function updateItem(
   return rows[0] ? toItem(rows[0]) : null
 }
 
-// §4.1 — Direct children in the containment tree (items where parent_id = parentId)
+// §4.1 — Direct children in the containment tree (items where parent_id = parentId).
+// sort_order first (manual drag-and-drop order); created_at as a stable tiebreak
+// for items that tie at the default 0 (i.e. nobody has reordered them yet).
 export async function findChildItems(
   pool: Pool,
   parentId: string,
@@ -283,10 +289,59 @@ export async function findChildItems(
   const { rows } = await pool.query<ItemRow>(
     `SELECT * FROM items
      WHERE parent_id = $1 AND user_id = $2 AND archived_at IS NULL
-     ORDER BY created_at`,
+     ORDER BY sort_order, created_at`,
     [parentId, userId]
   )
   return rows.map(toItem)
+}
+
+// Where a newly created child should land by default: after all existing
+// siblings, not colliding at 0 with them.
+export async function nextChildSortOrder(
+  pool: Pool,
+  parentId: string,
+  userId: string
+): Promise<number> {
+  const { rows } = await pool.query<{ next: number }>(
+    `SELECT COALESCE(MAX(sort_order), -1) + 1 AS next FROM items
+     WHERE parent_id = $1 AND user_id = $2 AND archived_at IS NULL`,
+    [parentId, userId]
+  )
+  return rows[0].next
+}
+
+// This item's own position among its siblings (live — see enrichOccurrence).
+export async function findItemSortOrder(
+  pool: Pool,
+  itemId: string,
+  userId: string
+): Promise<number> {
+  const { rows } = await pool.query<{ sort_order: number }>(
+    `SELECT sort_order FROM items WHERE id = $1 AND user_id = $2`,
+    [itemId, userId]
+  )
+  return rows[0]?.sort_order ?? 0
+}
+
+// Manual drag-and-drop reorder. Caller (route) is responsible for validating
+// orderedChildItemIds is exactly the current children's id set — this just
+// applies the requested order. Sequential statements, no explicit
+// transaction: matches this codebase's existing style (no other domain
+// function wraps multi-statement writes in BEGIN/COMMIT either), and a
+// sibling list is small.
+export async function reorderChildren(
+  pool: Pool,
+  parentId: string,
+  userId: string,
+  orderedChildItemIds: string[]
+): Promise<Item[]> {
+  for (let i = 0; i < orderedChildItemIds.length; i++) {
+    await pool.query(
+      `UPDATE items SET sort_order = $1 WHERE id = $2 AND parent_id = $3 AND user_id = $4`,
+      [i, orderedChildItemIds[i], parentId, userId]
+    )
+  }
+  return findChildItems(pool, parentId, userId)
 }
 
 export async function deletePrerequisite(

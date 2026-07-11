@@ -16,6 +16,7 @@ import type {
   UpdateItemBody,
   SetPriorityBody,
   AddPrerequisiteBody,
+  ReorderChildrenBody,
   ItemSnapshot,
 } from '@tracker/shared'
 
@@ -68,6 +69,11 @@ export async function itemRoutes(app: FastifyInstance) {
     const body = req.body as CreateItemBody
     const userId = req.userId
 
+    // New children append after existing siblings rather than colliding at 0.
+    const sortOrder = body.parentId
+      ? await repos.nextChildSortOrder(pool, body.parentId, userId)
+      : 0
+
     const item = await repos.insertItem(pool, {
       userId,
       name: body.name,
@@ -84,6 +90,7 @@ export async function itemRoutes(app: FastifyInstance) {
       timingEndTime: body.timingEndTime ?? null,
       plannedDurationMin: body.plannedDurationMin ?? null,
       parentId: body.parentId ?? null,
+      sortOrder,
       dispositionPolicy: body.dispositionPolicy ?? 'skip',
       creationSource: body.creationSource ?? 'planned',
     })
@@ -197,6 +204,43 @@ export async function itemRoutes(app: FastifyInstance) {
       occurrenceId: null,
       appliesToDay: null,
       payload: { previousPriority, newPriority: body.priority },
+    })
+
+    return reply.send(updated)
+  })
+
+  // PATCH /items/:id/reorder-children — manual drag-and-drop child order.
+  // Body must contain exactly the current children's ids (no missing/extra/
+  // duplicate) — this endpoint applies an order, it doesn't add/remove edges.
+  app.patch('/items/:id/reorder-children', async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const userId = req.userId
+    const body = req.body as ReorderChildrenBody
+
+    const current = await repos.findChildItems(pool, id, userId)
+    const currentIds = current.map((c) => c.id)
+    const requestedIds = body.childItemIds
+
+    const currentSet = new Set(currentIds)
+    const requestedSet = new Set(requestedIds)
+    const sameSet =
+      requestedIds.length === currentIds.length &&
+      requestedSet.size === requestedIds.length &&
+      requestedIds.every((cid) => currentSet.has(cid))
+
+    if (!sameSet) {
+      return badRequest(reply, 'reorder_mismatch', 'childItemIds must be exactly the current children, no missing/extra/duplicate ids')
+    }
+
+    const updated = await repos.reorderChildren(pool, id, userId, requestedIds)
+
+    await repos.insertEvent(pool, {
+      userId,
+      eventType: 'children_reordered',
+      itemId: id,
+      occurrenceId: null,
+      appliesToDay: null,
+      payload: { parentId: id, previousOrder: currentIds, newOrder: requestedIds },
     })
 
     return reply.send(updated)

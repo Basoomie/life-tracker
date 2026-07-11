@@ -14,6 +14,7 @@ type MakeOccOverrides = {
   appliesToDay?: string
   isBlocked?: boolean
   hasChildren?: boolean
+  sortOrder?: number
   snapshot?: Partial<OccurrenceWithState['snapshot']>
   completionState?: Partial<OccurrenceWithState['completionState']>
   disposition?: Partial<OccurrenceWithState['disposition']>
@@ -66,6 +67,7 @@ function makeOcc(overrides: MakeOccOverrides): OccurrenceWithState {
       ...overrides.disposition,
     },
     hasChildren: overrides.hasChildren ?? false,
+    sortOrder: overrides.sortOrder ?? 0,
   } as OccurrenceWithState
 }
 

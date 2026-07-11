@@ -21,6 +21,7 @@ type MakeOccOverrides = {
   name: string
   isBlocked?: boolean
   hasChildren?: boolean
+  sortOrder?: number
   incompletePrerequisiteIds?: string[]
   snapshot?: Partial<OccurrenceWithState['snapshot']>
   completionState?: Partial<OccurrenceWithState['completionState']>
@@ -73,6 +74,7 @@ function makeOcc(overrides: MakeOccOverrides): OccurrenceWithState {
       ...overrides.disposition,
     },
     hasChildren: overrides.hasChildren ?? false,
+    sortOrder: overrides.sortOrder ?? 0,
   } as OccurrenceWithState
 }
 
@@ -118,6 +120,19 @@ const SKINCARE_OCC = makeOcc({
 const CLEANSE_OCC = makeOcc({
   id: 'occ-cleanse', itemId: 'item-cleanse', name: 'Cleanse',
   snapshot: { parentId: 'item-skincare' },
+})
+
+// Two plain leaf children of Night Routine, with explicit manual order, for
+// drag-and-drop reorder tests
+const CHILD_A_OCC = makeOcc({
+  id: 'occ-child-a', itemId: 'item-child-a', name: 'Child A',
+  snapshot: { parentId: 'item-routine' },
+  sortOrder: 0,
+})
+const CHILD_B_OCC = makeOcc({
+  id: 'occ-child-b', itemId: 'item-child-b', name: 'Child B',
+  snapshot: { parentId: 'item-routine' },
+  sortOrder: 1,
 })
 
 // A blocked item
@@ -729,6 +744,104 @@ test.describe('Occurrence nesting — parent/child cards (Now view)', () => {
     await expect(page.getByTestId('tier-done')).toHaveCount(0)
     await page.getByTestId(`occ-card-toggle-${ROUTINE_OCC.itemId}`).click()
     await expect(page.getByTestId(`occ-row-${completedTret.id}`).getByTestId('occ-check')).toHaveClass(/occ-check--checked/)
+  })
+
+})
+
+// @dnd-kit's PointerSensor listens for pointer events, not HTML5 dragstart/
+// dragover — locator.dragTo() won't trigger it. Drive it via raw mouse events
+// with an intermediate move past the activation distance instead.
+async function dragHandleTo(page: Page, fromTestId: string, toTestId: string) {
+  const from = page.getByTestId(fromTestId)
+  const to = page.getByTestId(toTestId)
+  const fromBox = (await from.boundingBox())!
+  const toBox = (await to.boundingBox())!
+
+  await page.mouse.move(fromBox.x + fromBox.width / 2, fromBox.y + fromBox.height / 2)
+  await page.mouse.down()
+  // Small initial move past the 4px activation distance before the big move
+  await page.mouse.move(fromBox.x + fromBox.width / 2, fromBox.y + fromBox.height / 2 + 8, { steps: 2 })
+  await page.mouse.move(toBox.x + toBox.width / 2, toBox.y + toBox.height + 4, { steps: 5 })
+  await page.mouse.up()
+}
+
+test.describe('Manual child reordering (drag-and-drop, Now view)', () => {
+
+  test('drag handle only appears inside an expanded card, and only on occurrences with siblings', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2025-06-16T22:00:00'))
+    await setupApiMocks(page, [ROUTINE_OCC, CHILD_A_OCC, CHILD_B_OCC, TRADING_OCC])
+
+    await page.goto('/')
+
+    // Collapsed: no handles in the DOM at all
+    await expect(page.getByTestId(`occ-card-drag-handle-${CHILD_A_OCC.itemId}`)).toHaveCount(0)
+
+    await page.getByTestId(`occ-card-toggle-${ROUTINE_OCC.itemId}`).click()
+
+    await expect(page.getByTestId(`occ-card-drag-handle-${CHILD_A_OCC.itemId}`)).toBeVisible()
+    await expect(page.getByTestId(`occ-card-drag-handle-${CHILD_B_OCC.itemId}`)).toBeVisible()
+    // Trading has no children/siblings under a card — never gets a handle
+    await expect(page.getByTestId(`occ-card-drag-handle-${TRADING_OCC.itemId}`)).toHaveCount(0)
+  })
+
+  test('dragging a child handle to a new position calls reorderChildren with the full new order', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2025-06-16T22:00:00'))
+    await setupApiMocks(page, [ROUTINE_OCC, CHILD_A_OCC, CHILD_B_OCC])
+
+    let reorderBody: { childItemIds: string[] } | null = null
+    await page.route(`/api/items/${ROUTINE_OCC.itemId}/reorder-children`, async (route) => {
+      reorderBody = route.request().postDataJSON()
+      await route.fulfill({ json: [] })
+    })
+
+    await page.goto('/')
+    await page.getByTestId(`occ-card-toggle-${ROUTINE_OCC.itemId}`).click()
+
+    await dragHandleTo(
+      page,
+      `occ-card-drag-handle-${CHILD_A_OCC.itemId}`,
+      `occ-card-drag-handle-${CHILD_B_OCC.itemId}`
+    )
+
+    await expect.poll(() => reorderBody).not.toBeNull()
+    expect(reorderBody!.childItemIds).toEqual([CHILD_B_OCC.itemId, CHILD_A_OCC.itemId])
+  })
+
+  test('after a successful reorder, the new order persists across the follow-up refresh', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2025-06-16T22:00:00'))
+
+    let reordered = false
+    await page.route('/me', (r) => r.fulfill({ json: { id: 'u1', email: 'test@tracker.local', createdAt: new Date().toISOString() } }))
+    await page.route('/api/occurrences/today', (route) =>
+      route.fulfill({
+        json: reordered
+          ? [ROUTINE_OCC, { ...CHILD_B_OCC, sortOrder: 0 }, { ...CHILD_A_OCC, sortOrder: 1 }]
+          : [ROUTINE_OCC, CHILD_A_OCC, CHILD_B_OCC],
+      })
+    )
+    await page.route(`/api/items/${ROUTINE_OCC.itemId}/reorder-children`, async (route) => {
+      reordered = true
+      await route.fulfill({ json: [] })
+    })
+    await page.route('/api/buckets', (route) => route.fulfill({ json: BUCKETS }))
+    await page.route('/api/categories', (route) => route.fulfill({ json: [] }))
+    await page.route('/api/reasons', (route) => route.fulfill({ json: [] }))
+    await page.route('/api/preferences', (route) => route.fulfill({ json: {} }))
+
+    await page.goto('/')
+    await page.getByTestId(`occ-card-toggle-${ROUTINE_OCC.itemId}`).click()
+
+    const childrenList = page.getByTestId(`occ-card-children-${ROUTINE_OCC.itemId}`)
+    await expect(childrenList).toContainText(/Child A[\s\S]*Child B/)
+
+    await dragHandleTo(
+      page,
+      `occ-card-drag-handle-${CHILD_A_OCC.itemId}`,
+      `occ-card-drag-handle-${CHILD_B_OCC.itemId}`
+    )
+
+    // Post-refresh, server-confirmed order (B before A) is reflected
+    await expect(childrenList).toContainText(/Child B[\s\S]*Child A/)
   })
 
 })

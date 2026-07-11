@@ -59,10 +59,11 @@ export async function enrichOccurrence(
   userId: string
 ): Promise<OccurrenceWithState> {
   // Blocked status + children can be resolved without a stored occurrence.
-  const [blocked, incompletePrereqIds, children] = await Promise.all([
+  const [blocked, incompletePrereqIds, children, sortOrder] = await Promise.all([
     isBlocked(pool, occ.itemId, userId),
     getIncompletePrerequisites(pool, occ.itemId, userId),
     repos.findChildItems(pool, occ.itemId, userId),
+    repos.findItemSortOrder(pool, occ.itemId, userId),
   ])
 
   const hasChildren = children.length > 0
@@ -192,5 +193,6 @@ export async function enrichOccurrence(
     completionState,
     disposition,
     hasChildren,
+    sortOrder,
   }
 }

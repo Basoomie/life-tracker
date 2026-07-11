@@ -140,7 +140,7 @@ export function ListView({ onEditItem }: Props) {
   function renderNode(occ: OccurrenceWithState) {
     const node = nodeByKey.get(occ.id ?? occ.itemId)
     if (node && node.children.length > 0) {
-      return <OccurrenceCard key={occ.id ?? occ.itemId} node={node} depth={0} renderLeaf={(o) => renderRow(o)} />
+      return <OccurrenceCard key={occ.id ?? occ.itemId} node={node} depth={0} renderLeaf={(o) => renderRow(o)} refresh={refresh} />
     }
     return renderRow(occ)
   }

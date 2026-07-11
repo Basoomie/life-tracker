@@ -9,6 +9,7 @@ export type {
   SetPriorityBody,
   AddPrerequisiteBody,
   DeclarePercentBody,
+  ReorderChildrenBody,
   DispositionBody,
   CarryForwardBody,
   RetroactiveBody,

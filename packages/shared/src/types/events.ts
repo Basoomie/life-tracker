@@ -208,6 +208,17 @@ type PriorityChangedEvent = EventBase & {
   }
 }
 
+// Manual drag-and-drop child reorder — parentId is the item whose children
+// were reordered; both arrays are the full ordered set of child item ids.
+type ChildrenReorderedEvent = EventBase & {
+  eventType: 'children_reordered'
+  payload: {
+    parentId: string
+    previousOrder: string[]
+    newOrder: string[]
+  }
+}
+
 // §4.2 — cycle-checked before insertion
 type PrerequisiteAddedEvent = EventBase & {
   eventType: 'prerequisite_added'
@@ -390,6 +401,7 @@ export type TrackerEvent =
   | TemplateEditedEvent
   | TemplateSoftDeletedEvent
   | PriorityChangedEvent
+  | ChildrenReorderedEvent
   | PrerequisiteAddedEvent
   | PrerequisiteRemovedEvent
   | DayStartChangedEvent

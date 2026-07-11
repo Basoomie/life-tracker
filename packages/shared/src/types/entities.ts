@@ -100,6 +100,8 @@ export type Item = {
   timingEndTime: string | null            // HH:MM
   plannedDurationMin: number | null
   parentId: string | null                 // containment tree (§4.1)
+  sortOrder: number                       // manual order among siblings under parentId;
+                                           // live (not snapshotted) — see enrichOccurrence
   dispositionPolicy: DispositionPolicy
   creationSource: CreationSource
   archivedAt: Date | null

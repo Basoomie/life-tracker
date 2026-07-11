@@ -42,6 +42,7 @@ export type OccurrenceWithState = ComputedOccurrence & {
   completionState: OccurrenceCompletionState
   disposition: OccurrenceDisposition
   hasChildren: boolean
+  sortOrder: number   // live Item.sortOrder — this occurrence's position among its siblings
 }
 
 // ── Request body types ────────────────────────────────────────────────────────
@@ -78,6 +79,12 @@ export type AddPrerequisiteBody = {
 
 export type DeclarePercentBody = {
   percent: number
+}
+
+// Manual drag-and-drop child ordering — must contain exactly the parent's
+// current children's ids (no missing/extra/duplicate), in the desired order.
+export type ReorderChildrenBody = {
+  childItemIds: string[]
 }
 
 export type DispositionBody = {

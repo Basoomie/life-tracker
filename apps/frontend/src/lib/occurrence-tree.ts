@@ -33,7 +33,12 @@ export function buildOccurrenceTree(
 
   function buildNode(occ: OccurrenceWithState): OccurrenceNode {
     const rawChildren = childrenByParentItemId.get(occ.itemId) ?? []
-    const children = sortByTiming(rawChildren, buckets).map(buildNode)
+    // Manual drag-and-drop order wins; sortByTiming is only the tiebreak for
+    // children that tie at the default sortOrder (nobody's dragged them yet)
+    // — stable sort preserves that timing order among ties.
+    const children = sortByTiming(rawChildren, buckets)
+      .sort((a, b) => a.sortOrder - b.sortOrder)
+      .map(buildNode)
     return { occ, children }
   }
 

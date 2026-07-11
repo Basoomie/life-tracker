@@ -466,6 +466,43 @@ input, select, textarea {
   padding-left: var(--space-2);
 }
 
+/* ── Drag-and-drop child reordering ───────────────────────────────────────── */
+
+.occ-card__draggable {
+  display: flex;
+  align-items: flex-start;
+}
+
+.occ-card__draggable--dragging {
+  opacity: 0.5;
+}
+
+.occ-card__draggable-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.occ-card__drag-handle {
+  flex-shrink: 0;
+  width: 24px;
+  height: 28px;
+  margin-top: var(--space-2);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-tertiary);
+  cursor: grab;
+  touch-action: none;
+}
+
+.occ-card__drag-handle:hover {
+  color: var(--color-text-primary);
+}
+
+.occ-card__drag-handle:active {
+  cursor: grabbing;
+}
+
 /* ── Timer control ─────────────────────────────────────────────────────────── */
 .timer-control {
   display: flex;
