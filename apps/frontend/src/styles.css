@@ -945,21 +945,30 @@ input, select, textarea {
   margin-top: var(--space-3);
 }
 
-@container (min-width: 560px) {
+/* Threshold picked so the gutter column (~360px) has room to show occurrence
+   names on one or two lines instead of wrapping mid-word — see disp-btn/timer
+   action widths in occ-actions, which eat ~140px of any row before name text. */
+@container (min-width: 760px) {
   .cal-day {
     flex-direction: row;
     align-items: flex-start;
   }
   .cal-grid-col {
     flex: 1;
+    min-width: 0;
   }
   .cal-gutter {
-    flex: 0 0 280px;
+    flex: 0 0 360px;
     margin-top: 0;
+    max-height: 600px;
+    overflow-y: auto;
   }
 }
 
 .cal-gutter__header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
   width: 100%;
   padding: var(--space-1) var(--space-3);
   font-size: var(--text-xs);
