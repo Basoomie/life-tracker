@@ -27,6 +27,10 @@ type State = {
   error: string | null
 }
 
+function byName<T extends { name: string }>(items: T[]): T[] {
+  return [...items].sort((a, b) => a.name.localeCompare(b.name))
+}
+
 /** Returns the effective HH:MM day-start for today from a timeline. */
 function getEffectiveDayStart(entries: DayStartEntry[]): string {
   const today = new Date().toISOString().slice(0, 10)
@@ -72,14 +76,14 @@ export function SettingsView({ theme, onToggleTheme }: Props) {
 
   async function handleAddCategory(name: string) {
     const cat = await api.categories.create(name)
-    setState((prev) => ({ ...prev, categories: [...prev.categories, cat] }))
+    setState((prev) => ({ ...prev, categories: byName([...prev.categories, cat]) }))
   }
 
   async function handleRenameCategory(id: string, name: string) {
     const updated = await api.categories.rename(id, name)
     setState((prev) => ({
       ...prev,
-      categories: prev.categories.map((c) => (c.id === id ? updated : c)),
+      categories: byName(prev.categories.map((c) => (c.id === id ? updated : c))),
     }))
   }
 
@@ -95,14 +99,14 @@ export function SettingsView({ theme, onToggleTheme }: Props) {
 
   async function handleAddReason(name: string) {
     const reason = await api.reasons.create(name)
-    setState((prev) => ({ ...prev, reasons: [...prev.reasons, reason] }))
+    setState((prev) => ({ ...prev, reasons: byName([...prev.reasons, reason]) }))
   }
 
   async function handleRenameReason(id: string, name: string) {
     const updated = await api.reasons.rename(id, name)
     setState((prev) => ({
       ...prev,
-      reasons: prev.reasons.map((r) => (r.id === id ? updated : r)),
+      reasons: byName(prev.reasons.map((r) => (r.id === id ? updated : r))),
     }))
   }
 
