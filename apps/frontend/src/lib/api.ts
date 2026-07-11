@@ -139,6 +139,10 @@ export const api = {
       }),
     removePrerequisite: (id: string, prereqId: string) =>
       apiFetch<void>(`/items/${id}/prerequisites/${prereqId}`, { method: 'DELETE' }),
+    reorderRoot: (itemId: string, afterItemId: string | null) =>
+      apiFetch<Item[]>(`/items/${itemId}/reorder-root`, {
+        method: 'PATCH', body: JSON.stringify({ afterItemId }),
+      }),
     reorderChildren: (parentId: string, childItemIds: string[]) =>
       apiFetch<Item[]>(`/items/${parentId}/reorder-children`, {
         method: 'PATCH', body: JSON.stringify({ childItemIds }),

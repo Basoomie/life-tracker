@@ -17,6 +17,7 @@ import type {
   SetPriorityBody,
   AddPrerequisiteBody,
   ReorderChildrenBody,
+  ReorderRootBody,
   ItemSnapshot,
 } from '@tracker/shared'
 
@@ -69,10 +70,11 @@ export async function itemRoutes(app: FastifyInstance) {
     const body = req.body as CreateItemBody
     const userId = req.userId
 
-    // New children append after existing siblings rather than colliding at 0.
+    // New children/root items append after existing siblings rather than
+    // colliding at 0 (which would jump them to the front once manual order exists).
     const sortOrder = body.parentId
       ? await repos.nextChildSortOrder(pool, body.parentId, userId)
-      : 0
+      : await repos.nextRootSortOrder(pool, userId)
 
     const item = await repos.insertItem(pool, {
       userId,
@@ -241,6 +243,53 @@ export async function itemRoutes(app: FastifyInstance) {
       occurrenceId: null,
       appliesToDay: null,
       payload: { parentId: id, previousOrder: currentIds, newOrder: requestedIds },
+    })
+
+    return reply.send(updated)
+  })
+
+  // PATCH /items/:id/reorder-root — manual drag-and-drop order for top-level
+  // (parentless) items, e.g. dragging an unscheduled item to a new position.
+  // Unlike reorder-children, the caller supplies only where the item should
+  // land (afterItemId) rather than the full sibling set — unscheduled items
+  // are routinely shown through a filtered/tiered subset across Now/List/
+  // Calendar, so the client can't be trusted to know the complete root order.
+  app.patch('/items/:id/reorder-root', async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const userId = req.userId
+    const body = req.body as ReorderRootBody
+
+    const item = await repos.findItemById(pool, id, userId)
+    if (!item) return notFound(reply, 'item')
+    if (item.parentId !== null) {
+      return badRequest(reply, 'not_root_item', 'reorder-root only applies to top-level items; use reorder-children for a child')
+    }
+
+    if (body.afterItemId !== null) {
+      if (body.afterItemId === id) {
+        return badRequest(reply, 'reorder_self', 'afterItemId cannot be the item being moved')
+      }
+      const afterItem = await repos.findItemById(pool, body.afterItemId, userId)
+      if (!afterItem || afterItem.parentId !== null) {
+        return badRequest(reply, 'reorder_invalid_neighbor', 'afterItemId must be an existing top-level item')
+      }
+    }
+
+    const previousOrder = (await repos.findRootItems(pool, userId)).map((i) => i.id)
+    const updated = await repos.reorderRootItem(pool, userId, id, body.afterItemId)
+
+    await repos.insertEvent(pool, {
+      userId,
+      eventType: 'root_items_reordered',
+      itemId: id,
+      occurrenceId: null,
+      appliesToDay: null,
+      payload: {
+        itemId: id,
+        afterItemId: body.afterItemId,
+        previousOrder,
+        newOrder: updated.map((i) => i.id),
+      },
     })
 
     return reply.send(updated)

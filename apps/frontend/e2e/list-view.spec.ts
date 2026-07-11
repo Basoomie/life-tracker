@@ -93,6 +93,15 @@ const UNSCHEDULED = makeOcc({
   // timingPrecision: 'none' (default)
 })
 
+// Two unscheduled root items with explicit manual order, for root-level
+// drag-and-drop reorder tests.
+const UNSCHED_A = makeOcc({
+  id: 'occ-unsched-a', itemId: 'item-unsched-a', name: 'Unsched A', sortOrder: 0,
+})
+const UNSCHED_B = makeOcc({
+  id: 'occ-unsched-b', itemId: 'item-unsched-b', name: 'Unsched B', sortOrder: 1,
+})
+
 const HIGH_OCC = makeOcc({
   id: 'occ-high', itemId: 'item-high', name: 'High Priority Task',
   snapshot: { priority: 'high' },
@@ -672,6 +681,57 @@ test.describe('Occurrence nesting — parent/child cards (List view)', () => {
     await expect(page.getByTestId(`occ-row-${TRETINOIN_OCC.id}`)).toHaveCount(0)
     await page.getByTestId(`occ-card-toggle-${ROUTINE_OCC.itemId}`).click()
     await expect(page.getByTestId('priority-group-high').getByTestId(`occ-row-${TRETINOIN_OCC.id}`)).toBeVisible()
+  })
+
+})
+
+// @dnd-kit's PointerSensor listens for pointer events, not HTML5 dragstart/
+// dragover — locator.dragTo() won't trigger it. Drive it via raw mouse events
+// with an intermediate move past the activation distance instead.
+async function dragHandleTo(page: Page, fromTestId: string, toTestId: string) {
+  const from = page.getByTestId(fromTestId)
+  const to = page.getByTestId(toTestId)
+  const fromBox = (await from.boundingBox())!
+  const toBox = (await to.boundingBox())!
+
+  await page.mouse.move(fromBox.x + fromBox.width / 2, fromBox.y + fromBox.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(fromBox.x + fromBox.width / 2, fromBox.y + fromBox.height / 2 + 8, { steps: 2 })
+  await page.mouse.move(toBox.x + toBox.width / 2, toBox.y + toBox.height + 4, { steps: 5 })
+  await page.mouse.up()
+}
+
+test.describe('Manual root reordering (drag-and-drop, unscheduled items, List view)', () => {
+
+  test('drag handles appear on unscheduled items but not on timed ones', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2025-06-16T09:00:00'))
+    await setupApiMocks(page, [EARLY_RANGE, UNSCHED_A, UNSCHED_B])
+    await goToListView(page)
+
+    await expect(page.getByTestId(`root-drag-handle-${UNSCHED_A.itemId}`)).toBeVisible()
+    await expect(page.getByTestId(`root-drag-handle-${UNSCHED_B.itemId}`)).toBeVisible()
+    await expect(page.getByTestId(`root-drag-handle-${EARLY_RANGE.itemId}`)).toHaveCount(0)
+  })
+
+  test('dragging an unscheduled item calls reorder-root with the dropped-after neighbor', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2025-06-16T09:00:00'))
+    await setupApiMocks(page, [UNSCHED_A, UNSCHED_B])
+    await goToListView(page)
+
+    let reorderBody: { afterItemId: string | null } | null = null
+    await page.route(`/api/items/${UNSCHED_A.itemId}/reorder-root`, async (route) => {
+      reorderBody = route.request().postDataJSON()
+      await route.fulfill({ json: [] })
+    })
+
+    await dragHandleTo(
+      page,
+      `root-drag-handle-${UNSCHED_A.itemId}`,
+      `root-drag-handle-${UNSCHED_B.itemId}`
+    )
+
+    await expect.poll(() => reorderBody).not.toBeNull()
+    expect(reorderBody!.afterItemId).toBe(UNSCHED_B.itemId)
   })
 
 })

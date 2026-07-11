@@ -9,6 +9,7 @@ import { AdHocModal } from './AdHocModal'
 import { DispositionModal } from './DispositionModal'
 import { ConfirmModal } from '../shared/ConfirmModal'
 import { OccurrenceCard } from '../shared/OccurrenceCard'
+import { SortableList } from '../shared/SortableList'
 import { buildOccurrenceTree, type OccurrenceNode } from '../../lib/occurrence-tree'
 import { api } from '../../lib/api'
 import { saveSessions, loadSessions } from '../../lib/sessions'
@@ -205,11 +206,12 @@ export function NowView({ onEditItem }: Props) {
   // ── Reorder ────────────────────────────────────────────────────────────────
   // Local patch, not refresh() — see OccurrenceCard's onReordered doc comment
   // for why (refresh() unmounts the tree via the loading flag, collapsing
-  // every expanded card).
-
-  const handleChildrenReordered = useCallback((_parentItemId: string, orderedChildItemIds: string[]) => {
+  // every expanded card). Shared by child reorder (OccurrenceCard) and
+  // root-level unscheduled reorder (SortableList) — both hand back the same
+  // "ordered item ids" shape.
+  const handleReordered = useCallback((orderedItemIds: string[]) => {
     setOccurrences((prev) => prev.map((o) => {
-      const idx = orderedChildItemIds.indexOf(o.itemId)
+      const idx = orderedItemIds.indexOf(o.itemId)
       return idx === -1 ? o : { ...o, sortOrder: idx }
     }))
   }, [setOccurrences])
@@ -284,7 +286,7 @@ export function NowView({ onEditItem }: Props) {
   function renderNode(occ: OccurrenceWithState) {
     const node = nodeByKey.get(occ.id ?? occ.itemId)
     if (node && node.children.length > 0) {
-      return <OccurrenceCard key={occ.id ?? occ.itemId} node={node} depth={0} renderLeaf={(o) => renderRow(o)} onReordered={handleChildrenReordered} />
+      return <OccurrenceCard key={occ.id ?? occ.itemId} node={node} depth={0} renderLeaf={(o) => renderRow(o)} onReordered={handleReordered} />
     }
     return renderRow(occ)
   }
@@ -380,7 +382,7 @@ export function NowView({ onEditItem }: Props) {
           count={tiers.unscheduled.length}
           emptyText="No unscheduled tasks for today"
         >
-          {tiers.unscheduled.map((occ) => renderNode(occ))}
+          <SortableList items={tiers.unscheduled} renderItem={renderNode} onReordered={handleReordered} />
         </TierSection>
 
         {/* Done today — auto-expands on first completion; click checkbox to undo */}

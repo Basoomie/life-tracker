@@ -187,3 +187,191 @@ describe('children with no manual order yet fall back to creation-order display'
     await app.close()
   })
 })
+
+// ── Root (top-level) item reordering ─────────────────────────────────────────
+// Unlike children, root items are shown through filtered/tiered subsets
+// (Now view's tiers, List/Calendar filters), so reorder-root can't require
+// the full sibling set the way reorder-children does — it only accepts
+// "put this item after that one" and recomputes the full order itself.
+
+describe('reordering a root item via afterItemId updates sort_order for all root items', () => {
+  it('splices the moved item into position and densely renumbers the rest', async () => {
+    const u = await makeUser('root-reorder-basic@test.com')
+    const app = await buildTestApp(u.id)
+
+    const a = await repos.insertItem(getTestPool(), { userId: u.id, name: 'A', creationSource: 'planned' })
+    const b = await repos.insertItem(getTestPool(), { userId: u.id, name: 'B', creationSource: 'planned' })
+    const c = await repos.insertItem(getTestPool(), { userId: u.id, name: 'C', creationSource: 'planned' })
+
+    // Default order is creation order: A, B, C
+    const before = await repos.findRootItems(getTestPool(), u.id)
+    expect(before.map((i) => i.id)).toEqual([a.id, b.id, c.id])
+
+    // Move C to right after A: A, C, B
+    const res = await app.inject({
+      method: 'PATCH',
+      url: `/api/items/${c.id}/reorder-root`,
+      payload: { afterItemId: a.id },
+    })
+    expect(res.statusCode).toBe(200)
+    const body = JSON.parse(res.body)
+    expect(body.map((i: { id: string }) => i.id)).toEqual([a.id, c.id, b.id])
+
+    const after = await repos.findRootItems(getTestPool(), u.id)
+    expect(after.map((i) => i.id)).toEqual([a.id, c.id, b.id])
+    expect(after.find((i) => i.id === a.id)!.sortOrder).toBe(0)
+    expect(after.find((i) => i.id === c.id)!.sortOrder).toBe(1)
+    expect(after.find((i) => i.id === b.id)!.sortOrder).toBe(2)
+
+    await app.close()
+  })
+
+  it('afterItemId: null moves the item to the very front', async () => {
+    const u = await makeUser('root-reorder-front@test.com')
+    const app = await buildTestApp(u.id)
+
+    const a = await repos.insertItem(getTestPool(), { userId: u.id, name: 'A', creationSource: 'planned' })
+    const b = await repos.insertItem(getTestPool(), { userId: u.id, name: 'B', creationSource: 'planned' })
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: `/api/items/${b.id}/reorder-root`,
+      payload: { afterItemId: null },
+    })
+    expect(res.statusCode).toBe(200)
+
+    const after = await repos.findRootItems(getTestPool(), u.id)
+    expect(after.map((i) => i.id)).toEqual([b.id, a.id])
+
+    await app.close()
+  })
+})
+
+describe('reorder-root only needs a real neighbor, not the full unfiltered sibling set', () => {
+  it('correctly interleaves a moved item among siblings the caller never saw', async () => {
+    // Simulates a filtered/tiered client view: the caller only knows about
+    // E and B (say, everything else is hidden by a category filter), but
+    // dragging E to "after B" must still land it correctly relative to the
+    // hidden items C and D that actually sit between B and the rest.
+    const u = await makeUser('root-reorder-partial@test.com')
+    const app = await buildTestApp(u.id)
+
+    const a = await repos.insertItem(getTestPool(), { userId: u.id, name: 'A', creationSource: 'planned' })
+    const b = await repos.insertItem(getTestPool(), { userId: u.id, name: 'B', creationSource: 'planned' })
+    const c = await repos.insertItem(getTestPool(), { userId: u.id, name: 'C', creationSource: 'planned' })
+    const d = await repos.insertItem(getTestPool(), { userId: u.id, name: 'D', creationSource: 'planned' })
+    const e = await repos.insertItem(getTestPool(), { userId: u.id, name: 'E', creationSource: 'planned' })
+
+    // Default order: A, B, C, D, E. Move E to right after B.
+    const res = await app.inject({
+      method: 'PATCH',
+      url: `/api/items/${e.id}/reorder-root`,
+      payload: { afterItemId: b.id },
+    })
+    expect(res.statusCode).toBe(200)
+
+    const after = await repos.findRootItems(getTestPool(), u.id)
+    expect(after.map((i) => i.id)).toEqual([a.id, b.id, e.id, c.id, d.id])
+
+    await app.close()
+  })
+})
+
+describe('reorder-root rejects invalid targets with 400', () => {
+  it('rejects reordering a child item (not a root item)', async () => {
+    const u = await makeUser('root-reorder-notroot@test.com')
+    const app = await buildTestApp(u.id)
+    const parent = await repos.insertItem(getTestPool(), { userId: u.id, name: 'Parent', creationSource: 'planned' })
+    const child = await repos.insertItem(getTestPool(), { userId: u.id, name: 'Child', parentId: parent.id, creationSource: 'planned' })
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: `/api/items/${child.id}/reorder-root`,
+      payload: { afterItemId: null },
+    })
+    expect(res.statusCode).toBe(400)
+    await app.close()
+  })
+
+  it('rejects afterItemId equal to the item itself', async () => {
+    const u = await makeUser('root-reorder-self@test.com')
+    const app = await buildTestApp(u.id)
+    const a = await repos.insertItem(getTestPool(), { userId: u.id, name: 'A', creationSource: 'planned' })
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: `/api/items/${a.id}/reorder-root`,
+      payload: { afterItemId: a.id },
+    })
+    expect(res.statusCode).toBe(400)
+    await app.close()
+  })
+
+  it('rejects an afterItemId that is a child item, not a root item', async () => {
+    const u = await makeUser('root-reorder-badneighbor@test.com')
+    const app = await buildTestApp(u.id)
+    const a = await repos.insertItem(getTestPool(), { userId: u.id, name: 'A', creationSource: 'planned' })
+    const parent = await repos.insertItem(getTestPool(), { userId: u.id, name: 'Parent', creationSource: 'planned' })
+    const child = await repos.insertItem(getTestPool(), { userId: u.id, name: 'Child', parentId: parent.id, creationSource: 'planned' })
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: `/api/items/${a.id}/reorder-root`,
+      payload: { afterItemId: child.id },
+    })
+    expect(res.statusCode).toBe(400)
+    await app.close()
+  })
+})
+
+describe('reordering a root item fires a root_items_reordered event with previous and new order', () => {
+  it('reordering a root item fires a root_items_reordered event with previous and new order', async () => {
+    const u = await makeUser('root-reorder-event@test.com')
+    const app = await buildTestApp(u.id)
+    const a = await repos.insertItem(getTestPool(), { userId: u.id, name: 'A', creationSource: 'planned' })
+    const b = await repos.insertItem(getTestPool(), { userId: u.id, name: 'B', creationSource: 'planned' })
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: `/api/items/${b.id}/reorder-root`,
+      payload: { afterItemId: null },
+    })
+    expect(res.statusCode).toBe(200)
+
+    const events = await repos.findTemplateEventsByItem(getTestPool(), b.id, u.id)
+    const reorderEvent = events.find((e) => e.eventType === 'root_items_reordered')
+    expect(reorderEvent).toBeDefined()
+    expect(reorderEvent!.payload).toMatchObject({
+      itemId: b.id,
+      afterItemId: null,
+      previousOrder: [a.id, b.id],
+      newOrder: [b.id, a.id],
+    })
+
+    await app.close()
+  })
+})
+
+describe('a newly created root item appends after existing siblings, not at position 0', () => {
+  it('a newly created root item appends after existing siblings, not at position 0', async () => {
+    const u = await makeUser('root-reorder-append@test.com')
+    const app = await buildTestApp(u.id)
+
+    const resA = await app.inject({ method: 'POST', url: '/api/items', payload: { name: 'A' } })
+    const resB = await app.inject({ method: 'POST', url: '/api/items', payload: { name: 'B' } })
+    const a = JSON.parse(resA.body)
+    const b = JSON.parse(resB.body)
+    expect(a.sortOrder).toBe(0)
+    expect(b.sortOrder).toBe(1)
+
+    const res = await app.inject({ method: 'POST', url: '/api/items', payload: { name: 'C' } })
+    expect(res.statusCode).toBe(201)
+    const created = JSON.parse(res.body)
+    expect(created.sortOrder).toBe(2) // after A (0) and B (1)
+
+    const roots = await repos.findRootItems(getTestPool(), u.id)
+    expect(roots.map((i) => i.id)).toEqual([a.id, b.id, created.id])
+
+    await app.close()
+  })
+})

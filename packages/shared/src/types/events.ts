@@ -219,6 +219,21 @@ type ChildrenReorderedEvent = EventBase & {
   }
 }
 
+// Manual drag-and-drop reorder of top-level (parentless) items — same
+// mechanism as ChildrenReorderedEvent but scoped to root items rather than
+// one parent's children. afterItemId is what the caller requested (null =
+// moved to the front); previousOrder/newOrder are the full root order as
+// computed server-side, since the caller only ever sees a filtered subset.
+type RootItemsReorderedEvent = EventBase & {
+  eventType: 'root_items_reordered'
+  payload: {
+    itemId: string
+    afterItemId: string | null
+    previousOrder: string[]
+    newOrder: string[]
+  }
+}
+
 // §4.2 — cycle-checked before insertion
 type PrerequisiteAddedEvent = EventBase & {
   eventType: 'prerequisite_added'
@@ -402,6 +417,7 @@ export type TrackerEvent =
   | TemplateSoftDeletedEvent
   | PriorityChangedEvent
   | ChildrenReorderedEvent
+  | RootItemsReorderedEvent
   | PrerequisiteAddedEvent
   | PrerequisiteRemovedEvent
   | DayStartChangedEvent

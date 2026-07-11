@@ -87,6 +87,15 @@ export type ReorderChildrenBody = {
   childItemIds: string[]
 }
 
+// Manual drag-and-drop reorder for a top-level (parentless) item. Unlike
+// ReorderChildrenBody, the caller supplies only the desired neighbor —
+// unscheduled root items are routinely viewed through a filtered/tiered
+// subset, so the client can never be trusted to know the complete root
+// order the way it can for a parent's (always-unfiltered) children list.
+export type ReorderRootBody = {
+  afterItemId: string | null
+}
+
 export type DispositionBody = {
   reasonId?: string | null
   comment?: string | null

@@ -7,8 +7,9 @@ import { OccurrenceRow } from '../now/OccurrenceRow'
 import { DispositionModal } from '../now/DispositionModal'
 import { ConfirmModal } from '../shared/ConfirmModal'
 import { OccurrenceCard } from '../shared/OccurrenceCard'
+import { SortableList } from '../shared/SortableList'
 import { FilterBar } from '../FilterBar'
-import { sortByTiming, groupByPriority } from '../../lib/list-sort'
+import { sortByTiming, groupByPriority, splitTimed } from '../../lib/list-sort'
 import { applyFilters, makeDefaultFilters, serializeFilters, deserializeFilters } from '../../lib/filters'
 import { getRangeDates, getDaysInRange, formatDayLabel, todayStr } from '../../lib/date-range'
 import { buildOccurrenceTree, type OccurrenceNode } from '../../lib/occurrence-tree'
@@ -79,10 +80,11 @@ export function ListView({ onEditItem }: Props) {
 
   // Local patch, not refresh() — see OccurrenceCard's onReordered doc comment
   // for why (refresh() unmounts the tree via the loading flag, collapsing
-  // every expanded card).
-  const handleChildrenReordered = useCallback((_parentItemId: string, orderedChildItemIds: string[]) => {
+  // every expanded card). Shared by child reorder (OccurrenceCard) and
+  // root-level unscheduled reorder (SortableList).
+  const handleReordered = useCallback((orderedItemIds: string[]) => {
     setOccurrences((prev) => prev.map((o) => {
-      const idx = orderedChildItemIds.indexOf(o.itemId)
+      const idx = orderedItemIds.indexOf(o.itemId)
       return idx === -1 ? o : { ...o, sortOrder: idx }
     }))
   }, [setOccurrences])
@@ -150,9 +152,23 @@ export function ListView({ onEditItem }: Props) {
   function renderNode(occ: OccurrenceWithState) {
     const node = nodeByKey.get(occ.id ?? occ.itemId)
     if (node && node.children.length > 0) {
-      return <OccurrenceCard key={occ.id ?? occ.itemId} node={node} depth={0} renderLeaf={(o) => renderRow(o)} onReordered={handleChildrenReordered} />
+      return <OccurrenceCard key={occ.id ?? occ.itemId} node={node} depth={0} renderLeaf={(o) => renderRow(o)} onReordered={handleReordered} />
     }
     return renderRow(occ)
+  }
+
+  // Timed occurrences render in clock order (not draggable); the untimed
+  // tail is manually reorderable via drag-and-drop.
+  function renderTimingGroup(occs: OccurrenceWithState[]) {
+    const { timed, untimed } = splitTimed(occs)
+    return (
+      <>
+        {timed.map((occ) => renderNode(occ))}
+        {untimed.length > 0 && (
+          <SortableList items={untimed} renderItem={renderNode} onReordered={handleReordered} />
+        )}
+      </>
+    )
   }
 
   function renderPriorityGroups(occs: OccurrenceWithState[]) {
@@ -167,7 +183,7 @@ export function ListView({ onEditItem }: Props) {
       <div key={s.key} className="priority-group" data-testid={`priority-group-${s.key}`}>
         <div className="priority-group__label">{s.label}</div>
         <div className="list-section__rows">
-          {s.items.map((occ) => renderNode(occ))}
+          {renderTimingGroup(s.items)}
         </div>
       </div>
     ))
@@ -202,7 +218,7 @@ export function ListView({ onEditItem }: Props) {
                 {sorted.length === 0 ? (
                   <div className="list-empty">Nothing for this day</div>
                 ) : (
-                  sorted.map((occ) => renderNode(occ))
+                  renderTimingGroup(sorted)
                 )}
               </div>
             </div>

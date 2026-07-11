@@ -135,6 +135,17 @@ const CHILD_B_OCC = makeOcc({
   sortOrder: 1,
 })
 
+// Two plain unscheduled root items (no parent), with explicit manual order,
+// for root-level drag-and-drop reorder tests.
+const ROOT_A_OCC = makeOcc({
+  id: 'occ-root-a', itemId: 'item-root-a', name: 'Root A',
+  sortOrder: 0,
+})
+const ROOT_B_OCC = makeOcc({
+  id: 'occ-root-b', itemId: 'item-root-b', name: 'Root B',
+  sortOrder: 1,
+})
+
 // A blocked item
 const BLOCKED_OCC = makeOcc({
   id: 'occ-blocked', itemId: 'item-blocked', name: 'Blocked Task',
@@ -864,6 +875,79 @@ test.describe('Manual child reordering (drag-and-drop, Now view)', () => {
     // Still expanded — no re-click needed to keep reordering
     await expect(card).toHaveAttribute('data-expanded', 'true')
     await expect(page.getByTestId(`occ-card-drag-handle-${CHILD_A_OCC.itemId}`)).toBeVisible()
+  })
+
+})
+
+test.describe('Manual root reordering (drag-and-drop, unscheduled tier, Now view)', () => {
+
+  test('drag handles appear only on unscheduled root items, not active/imminent ones', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2025-06-16T05:00:00'))
+    await setupApiMocks(page, [TRADING_OCC, CALL_OCC, ROOT_A_OCC, ROOT_B_OCC])
+
+    await page.goto('/')
+
+    await expect(page.getByTestId(`root-drag-handle-${ROOT_A_OCC.itemId}`)).toBeVisible()
+    await expect(page.getByTestId(`root-drag-handle-${ROOT_B_OCC.itemId}`)).toBeVisible()
+    // Active (range) and imminent (point) items never get a root drag handle
+    await expect(page.getByTestId(`root-drag-handle-${TRADING_OCC.itemId}`)).toHaveCount(0)
+    await expect(page.getByTestId(`root-drag-handle-${CALL_OCC.itemId}`)).toHaveCount(0)
+  })
+
+  test('dragging an unscheduled root handle calls reorder-root with the dropped-after neighbor', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2025-06-16T22:00:00'))
+    await setupApiMocks(page, [ROOT_A_OCC, ROOT_B_OCC])
+
+    let reorderBody: { afterItemId: string | null } | null = null
+    await page.route(`/api/items/${ROOT_A_OCC.itemId}/reorder-root`, async (route) => {
+      reorderBody = route.request().postDataJSON()
+      await route.fulfill({ json: [] })
+    })
+
+    await page.goto('/')
+
+    await dragHandleTo(
+      page,
+      `root-drag-handle-${ROOT_A_OCC.itemId}`,
+      `root-drag-handle-${ROOT_B_OCC.itemId}`
+    )
+
+    await expect.poll(() => reorderBody).not.toBeNull()
+    expect(reorderBody!.afterItemId).toBe(ROOT_B_OCC.itemId)
+  })
+
+  test('after a successful root reorder, the new order is reflected immediately without a full refetch', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2025-06-16T22:00:00'))
+
+    let todayFetchCount = 0
+    await page.route('/me', (r) => r.fulfill({ json: { id: 'u1', email: 'test@tracker.local', createdAt: new Date().toISOString() } }))
+    await page.route('/api/occurrences/today', (route) => {
+      todayFetchCount++
+      return route.fulfill({ json: [ROOT_A_OCC, ROOT_B_OCC] })
+    })
+    await page.route(`/api/items/${ROOT_A_OCC.itemId}/reorder-root`, async (route) => {
+      await route.fulfill({ json: [] })
+    })
+    await page.route('/api/buckets', (route) => route.fulfill({ json: BUCKETS }))
+    await page.route('/api/categories', (route) => route.fulfill({ json: [] }))
+    await page.route('/api/reasons', (route) => route.fulfill({ json: [] }))
+    await page.route('/api/preferences', (route) => route.fulfill({ json: {} }))
+
+    await page.goto('/')
+
+    const unscheduled = page.getByTestId('tier-unscheduled')
+    await expect(unscheduled).toContainText(/Root A[\s\S]*Root B/)
+
+    const fetchesBeforeDrag = todayFetchCount
+    await dragHandleTo(
+      page,
+      `root-drag-handle-${ROOT_A_OCC.itemId}`,
+      `root-drag-handle-${ROOT_B_OCC.itemId}`
+    )
+
+    // New order shows up via a local state patch, not a refetch
+    await expect(unscheduled).toContainText(/Root B[\s\S]*Root A/)
+    expect(todayFetchCount).toBe(fetchesBeforeDrag)
   })
 
 })

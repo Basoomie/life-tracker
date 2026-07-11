@@ -310,6 +310,38 @@ export async function nextChildSortOrder(
   return rows[0].next
 }
 
+// Top-level items (no parent) — sort_order first (manual drag-and-drop
+// order), created_at as a stable tiebreak, same pattern as findChildItems
+// but scoped to parent_id IS NULL.
+export async function findRootItems(
+  pool: Pool,
+  userId: string
+): Promise<Item[]> {
+  const { rows } = await pool.query<ItemRow>(
+    `SELECT * FROM items
+     WHERE parent_id IS NULL AND user_id = $1 AND archived_at IS NULL
+     ORDER BY sort_order, created_at`,
+    [userId]
+  )
+  return rows.map(toItem)
+}
+
+// Where a newly created root item should land by default: after all
+// existing root items, not colliding at 0 with them — same reasoning as
+// nextChildSortOrder (once someone has manually reordered, a fresh 0 would
+// jump the new item to the front instead of appending it).
+export async function nextRootSortOrder(
+  pool: Pool,
+  userId: string
+): Promise<number> {
+  const { rows } = await pool.query<{ next: number }>(
+    `SELECT COALESCE(MAX(sort_order), -1) + 1 AS next FROM items
+     WHERE parent_id IS NULL AND user_id = $1 AND archived_at IS NULL`,
+    [userId]
+  )
+  return rows[0].next
+}
+
 // This item's own position among its siblings (live — see enrichOccurrence).
 export async function findItemSortOrder(
   pool: Pool,
@@ -342,6 +374,40 @@ export async function reorderChildren(
     )
   }
   return findChildItems(pool, parentId, userId)
+}
+
+// Manual drag-and-drop reorder for a single top-level item, spliced into
+// position among ALL root items — not just whatever subset the caller could
+// see. Unlike reorderChildren (which trusts the caller's full posted order
+// because a card's children list is never filtered), unscheduled root items
+// are routinely shown through a filtered/tiered subset, so the caller can
+// only ever say "put this one after that one." The full root order is
+// recomputed here and densely renumbered 0..n-1, same scheme as
+// reorderChildren, just derived instead of posted. Caller (route) validates
+// itemId/afterItemId are both real root items belonging to this user.
+export async function reorderRootItem(
+  pool: Pool,
+  userId: string,
+  itemId: string,
+  afterItemId: string | null
+): Promise<Item[]> {
+  const current = await findRootItems(pool, userId)
+  const moved = current.find((i) => i.id === itemId)
+  if (!moved) return current
+
+  const withoutMoved = current.filter((i) => i.id !== itemId)
+  const insertAt = afterItemId === null
+    ? 0
+    : withoutMoved.findIndex((i) => i.id === afterItemId) + 1
+  withoutMoved.splice(insertAt, 0, moved)
+
+  for (let i = 0; i < withoutMoved.length; i++) {
+    await pool.query(
+      `UPDATE items SET sort_order = $1 WHERE id = $2 AND parent_id IS NULL AND user_id = $3`,
+      [i, withoutMoved[i].id, userId]
+    )
+  }
+  return findRootItems(pool, userId)
 }
 
 export async function deletePrerequisite(

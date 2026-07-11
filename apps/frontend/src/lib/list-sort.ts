@@ -36,7 +36,9 @@ export function sortByTiming(
     // none-timed always last
     if (precA === 'none' && precB !== 'none') return 1
     if (precB === 'none' && precA !== 'none') return -1
-    if (precA === 'none' && precB === 'none') return 0
+    // Both unscheduled: manual drag-and-drop order (Item.sortOrder), not
+    // input order — see reorder-root's live, filter-agnostic ordering.
+    if (precA === 'none' && precB === 'none') return a.sortOrder - b.sortOrder
 
     // Both timed: sort by earliest effective clock time
     const startA = startMinutes(a, buckets)
@@ -53,6 +55,21 @@ export function sortByTiming(
     const priB = b.snapshot.priority ? (PRIORITY_ORDER[b.snapshot.priority] ?? 3) : 3
     return priA - priB
   })
+}
+
+// Splits an already-sorted (sortByTiming) list into timed and untimed
+// occurrences, preserving relative order within each group. Untimed items
+// are manually reorderable via drag-and-drop; timed ones are not (their
+// order is derived from clock time, not draggable).
+export function splitTimed(
+  occs: OccurrenceWithState[]
+): { timed: OccurrenceWithState[]; untimed: OccurrenceWithState[] } {
+  const timed: OccurrenceWithState[] = []
+  const untimed: OccurrenceWithState[] = []
+  for (const o of occs) {
+    (o.snapshot.timingPrecision === 'none' ? untimed : timed).push(o)
+  }
+  return { timed, untimed }
 }
 
 export type PriorityGroups = {

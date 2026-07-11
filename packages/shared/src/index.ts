@@ -10,6 +10,7 @@ export type {
   AddPrerequisiteBody,
   DeclarePercentBody,
   ReorderChildrenBody,
+  ReorderRootBody,
   DispositionBody,
   CarryForwardBody,
   RetroactiveBody,

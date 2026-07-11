@@ -119,10 +119,11 @@ export function CalendarView({ onEditItem }: Props) {
 
   // Local patch, not refresh() — see OccurrenceCard's onReordered doc comment
   // for why (refresh() unmounts the tree via the loading flag, collapsing
-  // every expanded card).
-  const handleChildrenReordered = useCallback((_parentItemId: string, orderedChildItemIds: string[]) => {
+  // every expanded card). Shared by child reorder (OccurrenceCard) and
+  // root-level unscheduled reorder (SortableList, for the gutter).
+  const handleReordered = useCallback((orderedItemIds: string[]) => {
     setOccurrences((prev) => prev.map((o) => {
-      const idx = orderedChildItemIds.indexOf(o.itemId)
+      const idx = orderedItemIds.indexOf(o.itemId)
       return idx === -1 ? o : { ...o, sortOrder: idx }
     }))
   }, [setOccurrences])
@@ -153,7 +154,7 @@ export function CalendarView({ onEditItem }: Props) {
         onDisposition={setDispositionTarget}
         onEdit={onEditItem}
         onArchive={setPendingArchive}
-        onReordered={handleChildrenReordered}
+        onReordered={handleReordered}
       />
     )
   }

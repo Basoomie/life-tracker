@@ -6,7 +6,7 @@
 // (the same TimeGrid renders in both cal-mobile-only and cal-desktop-only; at desktop viewport
 // the desktop one is visible, and scoping ensures uniqueness).
 
-import { test, expect, type Page } from '@playwright/test'
+import { test, expect, type Page, type Locator } from '@playwright/test'
 import type { OccurrenceWithState } from '@tracker/shared'
 import type { Bucket } from '@tracker/shared'
 
@@ -19,6 +19,7 @@ type MakeOccOverrides = {
   appliesToDay?: string
   isBlocked?: boolean
   hasChildren?: boolean
+  sortOrder?: number
   snapshot?: Partial<OccurrenceWithState['snapshot']>
   completionState?: Partial<OccurrenceWithState['completionState']>
   disposition?: Partial<OccurrenceWithState['disposition']>
@@ -71,6 +72,7 @@ function makeOcc(overrides: MakeOccOverrides): OccurrenceWithState {
       ...overrides.disposition,
     },
     hasChildren: overrides.hasChildren ?? false,
+    sortOrder: overrides.sortOrder ?? 0,
   } as OccurrenceWithState
 }
 
@@ -116,6 +118,15 @@ const BUCKET_ITEM = makeOcc({
 // Unscheduled item (none)
 const UNSCHEDULED = makeOcc({
   id: 'occ-read', itemId: 'item-read', name: 'Reading',
+})
+
+// Two unscheduled root items with explicit manual order, for gutter
+// drag-and-drop reorder tests.
+const GUTTER_A = makeOcc({
+  id: 'occ-gutter-a', itemId: 'item-gutter-a', name: 'Gutter A', sortOrder: 0,
+})
+const GUTTER_B = makeOcc({
+  id: 'occ-gutter-b', itemId: 'item-gutter-b', name: 'Gutter B', sortOrder: 1,
 })
 
 // Overlapping ranges: both 08:00–10:00
@@ -799,6 +810,61 @@ test.describe('Occurrence nesting — parent/child cards (Calendar view)', () =>
 
     await grid.getByTestId(`cal-block-${SCHEDULED_PARENT.id}`).click()
     await expect(page.getByTestId('cal-detail-panel').getByTestId(`occ-row-${TIMED_CHILD.id}`)).toBeVisible()
+  })
+
+})
+
+// @dnd-kit's PointerSensor listens for pointer events, not HTML5 dragstart/
+// dragover — locator.dragTo() won't trigger it. Drive it via raw mouse events
+// with an intermediate move past the activation distance instead. Scoped to
+// `root` (mobile + desktop both render the same TimeGrid, so an unscoped
+// getByTestId hits a strict-mode duplicate — see desktopGrid()).
+async function dragHandleTo(page: Page, root: Page | Locator, fromTestId: string, toTestId: string) {
+  const from = root.getByTestId(fromTestId)
+  const to = root.getByTestId(toTestId)
+  const fromBox = (await from.boundingBox())!
+  const toBox = (await to.boundingBox())!
+
+  await page.mouse.move(fromBox.x + fromBox.width / 2, fromBox.y + fromBox.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(fromBox.x + fromBox.width / 2, fromBox.y + fromBox.height / 2 + 8, { steps: 2 })
+  await page.mouse.move(toBox.x + toBox.width / 2, toBox.y + toBox.height + 4, { steps: 5 })
+  await page.mouse.up()
+}
+
+test.describe('Manual root reordering (drag-and-drop, unscheduled gutter, Calendar view)', () => {
+
+  test('drag handles appear on gutter items but not on scheduled grid blocks', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2025-06-16T09:00:00'))
+    await setupCalApiMocks(page, [ONE_HOUR, GUTTER_A, GUTTER_B])
+    await goToCalendarView(page)
+
+    const grid = desktopGrid(page)
+    await expect(grid.getByTestId(`root-drag-handle-${GUTTER_A.itemId}`)).toBeVisible()
+    await expect(grid.getByTestId(`root-drag-handle-${GUTTER_B.itemId}`)).toBeVisible()
+    await expect(grid.getByTestId(`root-drag-handle-${ONE_HOUR.itemId}`)).toHaveCount(0)
+  })
+
+  test('dragging a gutter item calls reorder-root with the dropped-after neighbor', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2025-06-16T09:00:00'))
+    await setupCalApiMocks(page, [GUTTER_A, GUTTER_B])
+    await goToCalendarView(page)
+
+    let reorderBody: { afterItemId: string | null } | null = null
+    await page.route(`/api/items/${GUTTER_A.itemId}/reorder-root`, async (route) => {
+      reorderBody = route.request().postDataJSON()
+      await route.fulfill({ json: [] })
+    })
+
+    await dragHandleTo(
+      page,
+      desktopGrid(page),
+      `root-drag-handle-${GUTTER_A.itemId}`,
+      `root-drag-handle-${GUTTER_B.itemId}`
+    )
+
+    await expect.poll(() => reorderBody).not.toBeNull()
+    expect(reorderBody!.afterItemId).toBe(GUTTER_B.itemId)
   })
 
 })

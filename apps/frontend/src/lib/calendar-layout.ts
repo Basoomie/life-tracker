@@ -122,6 +122,9 @@ export function computeDayLayout(
     gutter.push(occ)
   }
 
+  // Manual drag-and-drop order (Item.sortOrder), not input order.
+  gutter.sort((a, b) => a.sortOrder - b.sortOrder)
+
   const colAssignments = assignColumns(intervals)
 
   const blocks: GridBlock[] = intervals.map((iv) => {

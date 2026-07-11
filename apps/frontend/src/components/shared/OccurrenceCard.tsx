@@ -23,7 +23,8 @@ type Props = {
   // never changes anything else the client can't already compute itself
   // (unlike completing a child, which needs the server-computed parent
   // derived %), so a local patch is both correct and avoids that unmount.
-  onReordered: (parentItemId: string, orderedChildItemIds: string[]) => void
+  // Shared with SortableList's root-level reorder — same shape either way.
+  onReordered: (orderedItemIds: string[]) => void
   // Now/List leave this unset (collapsed by default). Calendar's detail
   // panel passes true — opening the panel is already a deliberate "tell me
   // more" click, so a second click just to see children would be redundant.
@@ -73,7 +74,7 @@ export function OccurrenceCard({ node, depth, renderLeaf, onReordered, defaultEx
 
     try {
       await api.items.reorderChildren(itemId, newOrderIds)
-      onReordered(itemId, newOrderIds)
+      onReordered(newOrderIds)
       setOrderOverride(null)
     } catch {
       setOrderOverride(null)
@@ -137,7 +138,7 @@ type DraggableChildProps = {
   child: OccurrenceNode
   depth: number
   renderLeaf: (occ: OccurrenceNode['occ']) => ReactNode
-  onReordered: (parentItemId: string, orderedChildItemIds: string[]) => void
+  onReordered: (orderedItemIds: string[]) => void
 }
 
 function DraggableChild({ child, depth, renderLeaf, onReordered }: DraggableChildProps) {

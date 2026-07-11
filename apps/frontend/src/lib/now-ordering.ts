@@ -158,6 +158,9 @@ export function tierOccurrences(
       (TIMING_ORDER[b.snapshot.timingPrecision] ?? 3)
   )
 
+  // Manual drag-and-drop order (Item.sortOrder), not input order.
+  unscheduled.sort((a, b) => a.sortOrder - b.sortOrder)
+
   return { active, imminent, unscheduled }
 }
 

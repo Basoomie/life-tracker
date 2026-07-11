@@ -4,6 +4,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { OccurrenceRow } from '../now/OccurrenceRow'
 import { OccurrenceCard } from '../shared/OccurrenceCard'
+import { SortableList } from '../shared/SortableList'
 import { computeDayLayout, nowLinePx, TOTAL_PX, PX_PER_HOUR } from '../../lib/calendar-layout'
 import type { GridBlock, DayLayout } from '../../lib/calendar-layout'
 import type { OccurrenceNode } from '../../lib/occurrence-tree'
@@ -28,7 +29,7 @@ type Props = {
   onDisposition: (occ: OccurrenceWithState) => void
   onEdit: (itemId: string) => void
   onArchive: (occ: OccurrenceWithState) => void
-  onReordered: (parentItemId: string, orderedChildItemIds: string[]) => void
+  onReordered: (orderedItemIds: string[]) => void
 }
 
 // Hour labels on the time axis (every 2 hours for readability)
@@ -243,7 +244,13 @@ export function TimeGrid({
             <span className="tier-count">{layout.gutter.length}</span>
             <span className="tier-header__chevron" aria-hidden="true">{showGutter ? '▲' : '▼'}</span>
           </button>
-          {showGutter && layout.gutter.map((occ) => renderNode(occ))}
+          {showGutter && (
+            <SortableList
+              items={layout.gutter}
+              renderItem={(occ) => renderNode(occ)}
+              onReordered={onReordered}
+            />
+          )}
         </div>
       )}
     </div>
