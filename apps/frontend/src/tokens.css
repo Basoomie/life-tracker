@@ -46,6 +46,12 @@
   --color-tier-imminent-border:#BBF7D0;
   --color-tier-imminent-label: #15803D;
 
+  /* Interaction / overlay */
+  --color-surface-hover:    rgba(0,0,0,0.04);
+  --color-overlay:          rgba(0,0,0,0.4);
+  --color-on-solid:         #FFFFFF;
+  --color-accent-fg-subtle: #4A5BEC;
+
   /* Elevation */
   --shadow-sm: 0 1px 2px 0 rgba(0,0,0,0.05);
   --shadow-md: 0 4px 6px -1px rgba(0,0,0,0.07), 0 2px 4px -2px rgba(0,0,0,0.04);
@@ -53,46 +59,67 @@
 }
 
 [data-theme='dark'] {
-  --color-bg:              #111111;
-  --color-surface:         #1C1C1C;
-  --color-surface-raised:  #262626;
+  /* Surfaces — cool dark-neutral ramp (slight blue undertone), genuine 3-step elevation */
+  --color-bg:              #0B0D12;
+  --color-surface:         #14171D;
+  --color-surface-raised:  #1C2028;
+  --color-surface-hover:   rgba(255,255,255,0.06);
 
-  --color-border:          #2E2E2E;
-  --color-border-subtle:   #222222;
+  /* Borders — translucent white overlays, correct on any surface step */
+  --color-border:          rgba(255,255,255,0.10);
+  --color-border-subtle:   rgba(255,255,255,0.06);
 
-  --color-text-primary:    #EEEEEA;
-  --color-text-secondary:  #A3A39B;
-  --color-text-tertiary:   #6B6B65;
+  /* Text — off-white primary (avoids halation on dark bg) */
+  --color-text-primary:    #E6E8EB;
+  --color-text-secondary:  #9BA1AC;
+  --color-text-tertiary:   #6B7280;
 
-  --color-accent:          #818CF8;
-  --color-accent-hover:    #929AF9;
-  --color-accent-subtle:   #1E1B4B;
+  /* Accent — same indigo family as light mode, hand-tuned so white button text clears AA */
+  --color-accent:          #5850EC;
+  --color-accent-hover:    #635CEF;
+  --color-accent-subtle:   #232A4A;
   --color-accent-fg:       #FFFFFF;
+  --color-accent-fg-subtle:#8B85F5;
 
-  --color-success:         #34D399;
-  --color-success-subtle:  #022C22;
-  --color-success-fg:      #6EE7B7;
-  --color-warning:         #FCD34D;
-  --color-warning-subtle:  #1A1100;
-  --color-warning-fg:      #FDE68A;
-  --color-danger:          #F87171;
-  --color-danger-subtle:   #2D0000;
-  --color-danger-fg:       #FCA5A5;
+  /* Status — hues re-tuned for dark surfaces, not lightened light-mode values;
+     -subtle backgrounds moved to raised-surface lightness, not saturated near-black */
+  --color-success:         #3FB950;
+  --color-success-subtle:  #12271C;
+  --color-success-fg:      #7EE2A8;
+  --color-warning:         #D29922;
+  --color-warning-subtle:  #2A2110;
+  --color-warning-fg:      #F0C674;
+  --color-danger:          #F85149;
+  --color-danger-subtle:   #2C1A1C;
+  --color-danger-fg:       #FFA198;
 
-  --color-timer:           #A78BFA;
-  --color-timer-subtle:    #1E0B4B;
+  /* Timer — purple, free to tune for legibility (never a solid button fill today) */
+  --color-timer:           #9F8CFA;
+  --color-timer-subtle:    #241D3D;
   --color-timer-fg:        #FFFFFF;
 
-  --color-tier-active-bg:      #1C1000;
-  --color-tier-active-border:  #7C2D12;
-  --color-tier-active-label:   #FB923C;
-  --color-tier-imminent-bg:    #001C0D;
-  --color-tier-imminent-border:#14532D;
-  --color-tier-imminent-label: #4ADE80;
+  /* Tier backgrounds — same lightness family as --color-surface-raised, hue kept but
+     desaturated to a tint (not a saturated near-black fill); identity carried by
+     border + label, which stay vivid */
+  --color-tier-active-bg:      #241C10;
+  --color-tier-active-border:  #4A3418;
+  --color-tier-active-label:   #F0B366;
+  --color-tier-imminent-bg:    #142016;
+  --color-tier-imminent-border:#22432B;
+  --color-tier-imminent-label: #6EE7A0;
 
-  --shadow-sm: 0 1px 2px 0 rgba(0,0,0,0.4);
-  --shadow-md: 0 4px 6px -1px rgba(0,0,0,0.5), 0 2px 4px -2px rgba(0,0,0,0.3);
-  --shadow-lg: 0 10px 15px -3px rgba(0,0,0,0.5), 0 4px 6px -4px rgba(0,0,0,0.3);
+  /* Overlay — modal scrim, more opaque than light mode's 0.4 since a translucent
+     black scrim barely reads as "dimmed" over an already-dark page */
+  --color-overlay: rgba(3,4,8,0.65);
+
+  /* Foreground for text/icons on a solid saturated fill (e.g. checkmark on solid success chip) */
+  --color-on-solid: #FFFFFF;
+
+  /* Elevation — demoted to a secondary cue (surface-lightness + border now do the
+     primary work); opacity/spread increased so it's not a no-op black-on-black shadow */
+  --shadow-sm: 0 1px 2px 0 rgba(0,0,0,0.30);
+  --shadow-md: 0 4px 10px -2px rgba(0,0,0,0.45), 0 2px 4px -2px rgba(0,0,0,0.30);
+  --shadow-lg: 0 12px 24px -4px rgba(0,0,0,0.50), 0 4px 8px -4px rgba(0,0,0,0.35);
 }
 
 /* ── Spacing scale (4px base) ─────────────────────────────────────────────── */
