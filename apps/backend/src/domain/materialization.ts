@@ -17,7 +17,7 @@
 
 import type { Pool } from 'pg'
 import type { Item, Occurrence, ItemSnapshot, ComputedOccurrence, RecurrenceRule } from '@tracker/shared'
-import { getDueDays } from '@tracker/shared'
+import { getDueDays, itemAnchorDate } from '@tracker/shared'
 import * as repos from '../db/repos/index'
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -73,12 +73,6 @@ export function horizonDays(rule: RecurrenceRule): number {
   }
 }
 
-// The anchor date used as the reference point for 'interval' recurrence rules.
-// Uses the UTC calendar date of createdAt — a minor approximation acceptable for v1.
-function anchorDate(item: Item): string {
-  return item.createdAt.toISOString().slice(0, 10)
-}
-
 // ── Core materialization ──────────────────────────────────────────────────────
 
 /**
@@ -110,7 +104,7 @@ async function topUpMaterializationForItem(
   if (!item.recurrenceRule) return  // one-time tasks materialize at creation (step 3)
 
   const endDay  = addDays(today, horizonDays(item.recurrenceRule))
-  const dueDays = getDueDays(item.recurrenceRule, today, endDay, anchorDate(item))
+  const dueDays = getDueDays(item.recurrenceRule, today, endDay, itemAnchorDate(item))
 
   for (const day of dueDays) {
     await ensureOccurrenceMaterialized(pool, item, day, userId)
@@ -192,7 +186,7 @@ export async function getOccurrencesInRange(
 
     const prereqs   = await repos.findPrerequisitesByItem(pool, item.id, userId)
     const prereqIds = prereqs.map((p) => p.prerequisiteId)
-    const anchor    = anchorDate(item)
+    const anchor    = itemAnchorDate(item)
     const dueDays   = getDueDays(item.recurrenceRule, startDay, endDay, anchor)
 
     for (const day of dueDays) {

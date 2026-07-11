@@ -68,6 +68,7 @@ export {
   bucketLocalDateTime,
   bucketTimestamp,
   getDueDays,
+  itemAnchorDate,
   deriveLeafCompletion,
   computeDerivedPercent,
   findDeclaredPercent,

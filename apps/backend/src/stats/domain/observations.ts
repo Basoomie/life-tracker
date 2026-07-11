@@ -16,6 +16,7 @@ import type { Pool } from 'pg'
 import type { Item, Occurrence } from '@tracker/shared'
 import {
   getDueDays,
+  itemAnchorDate,
   deriveLeafCompletion,
   computeDerivedPercent,
   findDeclaredPercent,
@@ -33,10 +34,6 @@ import type {
 import type { DateWindow } from '@tracker/shared'
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
-
-function anchorDate(item: Item): string {
-  return item.createdAt.toISOString().slice(0, 10)
-}
 
 // Disposition event types — matches enrichOccurrence logic in routes/helpers.ts.
 const DISPOSITION_TYPES = new Set([
@@ -122,7 +119,7 @@ export async function buildLeafDayObservations(
   // Determine due days
   let dueDays: string[]
   if (item.recurrenceRule) {
-    dueDays = getDueDays(item.recurrenceRule, startDay, endDay, anchorDate(item))
+    dueDays = getDueDays(item.recurrenceRule, startDay, endDay, itemAnchorDate(item))
   } else {
     // One-time task: due on its occurrence day (if any) within the window
     const occs = await repos.findOccurrencesByItemsInRange(pool, [item.id], userId, startDay, endDay)
@@ -164,7 +161,7 @@ export async function buildParentDayObservations(
 
   // Parent due days
   const parentDueDays = parentItem.recurrenceRule
-    ? getDueDays(parentItem.recurrenceRule, startDay, endDay, anchorDate(parentItem))
+    ? getDueDays(parentItem.recurrenceRule, startDay, endDay, itemAnchorDate(parentItem))
     : []
 
   // Get children (active only)
@@ -174,7 +171,7 @@ export async function buildParentDayObservations(
   const childDueDaysMap = new Map<string, Set<string>>()
   for (const child of children) {
     if (child.recurrenceRule) {
-      const days = getDueDays(child.recurrenceRule, startDay, endDay, anchorDate(child))
+      const days = getDueDays(child.recurrenceRule, startDay, endDay, itemAnchorDate(child))
       childDueDaysMap.set(child.id, new Set(days))
     } else {
       childDueDaysMap.set(child.id, new Set())  // one-time task: resolved below

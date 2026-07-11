@@ -6,7 +6,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { setupTestDb, teardownTestDb, getTestPool } from './helpers/test-db'
 import * as repos from '../db/repos/index'
-import { getDueDays } from '@tracker/shared'
+import { getDueDays, itemAnchorDate } from '@tracker/shared'
 import {
   ensureOccurrenceMaterialized,
   topUpMaterialization,
@@ -57,12 +57,16 @@ async function makeMonthlyItem(userId: string) {
   })
 }
 
-// Re-fetch an item so createdAt reflects the actual DB timestamp.
-// The anchor date derivation uses createdAt.toISOString().slice(0,10).
-// We override the item's createdAt via a backdated insert by using an older
-// test user and trusting that creation is "today" relative to TODAY.
-// For interval rule tests we explicitly set a known anchor via a separate
-// utility rather than relying on createdAt timing.
+// §5.1 — an interval item with an explicit anchor_day, decoupled from createdAt.
+async function makeIntervalItem(userId: string, every: number, anchorDay = ANCHOR, name = 'Interval item') {
+  return repos.insertItem(getTestPool(), {
+    userId,
+    name,
+    recurrenceRule: { type: 'interval', unit: 'day', every },
+    anchorDay,
+    creationSource: 'planned',
+  })
+}
 
 // ── §5.4 Far-future stays computed ───────────────────────────────────────────
 
@@ -428,6 +432,56 @@ describe('invariant: computed due-days == materialized rows appliesToDay for sam
     const rows         = await repos.findOccurrencesByRange(pool, u.id, TODAY, endDay)
 
     expect(rows.map((r) => r.appliesToDay)).toEqual(expectedDays)
+  })
+})
+
+// ── §5.1 amendment: explicit anchor_day overrides createdAt for interval rules ──
+
+describe('§5.1 anchor_day: explicit recurrence start day', () => {
+  it('§5.1 an interval item materializes on the explicit anchor_day, not createdAt', async () => {
+    const pool = getTestPool()
+    const u    = await makeUser('mat-anchor-explicit@test.com')
+    const item = await makeIntervalItem(u.id, 3, ANCHOR)  // every 3 days from 2024-01-01
+
+    expect(itemAnchorDate(item)).toBe(ANCHOR)  // not today's date
+
+    await topUpMaterialization(pool, u.id, TODAY)
+
+    const horizon = horizonDays({ type: 'interval', unit: 'day', every: 3 })
+    const endDay  = addDays(TODAY, horizon)
+    const expectedDays = getDueDays(item.recurrenceRule!, TODAY, endDay, ANCHOR)
+    const rows          = await repos.findOccurrencesByRange(pool, u.id, TODAY, endDay)
+
+    expect(rows.map((r) => r.appliesToDay)).toEqual(expectedDays)
+  })
+
+  it('§5.1 an interval item created without an explicit anchor_day falls back to createdAt', async () => {
+    const u    = await makeUser('mat-anchor-fallback@test.com')
+    const item = await repos.insertItem(getTestPool(), {
+      userId: u.id,
+      name: 'No explicit anchor',
+      recurrenceRule: { type: 'interval', unit: 'day', every: 5 },
+      creationSource: 'planned',
+    })
+
+    expect(item.anchorDay).toBeNull()
+    expect(itemAnchorDate(item)).toBe(item.createdAt.toISOString().slice(0, 10))
+  })
+
+  it('§5.1 two items with the same interval but different anchor_day are due on different days', async () => {
+    const pool = getTestPool()
+    const u  = await makeUser('mat-anchor-offset@test.com')
+    const a  = await makeIntervalItem(u.id, 2, '2024-01-01', 'Item A')  // odd calendar days
+    const b  = await makeIntervalItem(u.id, 2, '2024-01-02', 'Item B')  // even calendar days — complementary parity
+
+    const rangeStart = '2025-01-10'
+    const rangeEnd    = '2025-01-17'
+    const occs = await getOccurrencesInRange(pool, u.id, rangeStart, rangeEnd)
+    const dueA = occs.filter((o) => o.snapshot.name === a.name).map((o) => o.appliesToDay)
+    const dueB = occs.filter((o) => o.snapshot.name === b.name).map((o) => o.appliesToDay)
+
+    // Every-2-days from two consecutive anchors never lands on the same day
+    expect(dueA.some((d) => dueB.includes(d))).toBe(false)
   })
 })
 

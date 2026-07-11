@@ -53,6 +53,7 @@ export type CreateItemBody = {
   valence?: Valence | null
   priority?: Priority | null
   recurrenceRule?: RecurrenceRule | null
+  anchorDay?: string | null  // YYYY-MM-DD — §5.1 recurrence start day; defaults to today if omitted
   quotaTarget?: QuotaTarget | null
   timingPrecision?: TimingPrecision
   timingBucketId?: string | null

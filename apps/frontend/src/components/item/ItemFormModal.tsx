@@ -67,6 +67,7 @@ export function ItemFormModal({ itemId, categories, buckets, onSaved, onClose }:
   const [recType, setRecType] = useState<RecurrenceType>('daily')
   const [recDays, setRecDays] = useState<number[]>([])       // for days_of_week
   const [recEvery, setRecEvery] = useState(2)                // for interval
+  const [anchorDay, setAnchorDay] = useState(todayISO)        // §5.1 — recurrence start day
 
   // Quota
   const [quotaEnabled, setQuotaEnabled] = useState(false)
@@ -124,6 +125,7 @@ export function ItemFormModal({ itemId, categories, buckets, onSaved, onClose }:
           if (data.recurrenceRule.type === 'interval') {
             setRecEvery(data.recurrenceRule.every)
           }
+          setAnchorDay(data.anchorDay ?? new Date(data.createdAt).toISOString().slice(0, 10))
         }
         if (data.quotaTarget) {
           setQuotaEnabled(true)
@@ -197,6 +199,7 @@ export function ItemFormModal({ itemId, categories, buckets, onSaved, onClose }:
         valence: (valence as Valence) || null,
         priority: (priority as Priority) || null,
         recurrenceRule,
+        anchorDay: isRecurring ? anchorDay : undefined,
         quotaTarget,
         timingPrecision,
         timingBucketId: timingPrecision === 'bucket' ? (timingBucketId || null) : null,
@@ -427,6 +430,18 @@ export function ItemFormModal({ itemId, categories, buckets, onSaved, onClose }:
               {isRecurring && (
                 <div className="form-subsection" data-testid="if-recurrence-section">
                   <div className="form-section__label">Schedule (§5.1)</div>
+
+                  <div className="field" style={{ maxWidth: 200 }}>
+                    <label className="field__label" htmlFor="if-anchor-day">Starts on</label>
+                    <input
+                      id="if-anchor-day"
+                      className="field__input"
+                      type="date"
+                      value={anchorDay}
+                      onChange={(e) => setAnchorDay(e.target.value)}
+                      data-testid="if-anchor-day"
+                    />
+                  </div>
 
                   <div className="qa-radio-group qa-radio-group--wrap">
                     {([

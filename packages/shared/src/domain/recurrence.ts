@@ -7,6 +7,7 @@
 // All date arithmetic uses Date.UTC / getUTC* to avoid DST distortion.
 
 import type { RecurrenceRule } from '../types/enums'
+import type { Item } from '../types/entities'
 
 // Advance a YYYY-MM-DD string by one calendar day (UTC-safe).
 function nextDay(dateStr: string): string {
@@ -60,6 +61,13 @@ function buildDate(year: number, month: number, day: number): string | null {
     '-' +
     String(dt.getUTCDate()).padStart(2, '0')
   )
+}
+
+// §5.1 amendment — the anchor date for an item's 'interval'/'monthly' recurrence.
+// Uses the explicit anchor_day if the user set one at creation; otherwise falls
+// back to the UTC calendar date of createdAt (the pre-amendment default).
+export function itemAnchorDate(item: Item): string {
+  return item.anchorDay ?? item.createdAt.toISOString().slice(0, 10)
 }
 
 /**

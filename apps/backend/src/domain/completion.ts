@@ -13,6 +13,7 @@ import type { Pool } from 'pg'
 import type { Item, Occurrence, TrackerEvent } from '@tracker/shared'
 import {
   getDueDays,
+  itemAnchorDate,
   deriveLeafCompletion,
   computeDerivedPercent,
   buildParentCompletionState,
@@ -207,8 +208,7 @@ export async function getParentCompletionState(
       const occ = await repos.findOccurrenceByItemAndDay(pool, child.id, day, userId)
       if (occ) dueChildrenIds.push(child.id)
     } else {
-      const anchorDate = child.createdAt.toISOString().slice(0, 10)
-      const dueDays = getDueDays(child.recurrenceRule, day, day, anchorDate)
+      const dueDays = getDueDays(child.recurrenceRule, day, day, itemAnchorDate(child))
       if (dueDays.length > 0) dueChildrenIds.push(child.id)
     }
   }

@@ -69,6 +69,7 @@ function makeItem(overrides: Partial<Item> & { id: string; name: string }): Item
     valence: null,
     priority: null,
     recurrenceRule: null,
+    anchorDay: null,
     quotaTarget: null,
     timingPrecision: 'none',
     timingBucketId: null,
@@ -517,6 +518,92 @@ test.describe('§4c-ii — Full-edit progressive disclosure', () => {
     const rule = capturedBody!['recurrenceRule'] as { type: string; days: number[] }
     expect(rule.type).toBe('days_of_week')
     expect(rule.days.sort()).toEqual([1, 3, 5])
+  })
+
+  test('§5.1 new recurring item: "Starts on" defaults to today and is sent as anchorDay', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2026-07-07T08:00:00'))
+    await setupBase(page)
+
+    const createdItem = makeItem({ id: 'new-habit', name: 'New Habit', recurrenceRule: { type: 'daily' } })
+    let capturedBody: Record<string, unknown> | null = null
+    await page.route('/api/items', async (route) => {
+      if (route.request().method() === 'POST') {
+        capturedBody = JSON.parse(route.request().postData() ?? '{}') as Record<string, unknown>
+        await route.fulfill({ status: 201, json: createdItem })
+      } else {
+        await route.fulfill({ json: [] })
+      }
+    })
+
+    await page.goto('/')
+    await page.getByTestId('new-item-btn').click()
+    await expect(page.getByTestId('item-form-modal')).toBeVisible()
+    await page.getByTestId('if-name').fill('New Habit')
+    await page.getByTestId('if-type-recurring').click()
+
+    // Defaults to today, with no user interaction
+    await expect(page.getByTestId('if-anchor-day')).toHaveValue('2026-07-07')
+
+    await page.getByTestId('if-submit').click()
+    await expect(page.getByTestId('item-form-modal')).not.toBeVisible()
+    expect(capturedBody!['anchorDay']).toBe('2026-07-07')
+  })
+
+  test('§5.1 new recurring item: a custom "Starts on" date is sent as anchorDay', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2026-07-07T08:00:00'))
+    await setupBase(page)
+
+    const createdItem = makeItem({ id: 'new-habit-2', name: 'Future Habit', recurrenceRule: { type: 'interval', unit: 'week', every: 2 } })
+    let capturedBody: Record<string, unknown> | null = null
+    await page.route('/api/items', async (route) => {
+      if (route.request().method() === 'POST') {
+        capturedBody = JSON.parse(route.request().postData() ?? '{}') as Record<string, unknown>
+        await route.fulfill({ status: 201, json: createdItem })
+      } else {
+        await route.fulfill({ json: [] })
+      }
+    })
+
+    await page.goto('/')
+    await page.getByTestId('new-item-btn').click()
+    await expect(page.getByTestId('item-form-modal')).toBeVisible()
+    await page.getByTestId('if-name').fill('Future Habit')
+    await page.getByTestId('if-type-recurring').click()
+    await page.getByTestId('if-rec-interval_week').click()
+
+    await page.getByTestId('if-anchor-day').fill('2026-08-15')
+    await page.getByTestId('if-submit').click()
+
+    await expect(page.getByTestId('item-form-modal')).not.toBeVisible()
+    expect(capturedBody!['anchorDay']).toBe('2026-08-15')
+  })
+
+  test('§5.1 one-time task: no "Starts on" field, and anchorDay is omitted from the POST body', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2026-07-07T08:00:00'))
+    await setupBase(page)
+
+    const createdItem = makeItem({ id: 'new-task', name: 'One-off task' })
+    let capturedBody: Record<string, unknown> | null = null
+    await page.route('/api/items', async (route) => {
+      if (route.request().method() === 'POST') {
+        capturedBody = JSON.parse(route.request().postData() ?? '{}') as Record<string, unknown>
+        await route.fulfill({ status: 201, json: createdItem })
+      } else {
+        await route.fulfill({ json: [] })
+      }
+    })
+
+    await page.goto('/')
+    await page.getByTestId('new-item-btn').click()
+    await expect(page.getByTestId('item-form-modal')).toBeVisible()
+    await page.getByTestId('if-name').fill('One-off task')
+
+    // One-time is the default type — no anchor-day field should be shown
+    await expect(page.getByTestId('if-anchor-day')).not.toBeVisible()
+
+    await page.getByTestId('if-submit').click()
+    await expect(page.getByTestId('item-form-modal')).not.toBeVisible()
+    expect(capturedBody).not.toHaveProperty('anchorDay')
   })
 
 })

@@ -91,6 +91,8 @@ export type Item = {
   valence: Valence | null
   priority: Priority | null
   recurrenceRule: RecurrenceRule | null   // null = one-time task
+  anchorDay: string | null                // §5.1 — YYYY-MM-DD; recurrence anchor override.
+                                           // null = fall back to createdAt's date (see itemAnchorDate)
   quotaTarget: QuotaTarget | null
   timingPrecision: TimingPrecision
   timingBucketId: string | null

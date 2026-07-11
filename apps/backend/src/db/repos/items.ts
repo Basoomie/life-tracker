@@ -20,6 +20,7 @@ interface ItemRow {
   valence: Valence | null
   priority: Priority | null
   recurrence_rule: RecurrenceRule | null
+  anchor_day: string | null
   quota_target: QuotaTarget | null
   timing_precision: TimingPrecision
   timing_bucket_id: string | null
@@ -50,6 +51,7 @@ function toItem(row: ItemRow): Item {
     valence: row.valence,
     priority: row.priority,
     recurrenceRule: row.recurrence_rule,
+    anchorDay: row.anchor_day,
     quotaTarget: row.quota_target,
     timingPrecision: row.timing_precision,
     timingBucketId: row.timing_bucket_id,
@@ -81,6 +83,7 @@ export type InsertItemData = {
   valence?: Valence | null
   priority?: Priority | null
   recurrenceRule?: RecurrenceRule | null
+  anchorDay?: string | null  // §5.1 — null = fall back to createdAt's date (itemAnchorDate)
   quotaTarget?: QuotaTarget | null
   timingPrecision?: TimingPrecision
   timingBucketId?: string | null
@@ -99,10 +102,10 @@ export async function insertItem(
   const { rows } = await pool.query<ItemRow>(
     `INSERT INTO items (
        user_id, name, description, category_id, valence, priority,
-       recurrence_rule, quota_target, timing_precision, timing_bucket_id,
+       recurrence_rule, anchor_day, quota_target, timing_precision, timing_bucket_id,
        timing_start_time, timing_end_time, planned_duration_min,
        parent_id, disposition_policy, creation_source
-     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
      RETURNING *`,
     [
       data.userId,
@@ -112,6 +115,7 @@ export async function insertItem(
       data.valence ?? null,
       data.priority ?? null,
       data.recurrenceRule ? JSON.stringify(data.recurrenceRule) : null,
+      data.anchorDay ?? null,
       data.quotaTarget ? JSON.stringify(data.quotaTarget) : null,
       data.timingPrecision ?? 'none',
       data.timingBucketId ?? null,
@@ -200,6 +204,7 @@ export type UpdateItemData = Partial<{
   valence: Valence | null
   priority: Priority | null
   recurrenceRule: RecurrenceRule | null
+  anchorDay: string | null
   quotaTarget: QuotaTarget | null
   timingPrecision: TimingPrecision
   timingBucketId: string | null
@@ -217,6 +222,7 @@ const COLUMN_MAP: Record<string, string> = {
   valence:           'valence',
   priority:          'priority',
   recurrenceRule:    'recurrence_rule',
+  anchorDay:         'anchor_day',
   quotaTarget:       'quota_target',
   timingPrecision:   'timing_precision',
   timingBucketId:    'timing_bucket_id',

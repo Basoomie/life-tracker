@@ -296,6 +296,49 @@ describe('§5.3 — template edit via API is forward-only: past occurrences rema
   })
 })
 
+// ── §5.1 amendment — explicit recurrence start day ────────────────────────────
+
+describe('§5.1 — POST /items accepts an explicit anchorDay for recurring items', () => {
+  it('§5.1 a recurring item created with anchorDay stores it verbatim', async () => {
+    const u = await makeUser('api-anchor-explicit@test.com')
+    const app = await buildTestApp(u.id)
+
+    const createRes = await app.inject({
+      method: 'POST',
+      url: '/api/items',
+      payload: {
+        name: 'Biweekly review',
+        recurrenceRule: { type: 'interval', unit: 'week', every: 2 },
+        anchorDay: '2024-06-03',
+        creationSource: 'planned',
+      },
+    })
+    expect(createRes.statusCode).toBe(201)
+    expect(JSON.parse(createRes.body).anchorDay).toBe('2024-06-03')
+
+    await app.close()
+  })
+
+  it('§5.1 a recurring item created without anchorDay stores null (falls back to createdAt)', async () => {
+    const u = await makeUser('api-anchor-omitted@test.com')
+    const app = await buildTestApp(u.id)
+
+    const createRes = await app.inject({
+      method: 'POST',
+      url: '/api/items',
+      payload: {
+        name: 'Daily habit',
+        recurrenceRule: { type: 'daily' },
+        creationSource: 'planned',
+      },
+    })
+    expect(createRes.statusCode).toBe(201)
+    expect(JSON.parse(createRes.body).anchorDay).toBeNull()
+
+    await app.close()
+  })
+})
+
 // ── §8.2 — carry-forward leaves original intact ───────────────────────────────
 
 describe('§8.2 — carry-forward via API leaves the original occurrence intact', () => {

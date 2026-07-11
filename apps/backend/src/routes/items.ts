@@ -75,6 +75,7 @@ export async function itemRoutes(app: FastifyInstance) {
       valence: body.valence ?? null,
       priority: body.priority ?? null,
       recurrenceRule: body.recurrenceRule ?? null,
+      anchorDay: body.anchorDay ?? null,
       quotaTarget: body.quotaTarget ?? null,
       timingPrecision: body.timingPrecision ?? 'none',
       timingBucketId: body.timingBucketId ?? null,
