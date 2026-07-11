@@ -673,3 +673,35 @@ test.describe('§3 — Archive / delete task (Calendar view)', () => {
   })
 
 })
+
+test.describe('§12.4 — Timer + disposition menu are gated to today\'s occurrences', () => {
+
+  test('§12.4 timer and skip/excuse/carry menu are hidden on a non-today day column, shown on today\'s', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2025-06-16T07:00:00'))
+
+    const todayUnscheduled = makeOcc({ id: 'occ-today', itemId: 'item-today', name: 'Today Task', appliesToDay: '2025-06-16' })
+    const futureUnscheduled = makeOcc({ id: 'occ-future', itemId: 'item-future', name: 'Future Task', appliesToDay: '2025-06-18' })
+
+    await setupCalApiMocks(page, [todayUnscheduled, futureUnscheduled])
+    await goToCalendarView(page)
+
+    // Switch to "This Week" so both today's and a future day's column render together
+    await page.getByTestId('cal-range-select').selectOption('this-week')
+
+    const grid = desktopGrid(page)
+    const todayRow = grid.getByTestId('cal-gutter-2025-06-16').getByTestId('occ-row-occ-today')
+    const futureRow = grid.getByTestId('cal-gutter-2025-06-18').getByTestId('occ-row-occ-future')
+
+    await expect(todayRow).toBeVisible()
+    await expect(futureRow).toBeVisible()
+
+    // Today's row: timer start button + three-dot disposition menu both present
+    await expect(todayRow.getByTestId('timer-start')).toBeVisible()
+    await expect(todayRow.getByTestId('occ-disposition-btn')).toBeVisible()
+
+    // Future day's row: neither should render
+    await expect(futureRow.getByTestId('timer-start')).not.toBeVisible()
+    await expect(futureRow.getByTestId('occ-disposition-btn')).not.toBeVisible()
+  })
+
+})

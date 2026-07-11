@@ -391,6 +391,36 @@ test.describe('§12.3 — List view', () => {
 
 })
 
+test.describe('§12.3 — Timer + disposition menu are gated to today\'s occurrences', () => {
+
+  test('§12.3 timer and skip/excuse/carry menu are hidden on a non-today occurrence, shown on today\'s', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2025-06-16T09:00:00'))
+
+    const todayOcc = makeOcc({ id: 'occ-today', itemId: 'item-today', name: 'Today Task', appliesToDay: '2025-06-16' })
+    const futureOcc = makeOcc({ id: 'occ-future', itemId: 'item-future', name: 'Future Task', appliesToDay: '2025-06-18' })
+
+    await setupApiMocks(page, [todayOcc, futureOcc])
+    await goToListView(page)
+
+    // Switch to "This Week" so both today's and a future day's occurrence render together
+    await page.getByTestId('range-select').selectOption('this-week')
+
+    const todayRow = page.getByTestId('occ-row-occ-today')
+    const futureRow = page.getByTestId('occ-row-occ-future')
+    await expect(todayRow).toBeVisible()
+    await expect(futureRow).toBeVisible()
+
+    // Today's row: timer start button + three-dot disposition menu both present
+    await expect(todayRow.getByTestId('timer-start')).toBeVisible()
+    await expect(todayRow.getByTestId('occ-disposition-btn')).toBeVisible()
+
+    // Future day's row: neither should render
+    await expect(futureRow.getByTestId('timer-start')).not.toBeVisible()
+    await expect(futureRow.getByTestId('occ-disposition-btn')).not.toBeVisible()
+  })
+
+})
+
 test.describe('§4 — Uncomplete with confirmation (List view)', () => {
 
   test('§4 clicking checked checkbox in List view shows confirmation modal', async ({ page }) => {

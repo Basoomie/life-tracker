@@ -98,6 +98,7 @@ export function ListView({ onEditItem }: Props) {
         occ={occ}
         buckets={buckets}
         isChild={isChild}
+        isToday={occ.appliesToDay === todayStr()}
         session={sessions.get(occId)}
         onComplete={() => handleComplete(occ)}
         onUncomplete={() => setPendingUncompletion(occ)}

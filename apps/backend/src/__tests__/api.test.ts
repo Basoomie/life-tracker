@@ -339,6 +339,66 @@ describe('§5.1 — POST /items accepts an explicit anchorDay for recurring item
   })
 })
 
+// ── §5.4 — POST /items materializes a recurring item's near-term horizon immediately ──
+
+describe('§5.4 — POST /items tops up a recurring item\'s horizon on creation, not just on edit', () => {
+  it('§5.4 a daily item created via the API has a materialized (non-null id) occurrence for today', async () => {
+    const u = await makeUser('api-create-topup-daily@test.com')
+    const app = await buildTestApp(u.id)
+    const today = new Date().toISOString().slice(0, 10)
+
+    const createRes = await app.inject({
+      method: 'POST',
+      url: '/api/items',
+      payload: {
+        name: 'Fresh daily habit',
+        recurrenceRule: { type: 'daily' },
+        creationSource: 'planned',
+      },
+    })
+    expect(createRes.statusCode).toBe(201)
+
+    // Without an edit or the nightly background job, today's occurrence must
+    // already be a stored row (id !== null) — not left as computed-on-the-fly.
+    const stored = await repos.findOccurrenceByItemAndDay(
+      getTestPool(),
+      JSON.parse(createRes.body).id,
+      today,
+      u.id
+    )
+    expect(stored).not.toBeNull()
+
+    await app.close()
+  })
+
+  it('§5.4 a one-time task created via the API is unaffected (still materializes only its own day)', async () => {
+    const u = await makeUser('api-create-topup-onetime@test.com')
+    const app = await buildTestApp(u.id)
+    const today = new Date().toISOString().slice(0, 10)
+
+    const createRes = await app.inject({
+      method: 'POST',
+      url: '/api/items',
+      payload: {
+        name: 'One-off task',
+        recurrenceRule: null,
+        creationSource: 'planned',
+      },
+    })
+    expect(createRes.statusCode).toBe(201)
+
+    const stored = await repos.findOccurrenceByItemAndDay(
+      getTestPool(),
+      JSON.parse(createRes.body).id,
+      today,
+      u.id
+    )
+    expect(stored).not.toBeNull()
+
+    await app.close()
+  })
+})
+
 // ── §8.2 — carry-forward leaves original intact ───────────────────────────────
 
 describe('§8.2 — carry-forward via API leaves the original occurrence intact', () => {

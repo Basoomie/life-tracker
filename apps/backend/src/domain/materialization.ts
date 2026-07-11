@@ -95,7 +95,7 @@ export async function ensureOccurrenceMaterialized(
 }
 
 // Materialize all due days for a single item within its proportional horizon.
-async function topUpMaterializationForItem(
+export async function topUpMaterializationForItem(
   pool: Pool,
   item: Item,
   userId: string,

@@ -7,6 +7,7 @@ import * as repos from '../db/repos/index'
 import {
   ensureOccurrenceMaterialized,
   regenerateFutureOccurrences,
+  topUpMaterializationForItem,
 } from '../domain/materialization'
 import { addPrerequisite, removePrerequisite } from '../domain/prerequisites'
 import { notFound, badRequest, todayUTC } from './helpers'
@@ -99,9 +100,14 @@ export async function itemRoutes(app: FastifyInstance) {
     })
 
     // One-time tasks (no recurrenceRule) materialize their single occurrence immediately.
+    // Recurring items top up their near-term horizon immediately too (mirrors the
+    // regeneration that happens on template edit — §5.3), so today's occurrence
+    // (if due) is stored right away instead of waiting for the nightly background job.
     if (!item.recurrenceRule) {
       const day = body.day ?? todayUTC()
       await ensureOccurrenceMaterialized(pool, item, day, userId)
+    } else {
+      await topUpMaterializationForItem(pool, item, userId, todayUTC())
     }
 
     return reply.status(201).send(item)
