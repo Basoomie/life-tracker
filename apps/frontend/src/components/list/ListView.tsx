@@ -1,6 +1,6 @@
 // §12.3 — List view: flat sorted list per time-range; priority-flip grouping.
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useRangeData } from '../../hooks/useRangeData'
 import { useOccurrenceActions } from '../../hooks/useOccurrenceActions'
 import { OccurrenceRow } from '../now/OccurrenceRow'
@@ -77,6 +77,16 @@ export function ListView({ onEditItem }: Props) {
     handleArchive,
   } = useOccurrenceActions(setOccurrences, refresh)
 
+  // Local patch, not refresh() — see OccurrenceCard's onReordered doc comment
+  // for why (refresh() unmounts the tree via the loading flag, collapsing
+  // every expanded card).
+  const handleChildrenReordered = useCallback((_parentItemId: string, orderedChildItemIds: string[]) => {
+    setOccurrences((prev) => prev.map((o) => {
+      const idx = orderedChildItemIds.indexOf(o.itemId)
+      return idx === -1 ? o : { ...o, sortOrder: idx }
+    }))
+  }, [setOccurrences])
+
   // Days in selected range (single element for today/tomorrow, multiple for week/month)
   const days = useMemo(() => getDaysInRange(start, end), [start, end])
   const isMultiDay = days.length > 1
@@ -140,7 +150,7 @@ export function ListView({ onEditItem }: Props) {
   function renderNode(occ: OccurrenceWithState) {
     const node = nodeByKey.get(occ.id ?? occ.itemId)
     if (node && node.children.length > 0) {
-      return <OccurrenceCard key={occ.id ?? occ.itemId} node={node} depth={0} renderLeaf={(o) => renderRow(o)} refresh={refresh} />
+      return <OccurrenceCard key={occ.id ?? occ.itemId} node={node} depth={0} renderLeaf={(o) => renderRow(o)} onReordered={handleChildrenReordered} />
     }
     return renderRow(occ)
   }

@@ -202,6 +202,18 @@ export function NowView({ onEditItem }: Props) {
     refresh()
   }, [refresh])
 
+  // ── Reorder ────────────────────────────────────────────────────────────────
+  // Local patch, not refresh() — see OccurrenceCard's onReordered doc comment
+  // for why (refresh() unmounts the tree via the loading flag, collapsing
+  // every expanded card).
+
+  const handleChildrenReordered = useCallback((_parentItemId: string, orderedChildItemIds: string[]) => {
+    setOccurrences((prev) => prev.map((o) => {
+      const idx = orderedChildItemIds.indexOf(o.itemId)
+      return idx === -1 ? o : { ...o, sortOrder: idx }
+    }))
+  }, [setOccurrences])
+
   // ── Archive ────────────────────────────────────────────────────────────────
 
   const handleArchive = useCallback(async (occ: OccurrenceWithState) => {
@@ -272,7 +284,7 @@ export function NowView({ onEditItem }: Props) {
   function renderNode(occ: OccurrenceWithState) {
     const node = nodeByKey.get(occ.id ?? occ.itemId)
     if (node && node.children.length > 0) {
-      return <OccurrenceCard key={occ.id ?? occ.itemId} node={node} depth={0} renderLeaf={(o) => renderRow(o)} refresh={refresh} />
+      return <OccurrenceCard key={occ.id ?? occ.itemId} node={node} depth={0} renderLeaf={(o) => renderRow(o)} onReordered={handleChildrenReordered} />
     }
     return renderRow(occ)
   }

@@ -16,7 +16,14 @@ type Props = {
   node: OccurrenceNode
   depth: number
   renderLeaf: (occ: OccurrenceNode['occ']) => ReactNode
-  refresh: () => void
+  // Patches sortOrder locally for the reordered children — deliberately NOT
+  // a full refresh(): both views' refresh() flips a loading flag that
+  // unmounts the whole tree while it refetches, which would collapse every
+  // expanded card (not just this one) after every single drag. Reordering
+  // never changes anything else the client can't already compute itself
+  // (unlike completing a child, which needs the server-computed parent
+  // derived %), so a local patch is both correct and avoids that unmount.
+  onReordered: (parentItemId: string, orderedChildItemIds: string[]) => void
 }
 
 // Recursive card wrapper for an occurrence that has ≥1 materialized child
@@ -26,11 +33,10 @@ type Props = {
 // Children are manually reorderable via drag-and-drop, scoped to this card's
 // own DndContext — that's what confines a drag to one parent's list without
 // extra validation code (no shared DndContext exists between sibling cards).
-export function OccurrenceCard({ node, depth, renderLeaf, refresh }: Props) {
+export function OccurrenceCard({ node, depth, renderLeaf, onReordered }: Props) {
   const [expanded, setExpanded] = useState(false)
-  // Optimistic reorder: set immediately on drop, cleared once the server
-  // round-trip resolves (refresh() brings fresh, authoritative sortOrder) or
-  // reverted on failure.
+  // Optimistic reorder: set immediately on drop, cleared once onReordered's
+  // local state patch lands (or reverted on API failure).
   const [orderOverride, setOrderOverride] = useState<string[] | null>(null)
   const { occ, children } = node
   const itemId = occ.itemId
@@ -63,7 +69,8 @@ export function OccurrenceCard({ node, depth, renderLeaf, refresh }: Props) {
 
     try {
       await api.items.reorderChildren(itemId, newOrderIds)
-      refresh()
+      onReordered(itemId, newOrderIds)
+      setOrderOverride(null)
     } catch {
       setOrderOverride(null)
     }
@@ -111,7 +118,7 @@ export function OccurrenceCard({ node, depth, renderLeaf, refresh }: Props) {
                   child={child}
                   depth={depth}
                   renderLeaf={renderLeaf}
-                  refresh={refresh}
+                  onReordered={onReordered}
                 />
               ))}
             </div>
@@ -126,10 +133,10 @@ type DraggableChildProps = {
   child: OccurrenceNode
   depth: number
   renderLeaf: (occ: OccurrenceNode['occ']) => ReactNode
-  refresh: () => void
+  onReordered: (parentItemId: string, orderedChildItemIds: string[]) => void
 }
 
-function DraggableChild({ child, depth, renderLeaf, refresh }: DraggableChildProps) {
+function DraggableChild({ child, depth, renderLeaf, onReordered }: DraggableChildProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: child.occ.itemId })
 
@@ -155,7 +162,7 @@ function DraggableChild({ child, depth, renderLeaf, refresh }: DraggableChildPro
       </button>
       <div className="occ-card__draggable-content">
         {child.children.length > 0 ? (
-          <OccurrenceCard node={child} depth={depth + 1} renderLeaf={renderLeaf} refresh={refresh} />
+          <OccurrenceCard node={child} depth={depth + 1} renderLeaf={renderLeaf} onReordered={onReordered} />
         ) : (
           <div className="occ-card__leaf">{renderLeaf(child.occ)}</div>
         )}

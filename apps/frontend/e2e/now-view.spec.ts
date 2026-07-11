@@ -807,20 +807,16 @@ test.describe('Manual child reordering (drag-and-drop, Now view)', () => {
     expect(reorderBody!.childItemIds).toEqual([CHILD_B_OCC.itemId, CHILD_A_OCC.itemId])
   })
 
-  test('after a successful reorder, the new order persists across the follow-up refresh', async ({ page }) => {
+  test('after a successful reorder, the new order is reflected immediately without a full-tree refetch', async ({ page }) => {
     await page.clock.setFixedTime(new Date('2025-06-16T22:00:00'))
 
-    let reordered = false
+    let todayFetchCount = 0
     await page.route('/me', (r) => r.fulfill({ json: { id: 'u1', email: 'test@tracker.local', createdAt: new Date().toISOString() } }))
-    await page.route('/api/occurrences/today', (route) =>
-      route.fulfill({
-        json: reordered
-          ? [ROUTINE_OCC, { ...CHILD_B_OCC, sortOrder: 0 }, { ...CHILD_A_OCC, sortOrder: 1 }]
-          : [ROUTINE_OCC, CHILD_A_OCC, CHILD_B_OCC],
-      })
-    )
+    await page.route('/api/occurrences/today', (route) => {
+      todayFetchCount++
+      return route.fulfill({ json: [ROUTINE_OCC, CHILD_A_OCC, CHILD_B_OCC] })
+    })
     await page.route(`/api/items/${ROUTINE_OCC.itemId}/reorder-children`, async (route) => {
-      reordered = true
       await route.fulfill({ json: [] })
     })
     await page.route('/api/buckets', (route) => route.fulfill({ json: BUCKETS }))
@@ -834,14 +830,40 @@ test.describe('Manual child reordering (drag-and-drop, Now view)', () => {
     const childrenList = page.getByTestId(`occ-card-children-${ROUTINE_OCC.itemId}`)
     await expect(childrenList).toContainText(/Child A[\s\S]*Child B/)
 
+    const fetchesBeforeDrag = todayFetchCount
     await dragHandleTo(
       page,
       `occ-card-drag-handle-${CHILD_A_OCC.itemId}`,
       `occ-card-drag-handle-${CHILD_B_OCC.itemId}`
     )
 
-    // Post-refresh, server-confirmed order (B before A) is reflected
+    // New order shows up via a local state patch, not a refetch
     await expect(childrenList).toContainText(/Child B[\s\S]*Child A/)
+    expect(todayFetchCount).toBe(fetchesBeforeDrag)
+  })
+
+  test('an expanded card stays expanded after a successful drag, so a second drag needs no extra click', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2025-06-16T22:00:00'))
+    await setupApiMocks(page, [ROUTINE_OCC, CHILD_A_OCC, CHILD_B_OCC])
+    await page.route(`/api/items/${ROUTINE_OCC.itemId}/reorder-children`, async (route) => {
+      await route.fulfill({ json: [] })
+    })
+
+    await page.goto('/')
+    await page.getByTestId(`occ-card-toggle-${ROUTINE_OCC.itemId}`).click()
+
+    const card = page.getByTestId(`occ-card-${ROUTINE_OCC.itemId}`)
+    await expect(card).toHaveAttribute('data-expanded', 'true')
+
+    await dragHandleTo(
+      page,
+      `occ-card-drag-handle-${CHILD_A_OCC.itemId}`,
+      `occ-card-drag-handle-${CHILD_B_OCC.itemId}`
+    )
+
+    // Still expanded — no re-click needed to keep reordering
+    await expect(card).toHaveAttribute('data-expanded', 'true')
+    await expect(page.getByTestId(`occ-card-drag-handle-${CHILD_A_OCC.itemId}`)).toBeVisible()
   })
 
 })
