@@ -67,6 +67,15 @@ describe('§9.1 — computeLoggedMinutes sums finalized sessions, not in-progres
     expect(computeLoggedMinutes(events)).toBe(45)
   })
 
+  it('§9.1 editing a live (already-stopped) session counts the edit, not the stop it corrects — the started-10-min-late / stopped-early case', () => {
+    const events = [
+      ev('session_started', { sessionId: 's1' }),
+      ev('session_stopped', { sessionId: 's1', stoppedAt: '2025-01-15T04:10:00Z', durationMin: 10 }),
+      ev('session_edited',  { sessionId: 's1', startedAt: '2025-01-15T04:00:00Z', endedAt: '2025-01-15T04:25:00Z', durationMin: 25 }),
+    ]
+    expect(computeLoggedMinutes(events)).toBe(25)
+  })
+
   it('no session events at all yields zero', () => {
     expect(computeLoggedMinutes([])).toBe(0)
   })
@@ -221,5 +230,44 @@ describe('§9.1 — findSessionsByOccurrence lists individual sessions, excludin
 
     const sessions = await repos.findSessionsByOccurrence(getTestPool(), occ.id, u.id)
     expect(sessions).toHaveLength(0)
+  })
+
+  it('§9.1 editing a live (started/stopped) session reflects the edited times and duration, not the original stop', async () => {
+    const u = await makeUser('sessions-list-edit-live@test.com')
+    const item = await repos.insertItem(getTestPool(), {
+      userId: u.id, name: 'Day Trading', recurrenceRule: { type: 'daily' }, creationSource: 'planned',
+    })
+    const occ = await ensureOccurrenceMaterialized(getTestPool(), item, TODAY, u.id)
+
+    await repos.insertEvent(getTestPool(), {
+      userId: u.id, eventType: 'session_started', occurrenceId: occ.id, itemId: item.id,
+      appliesToDay: TODAY, payload: { sessionId: 'live1' },
+    })
+    await repos.insertEvent(getTestPool(), {
+      userId: u.id, eventType: 'session_stopped', occurrenceId: occ.id, itemId: item.id,
+      appliesToDay: TODAY, payload: { sessionId: 'live1', stoppedAt: '2025-01-15T10:10:00Z', durationMin: 10 },
+    })
+
+    const before = await repos.findSessionsByOccurrence(getTestPool(), occ.id, u.id)
+    expect(before).toHaveLength(1)
+    expect(before[0].durationMin).toBe(10)
+    expect(before[0].source).toBe('live')
+
+    // User realizes they started the timer 10 minutes late and stopped it 5
+    // minutes early — edits it via PATCH to the correct window.
+    await repos.insertEvent(getTestPool(), {
+      userId: u.id, eventType: 'session_edited', occurrenceId: occ.id, itemId: item.id,
+      appliesToDay: TODAY, payload: {
+        sessionId: 'live1', startedAt: '2025-01-15T09:50:00Z', endedAt: '2025-01-15T10:15:00Z', durationMin: 25,
+      },
+    })
+
+    const after = await repos.findSessionsByOccurrence(getTestPool(), occ.id, u.id)
+    expect(after).toHaveLength(1)
+    expect(after[0].durationMin).toBe(25)
+    expect(after[0].startedAt.toISOString()).toBe('2025-01-15T09:50:00.000Z')
+    expect(after[0].endedAt.toISOString()).toBe('2025-01-15T10:15:00.000Z')
+    // Origin is still "live" — it started as a real timer, editing it doesn't rewrite history of how it began.
+    expect(after[0].source).toBe('live')
   })
 })

@@ -775,6 +775,47 @@ describe('§9.1 — manual session create and edit work', () => {
 
     await app.close()
   })
+
+  it('§9.1 PATCH /sessions/:sessionId on a live (started/stopped) session updates loggedMinutes and the session listing — not just events created via /sessions/manual', async () => {
+    const u = await makeUser('api-edit-live-session@test.com')
+    const app = await buildTestApp(u.id)
+
+    const item = await repos.insertItem(getTestPool(), {
+      userId: u.id, name: 'Day Trading', recurrenceRule: null, creationSource: 'planned',
+    })
+    const occ = await ensureOccurrenceMaterialized(getTestPool(), item, TODAY, u.id)
+
+    const startRes = await app.inject({ method: 'POST', url: '/api/sessions/start', payload: { itemId: item.id, day: TODAY } })
+    const { sessionId } = JSON.parse(startRes.body)
+    const stopRes = await app.inject({ method: 'POST', url: `/api/sessions/${sessionId}/stop` })
+    expect(JSON.parse(stopRes.body).durationMin).toBeGreaterThanOrEqual(0)
+
+    const beforeOcc = await app.inject({ method: 'GET', url: `/api/occurrences/${occ.id}` })
+    const beforeLogged = JSON.parse(beforeOcc.body).loggedMinutes
+
+    // Realized the timer was started 10 minutes late — correct it via PATCH,
+    // same as editing a manually-created session.
+    const editRes = await app.inject({
+      method: 'PATCH',
+      url: `/api/sessions/${sessionId}`,
+      payload: { startedAt: '2025-01-15T09:50:00.000Z', endedAt: '2025-01-15T10:15:00.000Z' },
+    })
+    expect(editRes.statusCode).toBe(200)
+    expect(JSON.parse(editRes.body).durationMin).toBe(25)
+
+    const afterOcc = await app.inject({ method: 'GET', url: `/api/occurrences/${occ.id}` })
+    expect(JSON.parse(afterOcc.body).loggedMinutes).toBe(25)
+    expect(JSON.parse(afterOcc.body).loggedMinutes).not.toBe(beforeLogged)
+
+    const sessionsRes = await app.inject({ method: 'GET', url: `/api/occurrences/${occ.id}/sessions` })
+    const listed = JSON.parse(sessionsRes.body) as Array<{ sessionId: string; durationMin: number; startedAt: string; endedAt: string }>
+    expect(listed).toHaveLength(1)
+    expect(listed[0].durationMin).toBe(25)
+    expect(listed[0].startedAt).toBe('2025-01-15T09:50:00.000Z')
+    expect(listed[0].endedAt).toBe('2025-01-15T10:15:00.000Z')
+
+    await app.close()
+  })
 })
 
 // ── §9.1 — delete a session and list sessions per occurrence ─────────────────

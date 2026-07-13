@@ -64,13 +64,15 @@ const FINALIZING_EVENT_TYPES = new Set(['session_stopped', 'session_created', 's
  * Multiple start/stop cycles against the same occurrence are independent
  * sessions (each with its own sessionId) — this is what makes re-starting
  * a timer additive rather than a reset. Per session:
- *   - a session_stopped event finalizes a live session's durationMin
- *   - the latest session_created/session_edited finalizes a manual session
- *     (an edit supersedes the create it corrects — never both)
+ *   - the LATEST finalizing event wins — session_stopped, session_created,
+ *     and session_edited are all "finalizing"; a session_edited always
+ *     supersedes whatever it corrects, whether that was an earlier manual
+ *     entry OR a live session_stopped (PATCH edits either kind). Events
+ *     arrive in chronological order, so "latest in the array" = "latest".
  *   - a session_deleted event is terminal and wins over any of the above:
  *     the session contributes nothing, even if it was also stopped/edited
- *   - a session with no stop/manual-finalize event is still in progress
- *     and contributes nothing here; its live elapsed time is tracked
+ *   - a session with no finalizing event yet is still in progress and
+ *     contributes nothing here; its live elapsed time is tracked
  *     client-side while running.
  */
 export function computeLoggedMinutes(events: TrackerEvent[]): number {
@@ -87,18 +89,11 @@ export function computeLoggedMinutes(events: TrackerEvent[]): number {
   for (const sessionEvents of bySession.values()) {
     if (sessionEvents.some((e) => e.eventType === 'session_deleted')) continue
 
-    const stopEvent = sessionEvents.find((e) => e.eventType === 'session_stopped')
-    if (stopEvent) {
-      totalMin += (stopEvent.payload as { durationMin: number }).durationMin
-      continue
-    }
-    const manualEvents = sessionEvents.filter(
-      (e) => e.eventType === 'session_created' || e.eventType === 'session_edited'
-    )
-    if (manualEvents.length > 0) {
-      const latest = manualEvents[manualEvents.length - 1]
-      totalMin += (latest.payload as { durationMin: number }).durationMin
-    }
+    const finalizers = sessionEvents.filter((e) => FINALIZING_EVENT_TYPES.has(e.eventType))
+    if (finalizers.length === 0) continue
+
+    const latest = finalizers[finalizers.length - 1]
+    totalMin += (latest.payload as { durationMin: number }).durationMin
   }
   return totalMin
 }

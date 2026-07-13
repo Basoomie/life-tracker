@@ -201,35 +201,42 @@ export async function findSessionSummaries(
   for (const [sessionId, events] of bySession) {
     if (events.some(e => e.event_type === 'session_deleted')) continue
 
+    // "source" reflects how the session originated (a real timer vs typed in
+    // after the fact) — independent of whether it was later corrected.
     const startEvent = events.find(e => e.event_type === 'session_started')
-    const stopEvent  = events.find(e => e.event_type === 'session_stopped')
-    const manualEvents = events.filter(
-      e => e.event_type === 'session_created' || e.event_type === 'session_edited'
-    )
+    const source: 'live' | 'manual' = startEvent ? 'live' : 'manual'
 
-    if (startEvent && stopEvent) {
+    // The LATEST finalizing event wins — a session_edited always supersedes
+    // whatever it corrects, whether that was an earlier manual entry OR a
+    // live session_stopped (PATCH can edit either kind). Rows arrive in
+    // chronological order, so "latest in the array" = "latest in time".
+    const finalizers = events.filter(
+      e => e.event_type === 'session_stopped' || e.event_type === 'session_created' || e.event_type === 'session_edited'
+    )
+    if (finalizers.length === 0) continue   // still in progress, no finalizer yet
+
+    const latest = finalizers[finalizers.length - 1]
+    if (latest.event_type === 'session_stopped') {
+      if (!startEvent) continue   // defensive: a stop with no matching start is unusable
       results.push({
         sessionId,
-        itemId: startEvent.item_id,
-        appliesToDay: startEvent.applies_to_day,
-        durationMin: stopEvent.payload['durationMin'] as number,
+        itemId: latest.item_id,
+        appliesToDay: latest.applies_to_day,
+        durationMin: latest.payload['durationMin'] as number,
         startedAt: startEvent.recorded_at,
-        source: 'live',
+        source,
       })
-    } else if (manualEvents.length > 0) {
-      // Latest manual event for this sessionId wins
-      const latest = manualEvents[manualEvents.length - 1]
-      const p = latest.payload as { sessionId: string; startedAt: string; durationMin: number }
+    } else {
+      const p = latest.payload as { startedAt: string; durationMin: number }
       results.push({
         sessionId,
         itemId: latest.item_id,
         appliesToDay: latest.applies_to_day,
         durationMin: p.durationMin,
         startedAt: new Date(p.startedAt),
-        source: 'manual',
+        source,
       })
     }
-    // Incomplete live sessions (started but not stopped) are intentionally skipped
   }
 
   return results
@@ -266,35 +273,40 @@ export async function findSessionsByOccurrence(
   for (const [sessionId, sessionEvents] of bySession) {
     if (sessionEvents.some((e) => e.eventType === 'session_deleted')) continue
 
+    // "source" reflects how the session originated — independent of whether
+    // it was later corrected via PATCH.
     const startEvent = sessionEvents.find((e) => e.eventType === 'session_started')
-    const stopEvent = sessionEvents.find((e) => e.eventType === 'session_stopped')
-    if (startEvent && stopEvent) {
-      const stopPayload = stopEvent.payload as { stoppedAt: string; durationMin: number }
+    const source: 'live' | 'manual' = startEvent ? 'live' : 'manual'
+
+    // The LATEST finalizing event wins — an edit always supersedes whatever
+    // it corrects, whether that was an earlier manual entry OR a live
+    // session_stopped. Events arrive in chronological order.
+    const finalizers = sessionEvents.filter(
+      (e) => e.eventType === 'session_stopped' || e.eventType === 'session_created' || e.eventType === 'session_edited'
+    )
+    if (finalizers.length === 0) continue   // in-progress live session, no finalizer yet
+
+    const latest = finalizers[finalizers.length - 1]
+    if (latest.eventType === 'session_stopped') {
+      if (!startEvent) continue   // defensive: a stop with no matching start is unusable
+      const p = latest.payload as { stoppedAt: string; durationMin: number }
       results.push({
         sessionId,
         startedAt: startEvent.recordedAt,
-        endedAt: new Date(stopPayload.stoppedAt),
-        durationMin: stopPayload.durationMin,
-        source: 'live',
+        endedAt: new Date(p.stoppedAt),
+        durationMin: p.durationMin,
+        source,
       })
-      continue
-    }
-
-    const manualEvents = sessionEvents.filter(
-      (e) => e.eventType === 'session_created' || e.eventType === 'session_edited'
-    )
-    if (manualEvents.length > 0) {
-      const latest = manualEvents[manualEvents.length - 1]
+    } else {
       const p = latest.payload as { startedAt: string; endedAt: string; durationMin: number }
       results.push({
         sessionId,
         startedAt: new Date(p.startedAt),
         endedAt: new Date(p.endedAt),
         durationMin: p.durationMin,
-        source: 'manual',
+        source,
       })
     }
-    // In-progress live sessions (started but not stopped) are intentionally omitted.
   }
 
   results.sort((a, b) => a.startedAt.getTime() - b.startedAt.getTime())
