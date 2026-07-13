@@ -14,6 +14,9 @@ import type {
   DispositionBody,
   CarryForwardBody,
   StartSessionBody,
+  ManualSessionBody,
+  EditSessionBody,
+  SessionSummary,
   AdHocCaptureBody,
   CreateItemBody,
   UpdateItemBody,
@@ -106,6 +109,8 @@ export const api = {
       apiFetch<OccurrenceWithState>(`/occurrences/${id}/carry-forward`, {
         method: 'POST', body: JSON.stringify(body),
       }),
+    sessions: (id: string) =>
+      apiFetch<SessionSummary[]>(`/occurrences/${id}/sessions`),
   },
 
   sessions: {
@@ -121,6 +126,16 @@ export const api = {
       apiFetch<{ sessionId: string; durationMin: number }>(`/sessions/${sessionId}/stop`, {
         method: 'POST',
       }),
+    manual: (body: ManualSessionBody) =>
+      apiFetch<{ sessionId: string; occurrenceId: string; durationMin: number }>('/sessions/manual', {
+        method: 'POST', body: JSON.stringify(body),
+      }),
+    edit: (sessionId: string, body: EditSessionBody) =>
+      apiFetch<{ sessionId: string; durationMin: number }>(`/sessions/${sessionId}`, {
+        method: 'PATCH', body: JSON.stringify(body),
+      }),
+    delete: (sessionId: string) =>
+      apiFetch<{ ok: boolean }>(`/sessions/${sessionId}`, { method: 'DELETE' }),
   },
 
   items: {

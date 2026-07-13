@@ -7,6 +7,7 @@ import { TierSection } from './TierSection'
 import { OccurrenceRow } from './OccurrenceRow'
 import { AdHocModal } from './AdHocModal'
 import { DispositionModal } from './DispositionModal'
+import { SessionManagerModal } from './SessionManagerModal'
 import { ConfirmModal } from '../shared/ConfirmModal'
 import { OccurrenceCard } from '../shared/OccurrenceCard'
 import { SortableList } from '../shared/SortableList'
@@ -88,6 +89,9 @@ export function NowView({ onEditItem }: Props) {
 
   // Disposition modal
   const [dispositionTarget, setDispositionTarget] = useState<OccurrenceWithState | null>(null)
+
+  // Session manager modal (§9.1 — add/edit/delete individual logged windows)
+  const [sessionManagerTarget, setSessionManagerTarget] = useState<OccurrenceWithState | null>(null)
 
   // Categories + reasons (for modals)
   const [categories, setCategories] = useState<Category[]>([])
@@ -290,6 +294,7 @@ export function NowView({ onEditItem }: Props) {
         onDisposition={() => setDispositionTarget(occ)}
         onEdit={() => onEditItem(occ.itemId)}
         onArchive={() => setPendingArchive(occ)}
+        onManageSessions={() => setSessionManagerTarget(occ)}
       />
     )
   }
@@ -436,6 +441,15 @@ export function NowView({ onEditItem }: Props) {
           onExcuse={(rid, cmt) => handleExcuse(dispositionTarget, rid, cmt)}
           onCarryForward={(day, rid, cmt) => handleCarryForward(dispositionTarget, day, rid, cmt)}
           onClose={() => setDispositionTarget(null)}
+        />
+      )}
+
+      {/* Session manager modal */}
+      {sessionManagerTarget && (
+        <SessionManagerModal
+          occ={sessionManagerTarget}
+          onClose={() => setSessionManagerTarget(null)}
+          onChanged={refresh}
         />
       )}
 

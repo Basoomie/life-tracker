@@ -17,6 +17,7 @@ export type {
   StartSessionBody,
   ManualSessionBody,
   EditSessionBody,
+  SessionSummary,
   AdHocCaptureBody,
   CreateCategoryBody,
   RenameCategoryBody,

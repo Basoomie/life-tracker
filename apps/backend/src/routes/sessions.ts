@@ -170,4 +170,29 @@ export async function sessionRoutes(app: FastifyInstance) {
 
     return reply.send({ sessionId, durationMin })
   })
+
+  // DELETE /sessions/:sessionId — §9.1 correction, not a mutation: appends a
+  // session_deleted event so the session is excluded from every downstream
+  // duration computation while its original events stay on the record.
+  app.delete('/sessions/:sessionId', async (req, reply) => {
+    const { sessionId } = req.params as { sessionId: string }
+    const userId = req.userId
+
+    const sessionEvents = await repos.findEventsBySessionId(pool, sessionId, userId)
+    if (sessionEvents.length === 0) return notFound(reply, 'session')
+
+    const anyEvent = sessionEvents[0]
+    if (!anyEvent.occurrenceId) return notFound(reply, 'session')
+
+    await repos.insertEvent(pool, {
+      userId,
+      eventType: 'session_deleted',
+      occurrenceId: anyEvent.occurrenceId,
+      itemId: anyEvent.itemId,
+      appliesToDay: anyEvent.appliesToDay,
+      payload: { sessionId },
+    })
+
+    return reply.send({ ok: true })
+  })
 }

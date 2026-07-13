@@ -183,7 +183,7 @@ export async function findSessionSummaries(
      FROM events
      WHERE user_id = $1
        AND applies_to_day >= $2 AND applies_to_day <= $3
-       AND event_type IN ('session_started','session_stopped','session_created','session_edited')
+       AND event_type IN ('session_started','session_stopped','session_created','session_edited','session_deleted')
        ${extra}
      ORDER BY recorded_at`,
     params
@@ -199,6 +199,8 @@ export async function findSessionSummaries(
 
   const results: SessionSummaryRow[] = []
   for (const [sessionId, events] of bySession) {
+    if (events.some(e => e.event_type === 'session_deleted')) continue
+
     const startEvent = events.find(e => e.event_type === 'session_started')
     const stopEvent  = events.find(e => e.event_type === 'session_stopped')
     const manualEvents = events.filter(
@@ -230,6 +232,72 @@ export async function findSessionSummaries(
     // Incomplete live sessions (started but not stopped) are intentionally skipped
   }
 
+  return results
+}
+
+export type SessionDetail = {
+  sessionId: string
+  startedAt: Date
+  endedAt: Date
+  durationMin: number
+  source: 'live' | 'manual'
+}
+
+// List individual sessions logged directly against one occurrence (not its
+// subtree), excluding deleted ones — powers the session-manager UI, where a
+// user edits or deletes one specific logged window without touching the
+// others logged against the same occurrence.
+export async function findSessionsByOccurrence(
+  pool: Pool,
+  occurrenceId: string,
+  userId: string
+): Promise<SessionDetail[]> {
+  const events = await findEventsByOccurrence(pool, occurrenceId, userId)
+
+  const bySession = new Map<string, TrackerEvent[]>()
+  for (const e of events) {
+    const sid = (e.payload as { sessionId?: string }).sessionId
+    if (!sid) continue
+    if (!bySession.has(sid)) bySession.set(sid, [])
+    bySession.get(sid)!.push(e)
+  }
+
+  const results: SessionDetail[] = []
+  for (const [sessionId, sessionEvents] of bySession) {
+    if (sessionEvents.some((e) => e.eventType === 'session_deleted')) continue
+
+    const startEvent = sessionEvents.find((e) => e.eventType === 'session_started')
+    const stopEvent = sessionEvents.find((e) => e.eventType === 'session_stopped')
+    if (startEvent && stopEvent) {
+      const stopPayload = stopEvent.payload as { stoppedAt: string; durationMin: number }
+      results.push({
+        sessionId,
+        startedAt: startEvent.recordedAt,
+        endedAt: new Date(stopPayload.stoppedAt),
+        durationMin: stopPayload.durationMin,
+        source: 'live',
+      })
+      continue
+    }
+
+    const manualEvents = sessionEvents.filter(
+      (e) => e.eventType === 'session_created' || e.eventType === 'session_edited'
+    )
+    if (manualEvents.length > 0) {
+      const latest = manualEvents[manualEvents.length - 1]
+      const p = latest.payload as { startedAt: string; endedAt: string; durationMin: number }
+      results.push({
+        sessionId,
+        startedAt: new Date(p.startedAt),
+        endedAt: new Date(p.endedAt),
+        durationMin: p.durationMin,
+        source: 'manual',
+      })
+    }
+    // In-progress live sessions (started but not stopped) are intentionally omitted.
+  }
+
+  results.sort((a, b) => a.startedAt.getTime() - b.startedAt.getTime())
   return results
 }
 

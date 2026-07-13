@@ -21,6 +21,11 @@ type Props = {
   onDisposition: () => void
   onEdit?: () => void
   onArchive?: () => void
+  // §9.1 — opens the session manager (add/edit/delete individual logged
+  // windows). Unlike the live TimerControl, this isn't gated on isToday or
+  // completion — manual sessions are explicitly for backdating and for
+  // occurrences you've already completed.
+  onManageSessions?: () => void
 }
 
 export function OccurrenceRow({
@@ -38,6 +43,7 @@ export function OccurrenceRow({
   onDisposition,
   onEdit,
   onArchive,
+  onManageSessions,
 }: Props) {
   const isComplete = occ.completionState.isComplete
   const timingLabel = formatTimingLabel(occ, buckets)
@@ -97,6 +103,17 @@ export function OccurrenceRow({
             onResume={onTimerResume}
             onStop={onTimerStop}
           />
+        )}
+        {onManageSessions && occ.id && (
+          <button
+            className="disp-btn"
+            onClick={onManageSessions}
+            aria-label={`Manage logged time for ${occ.snapshot.name}`}
+            data-testid="occ-manage-time-btn"
+            title="Manage logged time"
+          >
+            🕒
+          </button>
         )}
         {onEdit && (
           <button

@@ -777,6 +777,114 @@ describe('§9.1 — manual session create and edit work', () => {
   })
 })
 
+// ── §9.1 — delete a session and list sessions per occurrence ─────────────────
+
+describe('§9.1 — DELETE /sessions/:sessionId is a correction, not a mutation', () => {
+  it('§9.1 DELETE /sessions/:sessionId returns 404 for an unknown session', async () => {
+    const u = await makeUser('api-delete-unknown-session@test.com')
+    const app = await buildTestApp(u.id)
+
+    const res = await app.inject({ method: 'DELETE', url: '/api/sessions/does-not-exist' })
+    expect(res.statusCode).toBe(404)
+
+    await app.close()
+  })
+
+  it('§9.1 deleting a manual session removes it from loggedMinutes and from GET /occurrences/:id/sessions', async () => {
+    const u = await makeUser('api-delete-session@test.com')
+    const app = await buildTestApp(u.id)
+
+    const item = await repos.insertItem(getTestPool(), {
+      userId: u.id, name: 'Piano Practice', recurrenceRule: null, creationSource: 'planned',
+    })
+    const occ = await ensureOccurrenceMaterialized(getTestPool(), item, TODAY, u.id)
+
+    const createRes = await app.inject({
+      method: 'POST',
+      url: '/api/sessions/manual',
+      payload: { itemId: item.id, day: TODAY, startedAt: '2025-01-15T10:00:00.000Z', endedAt: '2025-01-15T10:20:00.000Z' },
+    })
+    const { sessionId } = JSON.parse(createRes.body)
+
+    const beforeOcc = await app.inject({ method: 'GET', url: `/api/occurrences/${occ.id}` })
+    expect(JSON.parse(beforeOcc.body).loggedMinutes).toBe(20)
+
+    const deleteRes = await app.inject({ method: 'DELETE', url: `/api/sessions/${sessionId}` })
+    expect(deleteRes.statusCode).toBe(200)
+
+    const afterOcc = await app.inject({ method: 'GET', url: `/api/occurrences/${occ.id}` })
+    expect(JSON.parse(afterOcc.body).loggedMinutes).toBe(0)
+
+    const sessionsRes = await app.inject({ method: 'GET', url: `/api/occurrences/${occ.id}/sessions` })
+    expect(JSON.parse(sessionsRes.body)).toEqual([])
+
+    // The original session_created event is still on the record — it's a
+    // correction, not a mutation.
+    const events = await repos.findEventsBySessionId(getTestPool(), sessionId, u.id)
+    expect(events.some((e) => e.eventType === 'session_created')).toBe(true)
+    expect(events.some((e) => e.eventType === 'session_deleted')).toBe(true)
+
+    await app.close()
+  })
+
+  it('§9.1 deleting one of several sessions logged on the same occurrence leaves the others untouched', async () => {
+    const u = await makeUser('api-delete-one-of-several@test.com')
+    const app = await buildTestApp(u.id)
+
+    const item = await repos.insertItem(getTestPool(), {
+      userId: u.id, name: 'Habit A', recurrenceRule: null, creationSource: 'planned',
+    })
+    const occ = await ensureOccurrenceMaterialized(getTestPool(), item, TODAY, u.id)
+
+    const windows = [
+      { startedAt: '2025-01-15T10:00:00.000Z', endedAt: '2025-01-15T10:30:00.000Z' },  // 30 min
+      { startedAt: '2025-01-15T14:00:00.000Z', endedAt: '2025-01-15T15:00:00.000Z' },  // 60 min
+      { startedAt: '2025-01-15T16:30:00.000Z', endedAt: '2025-01-15T16:45:00.000Z' },  // 15 min — this one gets removed
+      { startedAt: '2025-01-15T18:15:00.000Z', endedAt: '2025-01-15T18:45:00.000Z' },  // 30 min
+    ]
+    const sessionIds: string[] = []
+    for (const w of windows) {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/sessions/manual',
+        payload: { itemId: item.id, day: TODAY, ...w },
+      })
+      sessionIds.push(JSON.parse(res.body).sessionId)
+    }
+
+    const beforeOcc = await app.inject({ method: 'GET', url: `/api/occurrences/${occ.id}` })
+    expect(JSON.parse(beforeOcc.body).loggedMinutes).toBe(30 + 60 + 15 + 30)
+
+    // Remove the 4:30-4:45 window (index 2) — the others must be unaffected.
+    const deleteRes = await app.inject({ method: 'DELETE', url: `/api/sessions/${sessionIds[2]}` })
+    expect(deleteRes.statusCode).toBe(200)
+
+    const afterOcc = await app.inject({ method: 'GET', url: `/api/occurrences/${occ.id}` })
+    expect(JSON.parse(afterOcc.body).loggedMinutes).toBe(30 + 60 + 30)
+
+    const sessionsRes = await app.inject({ method: 'GET', url: `/api/occurrences/${occ.id}/sessions` })
+    const remaining = JSON.parse(sessionsRes.body) as Array<{ sessionId: string; durationMin: number }>
+    expect(remaining.map((s) => s.sessionId).sort()).toEqual(
+      [sessionIds[0], sessionIds[1], sessionIds[3]].sort()
+    )
+    expect(remaining.find((s) => s.sessionId === sessionIds[0])!.durationMin).toBe(30)
+    expect(remaining.find((s) => s.sessionId === sessionIds[1])!.durationMin).toBe(60)
+    expect(remaining.find((s) => s.sessionId === sessionIds[3])!.durationMin).toBe(30)
+
+    await app.close()
+  })
+
+  it('§9.1 GET /occurrences/:id/sessions returns 404 for an unknown occurrence', async () => {
+    const u = await makeUser('api-list-sessions-unknown-occ@test.com')
+    const app = await buildTestApp(u.id)
+
+    const res = await app.inject({ method: 'GET', url: '/api/occurrences/00000000-0000-0000-0000-000000000000/sessions' })
+    expect(res.statusCode).toBe(404)
+
+    await app.close()
+  })
+})
+
 // ── §9.2 — ad-hoc one-tap ────────────────────────────────────────────────────
 
 describe('§9.2 — ad-hoc one-tap creates item and running session together', () => {

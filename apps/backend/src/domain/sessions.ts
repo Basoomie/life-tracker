@@ -67,6 +67,8 @@ const FINALIZING_EVENT_TYPES = new Set(['session_stopped', 'session_created', 's
  *   - a session_stopped event finalizes a live session's durationMin
  *   - the latest session_created/session_edited finalizes a manual session
  *     (an edit supersedes the create it corrects — never both)
+ *   - a session_deleted event is terminal and wins over any of the above:
+ *     the session contributes nothing, even if it was also stopped/edited
  *   - a session with no stop/manual-finalize event is still in progress
  *     and contributes nothing here; its live elapsed time is tracked
  *     client-side while running.
@@ -74,7 +76,7 @@ const FINALIZING_EVENT_TYPES = new Set(['session_stopped', 'session_created', 's
 export function computeLoggedMinutes(events: TrackerEvent[]): number {
   const bySession = new Map<string, TrackerEvent[]>()
   for (const e of events) {
-    if (!FINALIZING_EVENT_TYPES.has(e.eventType)) continue
+    if (!FINALIZING_EVENT_TYPES.has(e.eventType) && e.eventType !== 'session_deleted') continue
     const sessionId = (e.payload as { sessionId?: string }).sessionId
     if (!sessionId) continue
     if (!bySession.has(sessionId)) bySession.set(sessionId, [])
@@ -83,6 +85,8 @@ export function computeLoggedMinutes(events: TrackerEvent[]): number {
 
   let totalMin = 0
   for (const sessionEvents of bySession.values()) {
+    if (sessionEvents.some((e) => e.eventType === 'session_deleted')) continue
+
     const stopEvent = sessionEvents.find((e) => e.eventType === 'session_stopped')
     if (stopEvent) {
       totalMin += (stopEvent.payload as { durationMin: number }).durationMin

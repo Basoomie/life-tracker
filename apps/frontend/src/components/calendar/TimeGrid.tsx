@@ -29,6 +29,7 @@ type Props = {
   onDisposition: (occ: OccurrenceWithState) => void
   onEdit: (itemId: string) => void
   onArchive: (occ: OccurrenceWithState) => void
+  onManageSessions: (occ: OccurrenceWithState) => void
   onReordered: (orderedItemIds: string[]) => void
 }
 
@@ -71,6 +72,7 @@ export function TimeGrid({
   onDisposition,
   onEdit,
   onArchive,
+  onManageSessions,
   onReordered,
 }: Props) {
   const layout: DayLayout = computeDayLayout(occs, buckets, dayStart)
@@ -124,6 +126,7 @@ export function TimeGrid({
         onDisposition={() => { onDisposition(occ); if (closeAfterAction) setSelected(null) }}
         onEdit={() => onEdit(occ.itemId)}
         onArchive={() => { onArchive(occ); if (closeAfterAction) setSelected(null) }}
+        onManageSessions={() => onManageSessions(occ)}
       />
     )
   }

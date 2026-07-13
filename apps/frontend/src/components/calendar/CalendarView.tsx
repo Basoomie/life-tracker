@@ -6,6 +6,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useRangeData, effectiveDayStart } from '../../hooks/useRangeData'
 import { useOccurrenceActions } from '../../hooks/useOccurrenceActions'
 import { DispositionModal } from '../now/DispositionModal'
+import { SessionManagerModal } from '../now/SessionManagerModal'
 import { ConfirmModal } from '../shared/ConfirmModal'
 import { FilterBar } from '../FilterBar'
 import { TimeGrid } from './TimeGrid'
@@ -69,6 +70,8 @@ export function CalendarView({ onEditItem }: Props) {
     sessions,
     dispositionTarget,
     setDispositionTarget,
+    sessionManagerTarget,
+    setSessionManagerTarget,
     handleComplete,
     handleUncomplete,
     handleTimerStart,
@@ -154,6 +157,7 @@ export function CalendarView({ onEditItem }: Props) {
         onDisposition={setDispositionTarget}
         onEdit={onEditItem}
         onArchive={setPendingArchive}
+        onManageSessions={setSessionManagerTarget}
         onReordered={handleReordered}
       />
     )
@@ -271,6 +275,15 @@ export function CalendarView({ onEditItem }: Props) {
           onExcuse={(rid, cmt) => handleExcuse(dispositionTarget, rid, cmt)}
           onCarryForward={(day, rid, cmt) => handleCarryForward(dispositionTarget, day, rid, cmt)}
           onClose={() => setDispositionTarget(null)}
+        />
+      )}
+
+      {/* Session manager modal */}
+      {sessionManagerTarget && (
+        <SessionManagerModal
+          occ={sessionManagerTarget}
+          onClose={() => setSessionManagerTarget(null)}
+          onChanged={refresh}
         />
       )}
 

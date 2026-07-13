@@ -134,6 +134,17 @@ export type EditSessionBody = {
   endedAt: string     // ISO 8601
 }
 
+// §9.1 — one finalized, non-deleted session logged directly against an
+// occurrence. Returned by GET /occurrences/:id/sessions for the
+// session-manager UI (add/edit/delete individual logged windows).
+export type SessionSummary = {
+  sessionId: string
+  startedAt: string   // ISO 8601
+  endedAt: string     // ISO 8601
+  durationMin: number
+  source: 'live' | 'manual'
+}
+
 export type AdHocCaptureBody = {
   name: string
   categoryId?: string | null

@@ -177,6 +177,16 @@ type SessionEditedEvent = EventBase & {
   }
 }
 
+// A correction, not a mutation: the session's original events stay on the
+// record, but this event causes it to be excluded from every downstream
+// duration computation (loggedMinutes, session listings, stats).
+type SessionDeletedEvent = EventBase & {
+  eventType: 'session_deleted'
+  payload: {
+    sessionId: string
+  }
+}
+
 // ── Structure / config (forward-only; past occurrences stay frozen) ───────────
 
 type TemplateCreatedEvent = EventBase & {
@@ -412,6 +422,7 @@ export type TrackerEvent =
   | SessionStoppedEvent
   | SessionCreatedEvent
   | SessionEditedEvent
+  | SessionDeletedEvent
   | TemplateCreatedEvent
   | TemplateEditedEvent
   | TemplateSoftDeletedEvent

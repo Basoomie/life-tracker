@@ -231,4 +231,22 @@ export async function occurrenceRoutes(app: FastifyInstance) {
 
     return reply.send(result)
   })
+
+  // GET /occurrences/:id/sessions — §9.1 individual logged sessions for this
+  // occurrence (not its subtree), for the session-manager UI.
+  app.get('/occurrences/:id/sessions', async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const userId = req.userId
+    const occ = await repos.findOccurrenceById(pool, id, userId)
+    if (!occ) return notFound(reply, 'occurrence')
+
+    const sessions = await repos.findSessionsByOccurrence(pool, id, userId)
+    return reply.send(sessions.map((s) => ({
+      sessionId: s.sessionId,
+      startedAt: s.startedAt.toISOString(),
+      endedAt: s.endedAt.toISOString(),
+      durationMin: s.durationMin,
+      source: s.source,
+    })))
+  })
 }

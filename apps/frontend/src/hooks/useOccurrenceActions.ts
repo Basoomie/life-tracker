@@ -11,6 +11,8 @@ export type OccurrenceActions = {
   sessions: Map<string, SessionState>
   dispositionTarget: OccurrenceWithState | null
   setDispositionTarget: (occ: OccurrenceWithState | null) => void
+  sessionManagerTarget: OccurrenceWithState | null
+  setSessionManagerTarget: (occ: OccurrenceWithState | null) => void
   handleComplete: (occ: OccurrenceWithState) => Promise<void>
   handleUncomplete: (occ: OccurrenceWithState) => Promise<void>
   handleTimerStart: (occ: OccurrenceWithState) => Promise<void>
@@ -29,6 +31,7 @@ export function useOccurrenceActions(
 ): OccurrenceActions {
   const [sessions, setSessions] = useState<Map<string, SessionState>>(() => loadSessions())
   const [dispositionTarget, setDispositionTarget] = useState<OccurrenceWithState | null>(null)
+  const [sessionManagerTarget, setSessionManagerTarget] = useState<OccurrenceWithState | null>(null)
 
   useEffect(() => {
     saveSessions(sessions)
@@ -147,6 +150,8 @@ export function useOccurrenceActions(
     sessions,
     dispositionTarget,
     setDispositionTarget,
+    sessionManagerTarget,
+    setSessionManagerTarget,
     handleComplete,
     handleUncomplete,
     handleTimerStart,

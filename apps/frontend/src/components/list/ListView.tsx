@@ -5,6 +5,7 @@ import { useRangeData } from '../../hooks/useRangeData'
 import { useOccurrenceActions } from '../../hooks/useOccurrenceActions'
 import { OccurrenceRow } from '../now/OccurrenceRow'
 import { DispositionModal } from '../now/DispositionModal'
+import { SessionManagerModal } from '../now/SessionManagerModal'
 import { ConfirmModal } from '../shared/ConfirmModal'
 import { OccurrenceCard } from '../shared/OccurrenceCard'
 import { SortableList } from '../shared/SortableList'
@@ -66,6 +67,8 @@ export function ListView({ onEditItem }: Props) {
     sessions,
     dispositionTarget,
     setDispositionTarget,
+    sessionManagerTarget,
+    setSessionManagerTarget,
     handleComplete,
     handleUncomplete,
     handleTimerStart,
@@ -143,6 +146,7 @@ export function ListView({ onEditItem }: Props) {
         onDisposition={() => setDispositionTarget(occ)}
         onEdit={() => onEditItem(occ.itemId)}
         onArchive={() => setPendingArchive(occ)}
+        onManageSessions={() => setSessionManagerTarget(occ)}
       />
     )
   }
@@ -315,6 +319,15 @@ export function ListView({ onEditItem }: Props) {
           onExcuse={(rid, cmt) => handleExcuse(dispositionTarget, rid, cmt)}
           onCarryForward={(day, rid, cmt) => handleCarryForward(dispositionTarget, day, rid, cmt)}
           onClose={() => setDispositionTarget(null)}
+        />
+      )}
+
+      {/* Session manager modal */}
+      {sessionManagerTarget && (
+        <SessionManagerModal
+          occ={sessionManagerTarget}
+          onClose={() => setSessionManagerTarget(null)}
+          onChanged={refresh}
         />
       )}
 
