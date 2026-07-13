@@ -191,8 +191,8 @@ describe('§6.2 declared parent % coexists with derived % and can diverge', () =
     const state = buildParentCompletionState(50, events)
     expect(state.derivedPercent).toBe(50)
     expect(state.declaredPercent).toBe(75)
-    expect(state.displayPercent).toBe(75)   // declared takes precedence in display
-    expect(state.isComplete).toBe(true)      // declared is set → considered complete
+    expect(state.displayPercent).toBe(75)    // declared takes precedence in display
+    expect(state.isComplete).toBe(false)     // declared is 75, not 100 → not complete
   })
 
   it('§6.2 displayPercent falls back to derivedPercent when no declared % set', () => {
@@ -204,6 +204,31 @@ describe('§6.2 declared parent % coexists with derived % and can diverge', () =
 
   it('§6.2 parent is complete when derivedPercent reaches 100, even without declared %', () => {
     const state = buildParentCompletionState(100, [])
+    expect(state.isComplete).toBe(true)
+  })
+
+  it('§6.2 a declared 0% overrides a vacuous derived 100% (parent reads as not complete)', () => {
+    const events: TrackerEvent[] = [
+      makeEvent({
+        eventType: 'manual_parent_percent_declared',
+        payload: { declaredPercent: 0 },
+      }),
+    ]
+    // derivedPercent = 100 vacuously (0 due children that day), but the user
+    // explicitly declared 0% — that must win, both in display and isComplete.
+    const state = buildParentCompletionState(100, events)
+    expect(state.displayPercent).toBe(0)
+    expect(state.isComplete).toBe(false)
+  })
+
+  it('§6.2 a declared 100% is complete even when derivedPercent is lower', () => {
+    const events: TrackerEvent[] = [
+      makeEvent({
+        eventType: 'manual_parent_percent_declared',
+        payload: { declaredPercent: 100 },
+      }),
+    ]
+    const state = buildParentCompletionState(40, events)
     expect(state.isComplete).toBe(true)
   })
 })

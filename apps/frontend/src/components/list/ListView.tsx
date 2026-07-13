@@ -147,11 +147,13 @@ export function ListView({ onEditItem }: Props) {
     )
   }
 
-  // Roots with ≥1 materialized child today render as a collapsible card;
-  // plain leaves render exactly as before.
+  // Items with children render as a collapsible card — using the backend's
+  // authoritative occ.hasChildren (not just whether today's fetch happened to
+  // include a materialized/due child) keeps the card/leaf choice consistent
+  // across days for the same item, even when 0 children are due today.
   function renderNode(occ: OccurrenceWithState) {
     const node = nodeByKey.get(occ.id ?? occ.itemId)
-    if (node && node.children.length > 0) {
+    if (node && (node.children.length > 0 || occ.hasChildren)) {
       return <OccurrenceCard key={occ.id ?? occ.itemId} node={node} depth={0} renderLeaf={(o) => renderRow(o)} onReordered={handleReordered} />
     }
     return renderRow(occ)

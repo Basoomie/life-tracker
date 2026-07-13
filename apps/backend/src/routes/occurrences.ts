@@ -2,6 +2,7 @@
 // All business logic is in domain functions; routes only orchestrate.
 
 import type { FastifyInstance } from 'fastify'
+import type { Pool } from 'pg'
 import { pool } from '../db'
 import * as repos from '../db/repos/index'
 import { getOccurrencesInRange, ensureOccurrenceMaterialized } from '../domain/materialization'
@@ -16,6 +17,14 @@ import {
 import { skipOccurrenceByUser, excuseOccurrenceByUser, carryForward } from '../domain/dispositions'
 import { notFound, badRequest, todayUTC, enrichOccurrence } from './helpers'
 import type { DeclarePercentBody, DispositionBody, CarryForwardBody, RetroactiveBody } from '@tracker/shared'
+
+// An occurrence whose own item has children is a parent node — its completion
+// is governed by derived/declared % (§6.1/§6.2), never by a leaf item_completed
+// event, regardless of whether it also happens to be someone else's child.
+async function occurrenceHasChildren(pool: Pool, itemId: string, userId: string): Promise<boolean> {
+  const children = await repos.findChildItems(pool, itemId, userId)
+  return children.length > 0
+}
 
 export async function occurrenceRoutes(app: FastifyInstance) {
   // GET /occurrences?start=YYYY-MM-DD&end=YYYY-MM-DD
@@ -63,16 +72,20 @@ export async function occurrenceRoutes(app: FastifyInstance) {
 
     const occ = await ensureOccurrenceMaterialized(pool, item, appliesToDay, userId)
 
-    const parentItemId = occ.snapshot.parentId
-    if (parentItemId) {
-      const parentOcc = await repos.findOccurrenceByItemAndDay(pool, parentItemId, occ.appliesToDay, userId)
-      if (parentOcc) {
-        await completeChild(pool, occ, parentOcc, userId)
+    if (await occurrenceHasChildren(pool, occ.itemId, userId)) {
+      await declareParentPercent(pool, occ, userId, 100)
+    } else {
+      const parentItemId = occ.snapshot.parentId
+      if (parentItemId) {
+        const parentOcc = await repos.findOccurrenceByItemAndDay(pool, parentItemId, occ.appliesToDay, userId)
+        if (parentOcc) {
+          await completeChild(pool, occ, parentOcc, userId)
+        } else {
+          await completeLeaf(pool, occ, userId)
+        }
       } else {
         await completeLeaf(pool, occ, userId)
       }
-    } else {
-      await completeLeaf(pool, occ, userId)
     }
 
     const enriched = await enrichOccurrence(pool, occ, userId)
@@ -86,17 +99,23 @@ export async function occurrenceRoutes(app: FastifyInstance) {
     const occ = await repos.findOccurrenceById(pool, id, userId)
     if (!occ) return notFound(reply, 'occurrence')
 
-    // Route to child or leaf completion based on parentId in snapshot (§6.1)
-    const parentItemId = occ.snapshot.parentId
-    if (parentItemId) {
-      const parentOcc = await repos.findOccurrenceByItemAndDay(pool, parentItemId, occ.appliesToDay, userId)
-      if (parentOcc) {
-        await completeChild(pool, occ, parentOcc, userId)
+    // A parent occurrence (has its own children) is completed via the declared-%
+    // override (§6.2) — never as a leaf, even if it's also nested under a parent.
+    if (await occurrenceHasChildren(pool, occ.itemId, userId)) {
+      await declareParentPercent(pool, occ, userId, 100)
+    } else {
+      // Route to child or leaf completion based on parentId in snapshot (§6.1)
+      const parentItemId = occ.snapshot.parentId
+      if (parentItemId) {
+        const parentOcc = await repos.findOccurrenceByItemAndDay(pool, parentItemId, occ.appliesToDay, userId)
+        if (parentOcc) {
+          await completeChild(pool, occ, parentOcc, userId)
+        } else {
+          await completeLeaf(pool, occ, userId)
+        }
       } else {
         await completeLeaf(pool, occ, userId)
       }
-    } else {
-      await completeLeaf(pool, occ, userId)
     }
 
     const enriched = await enrichOccurrence(pool, occ, userId)
@@ -110,16 +129,20 @@ export async function occurrenceRoutes(app: FastifyInstance) {
     const occ = await repos.findOccurrenceById(pool, id, userId)
     if (!occ) return notFound(reply, 'occurrence')
 
-    const parentItemId = occ.snapshot.parentId
-    if (parentItemId) {
-      const parentOcc = await repos.findOccurrenceByItemAndDay(pool, parentItemId, occ.appliesToDay, userId)
-      if (parentOcc) {
-        await uncompleteChild(pool, occ, parentOcc, userId)
+    if (await occurrenceHasChildren(pool, occ.itemId, userId)) {
+      await declareParentPercent(pool, occ, userId, 0)
+    } else {
+      const parentItemId = occ.snapshot.parentId
+      if (parentItemId) {
+        const parentOcc = await repos.findOccurrenceByItemAndDay(pool, parentItemId, occ.appliesToDay, userId)
+        if (parentOcc) {
+          await uncompleteChild(pool, occ, parentOcc, userId)
+        } else {
+          await uncompleteLeaf(pool, occ, userId)
+        }
       } else {
         await uncompleteLeaf(pool, occ, userId)
       }
-    } else {
-      await uncompleteLeaf(pool, occ, userId)
     }
 
     const enriched = await enrichOccurrence(pool, occ, userId)

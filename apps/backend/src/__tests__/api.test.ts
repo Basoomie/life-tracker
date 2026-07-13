@@ -112,6 +112,90 @@ describe('§6.1 — Tuesday-not-due child yields parent 100 derived percent via 
   })
 })
 
+// ── §6.2 — completing/uncompleting a PARENT's own occurrence uses declared %,
+//          not a leaf item_completed event that the derivation ignores ────────
+
+describe('§6.2 — POST /occurrences/:id/complete on a parent occurrence declares 100%', () => {
+  it('§6.2 completing an occurrence that has children writes manual_parent_percent_declared, not item_completed', async () => {
+    const u = await makeUser('api-parent-complete@test.com')
+    const app = await buildTestApp(u.id)
+
+    const parent = await repos.insertItem(getTestPool(), {
+      userId: u.id,
+      name: 'API Parent Checkbox',
+      recurrenceRule: { type: 'daily' },
+      creationSource: 'planned',
+    })
+    await repos.insertItem(getTestPool(), {
+      userId: u.id,
+      name: 'API Parent Checkbox Child',
+      recurrenceRule: { type: 'daily' },
+      parentId: parent.id,
+      creationSource: 'planned',
+    })
+    const parentOcc = await ensureOccurrenceMaterialized(getTestPool(), parent, TODAY, u.id)
+
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/occurrences/${parentOcc.id}/complete`,
+    })
+    expect(res.statusCode).toBe(200)
+
+    const events = await repos.findEventsByOccurrence(getTestPool(), parentOcc.id, u.id)
+    expect(events.some((e) => e.eventType === 'manual_parent_percent_declared')).toBe(true)
+    expect(events.some((e) => e.eventType === 'item_completed')).toBe(false)
+
+    const data = JSON.parse(res.body)
+    expect(data.completionState.isComplete).toBe(true)
+
+    await app.close()
+  })
+})
+
+describe('§6.2 — POST /occurrences/:id/uncomplete overrides a vacuous derived 100%', () => {
+  it('§6.2 uncompleting a parent occurrence with 0 due children flips isComplete to false without erasing derivedPercent', async () => {
+    const u = await makeUser('api-parent-uncomplete@test.com')
+    const app = await buildTestApp(u.id)
+
+    const parent = await repos.insertItem(getTestPool(), {
+      userId: u.id,
+      name: 'API Vacuous Parent',
+      recurrenceRule: { type: 'daily' },
+      creationSource: 'planned',
+    })
+    // MWF child — NOT due on Tuesday, so derivedPercent is vacuously 100
+    await repos.insertItem(getTestPool(), {
+      userId: u.id,
+      name: 'API Vacuous MWF Child',
+      recurrenceRule: { type: 'days_of_week', days: [1, 3, 5] },
+      parentId: parent.id,
+      creationSource: 'planned',
+    })
+    const parentOcc = await ensureOccurrenceMaterialized(getTestPool(), parent, TUESDAY, u.id)
+
+    // Confirm the vacuous-100 starting state, matching the real bug report
+    const before = await app.inject({ method: 'GET', url: `/api/occurrences/${parentOcc.id}` })
+    const beforeData = JSON.parse(before.body)
+    expect(beforeData.completionState.derivedPercent).toBe(100)
+    expect(beforeData.completionState.isComplete).toBe(true)
+
+    const uncompleteRes = await app.inject({
+      method: 'POST',
+      url: `/api/occurrences/${parentOcc.id}/uncomplete`,
+    })
+    expect(uncompleteRes.statusCode).toBe(200)
+    const afterData = JSON.parse(uncompleteRes.body)
+
+    // The click must actually stick: isComplete flips, even though the
+    // underlying derived % (computed fresh from children) is untouched.
+    expect(afterData.completionState.isComplete).toBe(false)
+    expect(afterData.completionState.derivedPercent).toBe(100)
+    expect(afterData.completionState.declaredPercent).toBe(0)
+
+    await app.close()
+  })
+})
+
 // ── §13.4 — user A cannot read user B occurrences ────────────────────────────
 
 describe('§13.4 — user A cannot read user B occurrences', () => {

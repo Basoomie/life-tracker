@@ -777,6 +777,20 @@ test.describe('Occurrence nesting — parent/child cards (Calendar view)', () =>
     await expect(grid.getByTestId(`occ-row-${UNSCHEDULED.id}`)).toBeVisible()
   })
 
+  test('a parent with hasChildren=true but no children in the fetched range still renders as an expandable card, not a flat leaf row', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2025-06-16T09:00:00'))
+    // Only the parent comes back — its children aren't due/materialized for
+    // the viewed range. occ.hasChildren (item-level) must still drive the card.
+    await setupCalApiMocks(page, [UNSCHEDULED_PARENT])
+    await goToCalendarView(page)
+
+    const grid = desktopGrid(page)
+    const card = grid.getByTestId(`occ-card-${UNSCHEDULED_PARENT.itemId}`)
+    await expect(card).toBeVisible()
+    await expect(grid.getByTestId(`occ-card-toggle-${UNSCHEDULED_PARENT.itemId}`)).toBeVisible()
+    await expect(grid.getByTestId(`occ-card-progress-${UNSCHEDULED_PARENT.itemId}`)).toHaveText('0/0')
+  })
+
   test("a scheduled parent's children are reachable via the detail panel, expanded by default", async ({ page }) => {
     await page.clock.setFixedTime(new Date('2025-06-16T09:00:00'))
     await setupCalApiMocks(page, [SCHEDULED_PARENT, SCHEDULED_CHILD])

@@ -696,6 +696,21 @@ test.describe('Occurrence nesting — parent/child cards (Now view)', () => {
     await expect(page.getByTestId(`occ-card-${TRADING_OCC.itemId}`)).toHaveCount(0)
   })
 
+  test('a parent with hasChildren=true but no children in today\'s fetch still renders as an expandable card, not a flat leaf row', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2025-06-16T22:00:00'))
+    // Only the parent comes back — e.g. its children aren't due/materialized
+    // today. occ.hasChildren (item-level, from the backend) is still true,
+    // and that alone must be enough to render the collapsible card chrome.
+    await setupApiMocks(page, [ROUTINE_OCC])
+
+    await page.goto('/')
+
+    const card = page.getByTestId(`occ-card-${ROUTINE_OCC.itemId}`)
+    await expect(card).toBeVisible()
+    await expect(page.getByTestId(`occ-card-toggle-${ROUTINE_OCC.itemId}`)).toBeVisible()
+    await expect(page.getByTestId(`occ-card-progress-${ROUTINE_OCC.itemId}`)).toHaveText('0/0')
+  })
+
   test('expanding a parent card reveals its children and adds border/shadow', async ({ page }) => {
     await page.clock.setFixedTime(new Date('2025-06-16T22:00:00'))
     await setupApiMocks(page, [ROUTINE_OCC, TRETINOIN_OCC])

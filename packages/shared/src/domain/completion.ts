@@ -103,6 +103,9 @@ export function buildParentCompletionState(
 ): ParentCompletionState {
   const declaredPercent = findDeclaredPercent(events)
   const displayPercent = declaredPercent ?? derivedPercent
-  const isComplete = derivedPercent >= 100 || declaredPercent !== null
+  // Declared, when present, is authoritative for completeness too — mirrors
+  // displayPercent's precedence, so a declared 0% can override a vacuous
+  // derived 100% and a declared 75% doesn't read as "done".
+  const isComplete = declaredPercent !== null ? declaredPercent >= 100 : derivedPercent >= 100
   return { derivedPercent, declaredPercent, displayPercent, isComplete }
 }
