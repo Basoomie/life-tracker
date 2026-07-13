@@ -338,6 +338,34 @@ test.describe('§12.2 — Now view tier ordering and rendering', () => {
     await expect(routineRow.getByTestId('timer-running')).toBeVisible()
   })
 
+  test('stopping a timer on a nested child keeps the parent card expanded — same refresh() path as completion', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2025-06-16T05:00:00'))
+    await setupApiMocks(page, [ROUTINE_OCC, TRETINOIN_OCC])
+
+    await page.route('/api/sessions/start', (route) =>
+      route.fulfill({ json: { sessionId: 'sess-tret', occurrenceId: TRETINOIN_OCC.id } })
+    )
+    await page.route('/api/sessions/*/stop', (route) =>
+      route.fulfill({ json: { sessionId: 'sess-tret', durationMin: 5 } })
+    )
+
+    await page.goto('/')
+
+    await page.getByTestId(`occ-card-toggle-${ROUTINE_OCC.itemId}`).click()
+    const card = page.getByTestId(`occ-card-${ROUTINE_OCC.itemId}`)
+    await expect(card).toHaveAttribute('data-expanded', 'true')
+
+    const tretRow = page.getByTestId(`occ-row-${TRETINOIN_OCC.id}`)
+    await tretRow.getByTestId('timer-start').click()
+    await expect(tretRow.getByTestId('timer-running')).toBeVisible()
+
+    await tretRow.getByTestId('timer-stop').click()
+    await expect(tretRow.getByTestId('timer-start')).toBeVisible()
+
+    // handleTimerStop's refresh() must not unmount the tree
+    await expect(card).toHaveAttribute('data-expanded', 'true')
+  })
+
   test('§9.1 completing an occurrence auto-stops its running timer', async ({ page }) => {
     await page.clock.setFixedTime(new Date('2025-06-16T05:00:00'))
 

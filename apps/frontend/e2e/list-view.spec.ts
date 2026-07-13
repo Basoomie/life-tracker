@@ -695,6 +695,79 @@ test.describe('Occurrence nesting — parent/child cards (List view)', () => {
     await expect(page.getByTestId('priority-group-high').getByTestId(`occ-row-${TRETINOIN_OCC.id}`)).toBeVisible()
   })
 
+  test('completing a nested child keeps the parent card expanded — the derived-% refetch must not unmount the tree', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2025-06-16T09:00:00'))
+    await page.route('/me', (r) => r.fulfill({ json: { id: 'u1', email: 'test@tracker.local', createdAt: new Date().toISOString() } }))
+
+    const completedTret: OccurrenceWithState = {
+      ...TRETINOIN_OCC,
+      completionState: { ...TRETINOIN_OCC.completionState, isComplete: true, completionPercent: 100 },
+      disposition: { ...TRETINOIN_OCC.disposition, type: 'completed' },
+    }
+    const routineWith100pct: OccurrenceWithState = {
+      ...ROUTINE_OCC,
+      completionState: { ...ROUTINE_OCC.completionState, derivedPercent: 100, completionPercent: 100 },
+    }
+
+    let tretCompleted = false
+    await page.route(/\/api\/occurrences\?start=.*&end=.*/, (route) => {
+      route.fulfill({
+        json: tretCompleted ? [routineWith100pct, completedTret] : [ROUTINE_OCC, TRETINOIN_OCC],
+      })
+    })
+    await page.route('/api/occurrences/occ-tret/complete', async (route) => {
+      tretCompleted = true
+      await route.fulfill({ json: completedTret })
+    })
+    await page.route('/api/buckets',     (route) => route.fulfill({ json: BUCKETS }))
+    await page.route('/api/day-start',   (route) => route.fulfill({ json: [] }))
+    await page.route('/api/categories',  (route) => route.fulfill({ json: [] }))
+    await page.route('/api/reasons',     (route) => route.fulfill({ json: [] }))
+    await page.route('/api/preferences', (route) => route.fulfill({ json: {} }))
+
+    await goToListView(page)
+
+    await page.getByTestId(`occ-card-toggle-${ROUTINE_OCC.itemId}`).click()
+    const card = page.getByTestId(`occ-card-${ROUTINE_OCC.itemId}`)
+    await expect(card).toHaveAttribute('data-expanded', 'true')
+
+    await page.getByTestId(`occ-row-${TRETINOIN_OCC.id}`).getByTestId('occ-check').click()
+
+    // Parent % updates from the refetch, and the card — same DOM node, not
+    // remounted via a loading-gate render — stays expanded.
+    await expect(page.getByTestId(`occ-card-progress-${ROUTINE_OCC.itemId}`)).toHaveText('1/1')
+    await expect(card).toHaveAttribute('data-expanded', 'true')
+  })
+
+  test('stopping a timer on a nested child keeps the parent card expanded — same refresh() path as completion', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2025-06-16T09:00:00'))
+    await setupApiMocks(page, [ROUTINE_OCC, TRETINOIN_OCC])
+
+    await page.route('/api/sessions/start', (route) =>
+      route.fulfill({ json: { sessionId: 'sess-tret', occurrenceId: TRETINOIN_OCC.id } })
+    )
+    await page.route('/api/sessions/*/stop', (route) =>
+      route.fulfill({ json: { sessionId: 'sess-tret', durationMin: 5 } })
+    )
+
+    await goToListView(page)
+
+    await page.getByTestId(`occ-card-toggle-${ROUTINE_OCC.itemId}`).click()
+    const card = page.getByTestId(`occ-card-${ROUTINE_OCC.itemId}`)
+    await expect(card).toHaveAttribute('data-expanded', 'true')
+
+    const tretRow = page.getByTestId(`occ-row-${TRETINOIN_OCC.id}`)
+    await tretRow.getByTestId('timer-start').click()
+    await expect(tretRow.getByTestId('timer-running')).toBeVisible()
+
+    await tretRow.getByTestId('timer-stop').click()
+    await expect(tretRow.getByTestId('timer-start')).toBeVisible()
+
+    // handleTimerStop's refresh() (shared with Calendar via useOccurrenceActions)
+    // must not unmount the tree
+    await expect(card).toHaveAttribute('data-expanded', 'true')
+  })
+
 })
 
 // @dnd-kit's PointerSensor listens for pointer events, not HTML5 dragstart/

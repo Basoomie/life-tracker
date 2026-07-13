@@ -74,8 +74,12 @@ export function useNowData(
     [roots, buckets, now, imminentWindowMin, alwaysShowNext]
   )
 
+  // Deliberately does NOT flip `loading` — that would unmount the tree (see
+  // views' loading-gate render) and collapse every expanded OccurrenceCard,
+  // since each card's expand state is local useState lost on unmount. This
+  // is called after actions (complete, timer stop, etc.) that need fresh
+  // server data but shouldn't visually reset the view.
   const refresh = useCallback(() => {
-    setLoading(true)
     setNow(new Date())
     fetchOccurrences()
   }, [fetchOccurrences])

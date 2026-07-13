@@ -28,9 +28,14 @@ export function useRangeData(start: string, end: string): RangeDataResult {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  const fetchOccurrences = useCallback(async () => {
+  // showLoading is true only for a genuine range change (new page of data,
+  // where resetting scroll/expand state is expected). Post-action refresh()
+  // calls pass false so the tree stays mounted — flipping `loading` would
+  // unmount it via the views' loading-gate render and collapse every
+  // expanded OccurrenceCard (its expand state is local useState).
+  const fetchOccurrences = useCallback(async (showLoading: boolean) => {
     try {
-      setLoading(true)
+      if (showLoading) setLoading(true)
       const data = await api.occurrences.range(start, end)
       setOccurrences(data)
       setError(null)
@@ -48,9 +53,9 @@ export function useRangeData(start: string, end: string): RangeDataResult {
   }, [])
 
   // Refetch when range changes
-  useEffect(() => { fetchOccurrences() }, [fetchOccurrences])
+  useEffect(() => { fetchOccurrences(true) }, [fetchOccurrences])
 
-  const refresh = useCallback(() => { fetchOccurrences() }, [fetchOccurrences])
+  const refresh = useCallback(() => { fetchOccurrences(false) }, [fetchOccurrences])
 
   return { occurrences, buckets, dayStartEntries, loading, error, refresh, setOccurrences }
 }
