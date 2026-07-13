@@ -285,6 +285,11 @@ test.describe('§12.2 — Now view tier ordering and rendering', () => {
 
     // After refresh, parent derived % should now be 100%
     await expect(page.getByTestId('derived-pct').first()).toContainText('100%')
+
+    // The refetch that reconciles the parent's derived % must not unmount the
+    // tree (via a loading-gate render) — otherwise every expanded card's local
+    // expand state is lost and the user has to reopen it after every completion.
+    await expect(page.getByTestId(`occ-card-${ROUTINE_OCC.itemId}`)).toHaveAttribute('data-expanded', 'true')
   })
 
   test('§9.1 timer start → pause → resume → stop; two simultaneous timers run at once', async ({ page }) => {
@@ -331,6 +336,53 @@ test.describe('§12.2 — Now view tier ordering and rendering', () => {
 
     // Second timer still running
     await expect(routineRow.getByTestId('timer-running')).toBeVisible()
+  })
+
+  test('§9.1 completing an occurrence auto-stops its running timer', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2025-06-16T05:00:00'))
+
+    const completedTrading = {
+      ...TRADING_OCC,
+      completionState: { ...TRADING_OCC.completionState, isComplete: true, completedAt: '2025-06-16T05:00:00Z' },
+    }
+
+    let completed = false
+    await page.route('/api/occurrences/today', (route) => {
+      route.fulfill({ json: completed ? [completedTrading] : [TRADING_OCC] })
+    })
+    await page.route('/api/buckets',     (route) => route.fulfill({ json: BUCKETS }))
+    await page.route('/api/categories',  (route) => route.fulfill({ json: [] }))
+    await page.route('/api/reasons',     (route) => route.fulfill({ json: [] }))
+    await page.route('/api/preferences', (route) => route.fulfill({ json: {} }))
+    await page.route('/me', (route) =>
+      route.fulfill({ json: { id: 'u1', email: 'test@tracker.local', createdAt: new Date().toISOString() } })
+    )
+
+    await page.route('/api/sessions/start', (route) =>
+      route.fulfill({ json: { sessionId: 'sess-trading', occurrenceId: 'occ-trading' } })
+    )
+    let stopCalled = false
+    await page.route('/api/sessions/*/stop', (route) => {
+      stopCalled = true
+      route.fulfill({ json: { sessionId: 'sess-trading', durationMin: 5 } })
+    })
+    await page.route('/api/occurrences/occ-trading/complete', async (route) => {
+      completed = true
+      await route.fulfill({ json: completedTrading })
+    })
+
+    await page.goto('/')
+
+    const tradingRow = page.getByTestId('occ-row-occ-trading')
+    await tradingRow.getByTestId('timer-start').click()
+    await expect(tradingRow.getByTestId('timer-running')).toBeVisible()
+
+    // Marking the occurrence complete must stop the still-running timer —
+    // its controls disappear with completion, leaving no other way to end it.
+    await tradingRow.getByTestId('occ-check').click()
+
+    await expect.poll(() => stopCalled).toBe(true)
+    await expect(page.getByTestId('timer-running')).not.toBeVisible()
   })
 
   test('§9.2 ad-hoc one-tap creates item + running timer appears in Now', async ({ page }) => {

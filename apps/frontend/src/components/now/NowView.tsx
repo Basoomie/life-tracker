@@ -110,9 +110,22 @@ export function NowView({ onEditItem }: Props) {
       if (o.id === null && o.itemId === updated.itemId && o.appliesToDay === updated.appliesToDay) return updated
       return o
     }))
+    // A running/paused timer has no UI once the row is marked complete (the
+    // TimerControl unmounts), so it must be stopped here or it keeps ticking
+    // in the background with no way to end it short of uncompleting first.
+    const occId = updated.id ?? occ.itemId
+    const session = sessions.get(occId)
+    if (session) {
+      await api.sessions.stop(session.sessionId)
+      setSessions((prev) => {
+        const next = new Map(prev)
+        next.delete(occId)
+        return next
+      })
+    }
     // If child, re-fetch so parent's derivedPercent reflects the new completion
     if (occ.snapshot.parentId) refresh()
-  }, [setOccurrences, refresh])
+  }, [setOccurrences, refresh, sessions])
 
   const handleUncomplete = useCallback(async (occ: OccurrenceWithState) => {
     if (!occ.id) return
