@@ -22,6 +22,7 @@ type MakeOccOverrides = {
   isBlocked?: boolean
   hasChildren?: boolean
   sortOrder?: number
+  loggedMinutes?: number
   incompletePrerequisiteIds?: string[]
   snapshot?: Partial<OccurrenceWithState['snapshot']>
   completionState?: Partial<OccurrenceWithState['completionState']>
@@ -75,6 +76,7 @@ function makeOcc(overrides: MakeOccOverrides): OccurrenceWithState {
     },
     hasChildren: overrides.hasChildren ?? false,
     sortOrder: overrides.sortOrder ?? 0,
+    loggedMinutes: overrides.loggedMinutes ?? 0,
   } as OccurrenceWithState
 }
 
@@ -336,6 +338,59 @@ test.describe('§12.2 — Now view tier ordering and rendering', () => {
 
     // Second timer still running
     await expect(routineRow.getByTestId('timer-running')).toBeVisible()
+  })
+
+  test('§9.1 stopping a timer keeps its logged time visible, and re-starting the timer is additive', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2025-06-16T05:00:00'))
+
+    // §9.1 — the occurrence's loggedMinutes is server-computed from all finalized
+    // sessions today; it grows with each stop rather than resetting.
+    let stopCount = 0
+    await page.route('/api/occurrences/today', (route) => {
+      const loggedMinutes = [0, 5, 15][stopCount]
+      route.fulfill({ json: [{ ...TRADING_OCC, loggedMinutes }] })
+    })
+    await page.route('/api/buckets',     (route) => route.fulfill({ json: BUCKETS }))
+    await page.route('/api/categories',  (route) => route.fulfill({ json: [] }))
+    await page.route('/api/reasons',     (route) => route.fulfill({ json: [] }))
+    await page.route('/api/preferences', (route) => route.fulfill({ json: {} }))
+    await page.route('/me', (route) =>
+      route.fulfill({ json: { id: 'u1', email: 'test@tracker.local', createdAt: new Date().toISOString() } })
+    )
+
+    await page.route('/api/sessions/start', (route) =>
+      route.fulfill({ json: { sessionId: `sess-${stopCount}`, occurrenceId: 'occ-trading' } })
+    )
+    await page.route('/api/sessions/*/stop', (route) => {
+      stopCount++
+      route.fulfill({ json: { sessionId: 'x', durationMin: 5 } })
+    })
+
+    await page.goto('/')
+
+    const tradingRow = page.getByTestId('occ-row-occ-trading')
+
+    // Nothing logged yet — no stale indicator before any session has run
+    await expect(tradingRow.getByTestId('timer-logged')).not.toBeVisible()
+
+    // First start/stop cycle (5 logged minutes)
+    await tradingRow.getByTestId('timer-start').click()
+    await expect(tradingRow.getByTestId('timer-running')).toBeVisible()
+    await tradingRow.getByTestId('timer-stop').click()
+
+    // The timer doesn't just vanish — the finished session's time stays visible
+    await expect(tradingRow.getByTestId('timer-start')).toBeVisible()
+    await expect(tradingRow.getByTestId('timer-logged')).toHaveText('05:00')
+
+    // Re-starting is additive, not a reset: the new session's live elapsed time
+    // is shown on top of the 5 minutes already logged today, not from zero.
+    await tradingRow.getByTestId('timer-start').click()
+    await expect(tradingRow.getByTestId('timer-elapsed')).toHaveText('05:00')
+
+    // Second stop brings the server-computed total to 15 — confirms both
+    // sessions were persisted independently rather than one overwriting the other.
+    await tradingRow.getByTestId('timer-stop').click()
+    await expect(tradingRow.getByTestId('timer-logged')).toHaveText('15:00')
   })
 
   test('stopping a timer on a nested child keeps the parent card expanded — same refresh() path as completion', async ({ page }) => {

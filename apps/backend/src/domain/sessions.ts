@@ -53,3 +53,46 @@ export function computeSessionDurationMin(
   const totalMs = stoppedAt.getTime() - startedAt.getTime() - totalPausedMs
   return Math.max(0, Math.round(totalMs / 60000))
 }
+
+const FINALIZING_EVENT_TYPES = new Set(['session_stopped', 'session_created', 'session_edited'])
+
+/**
+ * §9.1 — Sum finalized session durations for an occurrence's event stream.
+ *
+ * Multiple start/stop cycles against the same occurrence are independent
+ * sessions (each with its own sessionId) — this is what makes re-starting
+ * a timer additive rather than a reset. Per session:
+ *   - a session_stopped event finalizes a live session's durationMin
+ *   - the latest session_created/session_edited finalizes a manual session
+ *     (an edit supersedes the create it corrects — never both)
+ *   - a session with no stop/manual-finalize event is still in progress
+ *     and contributes nothing here; its live elapsed time is tracked
+ *     client-side while running.
+ */
+export function computeLoggedMinutes(events: TrackerEvent[]): number {
+  const bySession = new Map<string, TrackerEvent[]>()
+  for (const e of events) {
+    if (!FINALIZING_EVENT_TYPES.has(e.eventType)) continue
+    const sessionId = (e.payload as { sessionId?: string }).sessionId
+    if (!sessionId) continue
+    if (!bySession.has(sessionId)) bySession.set(sessionId, [])
+    bySession.get(sessionId)!.push(e)
+  }
+
+  let totalMin = 0
+  for (const sessionEvents of bySession.values()) {
+    const stopEvent = sessionEvents.find((e) => e.eventType === 'session_stopped')
+    if (stopEvent) {
+      totalMin += (stopEvent.payload as { durationMin: number }).durationMin
+      continue
+    }
+    const manualEvents = sessionEvents.filter(
+      (e) => e.eventType === 'session_created' || e.eventType === 'session_edited'
+    )
+    if (manualEvents.length > 0) {
+      const latest = manualEvents[manualEvents.length - 1]
+      totalMin += (latest.payload as { durationMin: number }).durationMin
+    }
+  }
+  return totalMin
+}

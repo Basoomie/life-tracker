@@ -29,6 +29,11 @@ function formatMs(ms: number): string {
 
 type Props = {
   session: SessionState | undefined
+  // §9.1 — minutes already logged against this occurrence from prior, finalized
+  // start/stop cycles today. Re-starting the timer is additive: this figure plus
+  // the live-running session's own elapsed time is what's shown while running,
+  // and it's what remains visible once the timer is stopped again.
+  loggedMinutes: number
   onStart: () => void
   onPause: () => void
   onResume: () => void
@@ -36,7 +41,7 @@ type Props = {
   disabled?: boolean
 }
 
-export function TimerControl({ session, onStart, onPause, onResume, onStop, disabled }: Props) {
+export function TimerControl({ session, loggedMinutes, onStart, onPause, onResume, onStop, disabled }: Props) {
   const [tick, setTick] = useState(0)
 
   // Re-render every second while a timer is running
@@ -46,9 +51,20 @@ export function TimerControl({ session, onStart, onPause, onResume, onStop, disa
     return () => clearInterval(id)
   }, [session])
 
+  const loggedMs = loggedMinutes * 60000
+
   if (!session) {
     return (
       <div className="timer-control">
+        {loggedMs > 0 && (
+          <span
+            className="timer-logged"
+            aria-label={`Logged today: ${formatMs(loggedMs)}`}
+            data-testid="timer-logged"
+          >
+            {formatMs(loggedMs)}
+          </span>
+        )}
         <button
           className="timer-btn timer-btn--start"
           onClick={onStart}
@@ -63,13 +79,20 @@ export function TimerControl({ session, onStart, onPause, onResume, onStop, disa
     )
   }
 
-  const elapsedMs = getElapsedMs(session, new Date())
+  // Cumulative so the figure doesn't reset each time the timer is stopped and
+  // re-started — it's today's running total, not just this session's.
+  const elapsedMs = loggedMs + getElapsedMs(session, new Date())
   const label = formatMs(elapsedMs)
   const isRunning = session.status === 'running'
 
   return (
     <div className="timer-control" data-testid="timer-running">
-      <span className="timer-elapsed" aria-live="polite" aria-label={`Elapsed: ${label}`}>
+      <span
+        className="timer-elapsed"
+        aria-live="polite"
+        aria-label={`Elapsed: ${label}`}
+        data-testid="timer-elapsed"
+      >
         {label}
       </span>
       {isRunning ? (

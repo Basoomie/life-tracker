@@ -91,6 +91,7 @@ export function OccurrenceRow({
         {!isComplete && occ.id && isToday && (
           <TimerControl
             session={session}
+            loggedMinutes={occ.loggedMinutes}
             onStart={onTimerStart}
             onPause={onTimerPause}
             onResume={onTimerResume}

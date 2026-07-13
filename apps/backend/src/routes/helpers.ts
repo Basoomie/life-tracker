@@ -12,6 +12,7 @@ import type {
 import * as repos from '../db/repos/index'
 import { isBlocked, getIncompletePrerequisites } from '../domain/prerequisites'
 import { getLeafCompletionState, getParentCompletionState } from '../domain/completion'
+import { computeLoggedMinutes } from '../domain/sessions'
 
 // ── HTTP helpers ──────────────────────────────────────────────────────────────
 
@@ -131,8 +132,13 @@ export async function enrichOccurrence(
     derivedPercentAtClose: null,
   }
 
+  // §9.1 — total finalized session time logged against this occurrence. An
+  // unmaterialized occurrence (id=null) has no event stream, so no sessions.
+  let loggedMinutes = 0
+
   if (occ.id) {
     const events = await repos.findEventsByOccurrence(pool, occ.id, userId)
+    loggedMinutes = computeLoggedMinutes(events)
     // Walk in reverse to find the most recent disposition event.
     for (let i = events.length - 1; i >= 0; i--) {
       const e = events[i]
@@ -194,5 +200,6 @@ export async function enrichOccurrence(
     disposition,
     hasChildren,
     sortOrder,
+    loggedMinutes,
   }
 }

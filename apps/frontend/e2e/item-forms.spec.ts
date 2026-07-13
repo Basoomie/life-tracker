@@ -58,6 +58,8 @@ function makeOcc(overrides: {
       derivedPercentAtClose: null,
     },
     hasChildren: false,
+    sortOrder: 0,
+    loggedMinutes: 0,
   } as OccurrenceWithState
 }
 

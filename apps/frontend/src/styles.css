@@ -517,6 +517,13 @@ input, select, textarea {
   min-width: 44px;
 }
 
+.timer-logged {
+  font-size: var(--text-xs);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-secondary);
+}
+
 .timer-btn {
   display: inline-flex;
   align-items: center;

@@ -624,6 +624,65 @@ describe('§9.1 — two overlapping live timers run independently', () => {
   })
 })
 
+// ── §9.1 — occurrence loggedMinutes accumulates across independent sessions ──
+
+describe('§9.1 — occurrence loggedMinutes accumulates across independent sessions (re-starting the timer is additive)', () => {
+  it('§9.1 GET occurrence reflects the sum of two stopped sessions, not just the latest one', async () => {
+    const u = await makeUser('api-logged-minutes@test.com')
+    const app = await buildTestApp(u.id)
+
+    const item = await repos.insertItem(getTestPool(), {
+      userId: u.id, name: 'Logged Minutes Task', recurrenceRule: null, creationSource: 'planned',
+    })
+    const occ = await ensureOccurrenceMaterialized(getTestPool(), item, TODAY, u.id)
+
+    // First start/stop cycle
+    const start1 = await app.inject({
+      method: 'POST', url: '/api/sessions/start', payload: { itemId: item.id, day: TODAY },
+    })
+    const { sessionId: s1 } = JSON.parse(start1.body)
+    const stop1 = await app.inject({ method: 'POST', url: `/api/sessions/${s1}/stop` })
+    const { durationMin: d1 } = JSON.parse(stop1.body)
+
+    const afterFirst = await app.inject({ method: 'GET', url: `/api/occurrences/${occ.id}` })
+    expect(JSON.parse(afterFirst.body).loggedMinutes).toBe(d1)
+
+    // Second, independent start/stop cycle on the same occurrence — must add
+    // on top of the first, never replace it.
+    const start2 = await app.inject({
+      method: 'POST', url: '/api/sessions/start', payload: { itemId: item.id, day: TODAY },
+    })
+    const { sessionId: s2 } = JSON.parse(start2.body)
+    expect(s2).not.toBe(s1)
+    const stop2 = await app.inject({ method: 'POST', url: `/api/sessions/${s2}/stop` })
+    const { durationMin: d2 } = JSON.parse(stop2.body)
+
+    const afterSecond = await app.inject({ method: 'GET', url: `/api/occurrences/${occ.id}` })
+    expect(JSON.parse(afterSecond.body).loggedMinutes).toBe(d1 + d2)
+
+    await app.close()
+  })
+
+  it('§9.1 an in-progress (not-yet-stopped) session does not count toward loggedMinutes', async () => {
+    const u = await makeUser('api-logged-minutes-inprogress@test.com')
+    const app = await buildTestApp(u.id)
+
+    const item = await repos.insertItem(getTestPool(), {
+      userId: u.id, name: 'In Progress Task', recurrenceRule: null, creationSource: 'planned',
+    })
+    const occ = await ensureOccurrenceMaterialized(getTestPool(), item, TODAY, u.id)
+
+    await app.inject({
+      method: 'POST', url: '/api/sessions/start', payload: { itemId: item.id, day: TODAY },
+    })
+
+    const res = await app.inject({ method: 'GET', url: `/api/occurrences/${occ.id}` })
+    expect(JSON.parse(res.body).loggedMinutes).toBe(0)
+
+    await app.close()
+  })
+})
+
 // ── §9.1 — manual session create and edit ────────────────────────────────────
 
 describe('§9.1 — manual session create and edit work', () => {

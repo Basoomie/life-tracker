@@ -43,6 +43,10 @@ export type OccurrenceWithState = ComputedOccurrence & {
   disposition: OccurrenceDisposition
   hasChildren: boolean
   sortOrder: number   // live Item.sortOrder — this occurrence's position among its siblings
+  // §9.1 — sum of finalized (stopped/manual) session durations logged against this
+  // occurrence, in minutes. Excludes any currently in-progress session, whose live
+  // elapsed time the client tracks separately while it's running.
+  loggedMinutes: number
 }
 
 // ── Request body types ────────────────────────────────────────────────────────
