@@ -94,7 +94,7 @@ export function OccurrenceRow({
 
       {/* Actions */}
       <div className="occ-actions">
-        {!isComplete && occ.id && isToday && (
+        {occ.id && isToday && (
           <TimerControl
             session={session}
             loggedMinutes={occ.loggedMinutes}
@@ -102,6 +102,7 @@ export function OccurrenceRow({
             onPause={onTimerPause}
             onResume={onTimerResume}
             onStop={onTimerStop}
+            readOnly={isComplete}
           />
         )}
         {onManageSessions && occ.id && (

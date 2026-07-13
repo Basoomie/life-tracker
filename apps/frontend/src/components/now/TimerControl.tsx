@@ -39,9 +39,12 @@ type Props = {
   onResume: () => void
   onStop: () => void
   disabled?: boolean
+  // Completed occurrences have their timer auto-stopped server-side and can't
+  // be restarted from here — show the logged-time readout only, no controls.
+  readOnly?: boolean
 }
 
-export function TimerControl({ session, loggedMinutes, onStart, onPause, onResume, onStop, disabled }: Props) {
+export function TimerControl({ session, loggedMinutes, onStart, onPause, onResume, onStop, disabled, readOnly }: Props) {
   const [tick, setTick] = useState(0)
 
   // Re-render every second while a timer is running
@@ -54,6 +57,20 @@ export function TimerControl({ session, loggedMinutes, onStart, onPause, onResum
   const loggedMs = loggedMinutes * 60000
 
   if (!session) {
+    if (readOnly) {
+      if (loggedMs === 0) return null
+      return (
+        <div className="timer-control">
+          <span
+            className="timer-logged"
+            aria-label={`Logged today: ${formatMs(loggedMs)}`}
+            data-testid="timer-logged"
+          >
+            {formatMs(loggedMs)}
+          </span>
+        </div>
+      )
+    }
     return (
       <div className="timer-control">
         {loggedMs > 0 && (

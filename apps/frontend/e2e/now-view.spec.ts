@@ -468,6 +468,31 @@ test.describe('§12.2 — Now view tier ordering and rendering', () => {
     await expect(page.getByTestId('timer-running')).not.toBeVisible()
   })
 
+  test('§9.1 completing an occurrence keeps its logged time visible, with no start/stop controls', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2025-06-16T05:00:00'))
+
+    const completedTrading = {
+      ...TRADING_OCC,
+      loggedMinutes: 5,
+      completionState: { ...TRADING_OCC.completionState, isComplete: true, completedAt: '2025-06-16T05:00:00Z' },
+    }
+
+    await setupApiMocks(page, [completedTrading])
+
+    await page.goto('/')
+
+    const tradingRow = page.getByTestId('tier-done').getByTestId('occ-row-occ-trading')
+
+    // The logged time is still shown after completion — no need to uncomplete
+    // the task just to see how long it took.
+    await expect(tradingRow.getByTestId('timer-logged')).toHaveText('05:00')
+
+    // But since the timer was already auto-stopped by completion, there's no
+    // live control left to interact with.
+    await expect(tradingRow.getByTestId('timer-start')).not.toBeVisible()
+    await expect(tradingRow.getByTestId('timer-running')).not.toBeVisible()
+  })
+
   test('§9.2 ad-hoc one-tap creates item + running timer appears in Now', async ({ page }) => {
     await page.clock.setFixedTime(new Date('2025-06-16T05:00:00'))
     await setupApiMocks(page, [])
