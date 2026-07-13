@@ -12,7 +12,9 @@
 // Trailing pauses (pause without a matching resume) are ignored — the timer was
 // stopped while paused; the un-resumed gap is not counted.
 
+import type { Pool } from 'pg'
 import type { TrackerEvent } from '@tracker/shared'
+import * as repos from '../db/repos/index'
 
 /**
  * §9.1 — Compute the effective tracked duration for a live session.
@@ -95,4 +97,34 @@ export function computeLoggedMinutes(events: TrackerEvent[]): number {
     }
   }
   return totalMin
+}
+
+/**
+ * §9.1 — A parent's logged time rolls up its whole subtree, the same way derived
+ * completion % rolls up child completions: an item's total is its own finalized
+ * session time plus every descendant's, recursively. Timing a child contributes
+ * to the parent's total in addition to anything timed directly on the parent —
+ * running a timer at two levels at once is additive, never one overriding the other.
+ */
+export async function computeSubtreeLoggedMinutes(
+  pool: Pool,
+  itemId: string,
+  day: string,
+  userId: string
+): Promise<number> {
+  const [occ, children] = await Promise.all([
+    repos.findOccurrenceByItemAndDay(pool, itemId, day, userId),
+    repos.findChildItems(pool, itemId, userId),
+  ])
+
+  const own = occ
+    ? computeLoggedMinutes(await repos.findEventsByOccurrence(pool, occ.id, userId))
+    : 0
+
+  if (children.length === 0) return own
+
+  const childTotals = await Promise.all(
+    children.map((c) => computeSubtreeLoggedMinutes(pool, c.id, day, userId))
+  )
+  return own + childTotals.reduce((sum, m) => sum + m, 0)
 }

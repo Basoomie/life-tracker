@@ -44,8 +44,10 @@ export type OccurrenceWithState = ComputedOccurrence & {
   hasChildren: boolean
   sortOrder: number   // live Item.sortOrder — this occurrence's position among its siblings
   // §9.1 — sum of finalized (stopped/manual) session durations logged against this
-  // occurrence, in minutes. Excludes any currently in-progress session, whose live
-  // elapsed time the client tracks separately while it's running.
+  // occurrence, in minutes. For a parent occurrence this rolls up its whole subtree
+  // (its own sessions plus every descendant's), the same way derived completion %
+  // rolls up child completions. Excludes any currently in-progress session, whose
+  // live elapsed time the client tracks separately while it's running.
   loggedMinutes: number
 }
 

@@ -12,7 +12,7 @@ import type {
 import * as repos from '../db/repos/index'
 import { isBlocked, getIncompletePrerequisites } from '../domain/prerequisites'
 import { getLeafCompletionState, getParentCompletionState } from '../domain/completion'
-import { computeLoggedMinutes } from '../domain/sessions'
+import { computeLoggedMinutes, computeSubtreeLoggedMinutes } from '../domain/sessions'
 
 // ── HTTP helpers ──────────────────────────────────────────────────────────────
 
@@ -132,8 +132,8 @@ export async function enrichOccurrence(
     derivedPercentAtClose: null,
   }
 
-  // §9.1 — total finalized session time logged against this occurrence. An
-  // unmaterialized occurrence (id=null) has no event stream, so no sessions.
+  // §9.1 — total finalized session time logged against this occurrence itself.
+  // An unmaterialized occurrence (id=null) has no event stream, so no sessions.
   let loggedMinutes = 0
 
   if (occ.id) {
@@ -190,6 +190,16 @@ export async function enrichOccurrence(
       }
       break  // most recent disposition event wins
     }
+  }
+
+  // §9.1 — a parent's logged time rolls up its whole subtree, the same way
+  // derived completion % rolls up child completions: timing a child adds to the
+  // parent's total on top of anything timed directly on the parent.
+  if (hasChildren) {
+    const childTotals = await Promise.all(
+      children.map((c) => computeSubtreeLoggedMinutes(pool, c.id, occ.appliesToDay, userId))
+    )
+    loggedMinutes += childTotals.reduce((sum, m) => sum + m, 0)
   }
 
   return {

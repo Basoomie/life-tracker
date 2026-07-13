@@ -681,6 +681,51 @@ describe('§9.1 — occurrence loggedMinutes accumulates across independent sess
 
     await app.close()
   })
+
+  it('§9.1 timing a child rolls up into the parent\'s loggedMinutes, additive with time logged on the parent itself', async () => {
+    const u = await makeUser('api-logged-minutes-rollup@test.com')
+    const app = await buildTestApp(u.id)
+
+    const parent = await repos.insertItem(getTestPool(), {
+      userId: u.id, name: 'Rollup Parent', recurrenceRule: { type: 'daily' }, creationSource: 'planned',
+    })
+    const child = await repos.insertItem(getTestPool(), {
+      userId: u.id, name: 'Rollup Child', recurrenceRule: { type: 'daily' }, parentId: parent.id, creationSource: 'planned',
+    })
+    const parentOcc = await ensureOccurrenceMaterialized(getTestPool(), parent, TODAY, u.id)
+    const childOcc  = await ensureOccurrenceMaterialized(getTestPool(), child, TODAY, u.id)
+
+    // Time the child only
+    const childStart = await app.inject({
+      method: 'POST', url: '/api/sessions/start', payload: { itemId: child.id, day: TODAY },
+    })
+    const { sessionId: childSession } = JSON.parse(childStart.body)
+    const childStop = await app.inject({ method: 'POST', url: `/api/sessions/${childSession}/stop` })
+    const { durationMin: childMin } = JSON.parse(childStop.body)
+
+    // The parent inherits the child's logged time even though nothing was
+    // ever timed on the parent's own occurrence.
+    const afterChildOnly = await app.inject({ method: 'GET', url: `/api/occurrences/${parentOcc.id}` })
+    expect(JSON.parse(afterChildOnly.body).loggedMinutes).toBe(childMin)
+
+    // The child's own figure reflects only its own time, not the parent's.
+    const childRes = await app.inject({ method: 'GET', url: `/api/occurrences/${childOcc.id}` })
+    expect(JSON.parse(childRes.body).loggedMinutes).toBe(childMin)
+
+    // Now also time the parent directly
+    const parentStart = await app.inject({
+      method: 'POST', url: '/api/sessions/start', payload: { itemId: parent.id, day: TODAY },
+    })
+    const { sessionId: parentSession } = JSON.parse(parentStart.body)
+    const parentStop = await app.inject({ method: 'POST', url: `/api/sessions/${parentSession}/stop` })
+    const { durationMin: parentMin } = JSON.parse(parentStop.body)
+
+    // Parent total is additive across both levels — neither overrides the other.
+    const afterBoth = await app.inject({ method: 'GET', url: `/api/occurrences/${parentOcc.id}` })
+    expect(JSON.parse(afterBoth.body).loggedMinutes).toBe(childMin + parentMin)
+
+    await app.close()
+  })
 })
 
 // ── §9.1 — manual session create and edit ────────────────────────────────────
