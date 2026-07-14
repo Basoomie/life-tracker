@@ -85,6 +85,7 @@ export function ListView({ onEditItem }: Props) {
     handleSkip,
     handleExcuse,
     handleCarryForward,
+    handleClearDisposition,
     handleArchive,
   } = useOccurrenceActions(setOccurrences, refresh)
 
@@ -151,6 +152,7 @@ export function ListView({ onEditItem }: Props) {
         onTimerResume={() => handleTimerResume(occ)}
         onTimerStop={() => handleTimerStop(occ)}
         onDisposition={() => setDispositionTarget(occ)}
+        onClearDisposition={() => handleClearDisposition(occ)}
         onEdit={() => onEditItem(occ.itemId)}
         onArchive={() => setPendingArchive(occ)}
         onManageSessions={() => setSessionManagerTarget(occ)}

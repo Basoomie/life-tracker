@@ -14,7 +14,7 @@ import {
   uncompleteChild,
   declareParentPercent,
 } from '../domain/completion'
-import { skipOccurrenceByUser, excuseOccurrenceByUser, carryForward } from '../domain/dispositions'
+import { skipOccurrenceByUser, excuseOccurrenceByUser, carryForward, clearDispositionByUser } from '../domain/dispositions'
 import { notFound, badRequest, enrichOccurrence } from './helpers'
 import type { DeclarePercentBody, DispositionBody, CarryForwardBody, RetroactiveBody } from '@tracker/shared'
 
@@ -221,6 +221,25 @@ export async function occurrenceRoutes(app: FastifyInstance) {
     })
 
     return reply.send(result)
+  })
+
+  // POST /occurrences/:id/clear-disposition — undo a skip/excuse/carry-forward.
+  // Not part of the original §8 policy set; added so a mis-clicked disposition
+  // is reversible. Only valid from skipped/excused/rescheduled (see
+  // clearDispositionByUser's guard) — 400s otherwise.
+  app.post('/occurrences/:id/clear-disposition', async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const userId = req.userId
+    const occ = await repos.findOccurrenceById(pool, id, userId)
+    if (!occ) return notFound(reply, 'occurrence')
+
+    const result = await clearDispositionByUser(pool, occ, userId)
+    if (!result.ok) {
+      return badRequest(reply, 'disposition_not_clearable', result.error)
+    }
+
+    const enriched = await enrichOccurrence(pool, occ, userId)
+    return reply.send(enriched)
   })
 
   // GET /occurrences/:id/sessions — §9.1 individual logged sessions for this

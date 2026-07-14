@@ -401,6 +401,45 @@ test.describe('§12.4 — Calendar view', () => {
 
 })
 
+// Not part of the original §12.4 spec — added on direct user request: a
+// skipped/excused/carried-forward occurrence must read as visually distinct
+// in the grid too, not just in the detail-panel row.
+test.describe('Disposition status is visible in the grid (Calendar view)', () => {
+
+  test('a skipped occurrence renders with cal-block--skipped in the day grid', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2025-06-16T07:00:00'))
+    const skipped: OccurrenceWithState = {
+      ...ONE_HOUR,
+      disposition: { type: 'skipped', reasonId: null, comment: null, rescheduledToDay: null, derivedPercentAtClose: null },
+    }
+    await setupCalApiMocks(page, [skipped])
+
+    await goToCalendarView(page)
+
+    const grid = desktopGrid(page)
+    await expect(grid.getByTestId('cal-block-occ-1h')).toHaveClass(/cal-block--skipped/)
+  })
+
+  test('the detail panel for a skipped occurrence shows the restore button, not the checkbox', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2025-06-16T07:00:00'))
+    const skipped: OccurrenceWithState = {
+      ...ONE_HOUR,
+      disposition: { type: 'skipped', reasonId: null, comment: null, rescheduledToDay: null, derivedPercentAtClose: null },
+    }
+    await setupCalApiMocks(page, [skipped])
+
+    await goToCalendarView(page)
+
+    const grid = desktopGrid(page)
+    await grid.getByTestId('cal-block-occ-1h').click()
+    const panel = grid.getByTestId('cal-detail-panel')
+    await expect(panel).toBeVisible()
+    await expect(panel.getByTestId('occ-check')).toHaveCount(0)
+    await expect(panel.getByTestId('occ-restore-btn')).toBeVisible()
+  })
+
+})
+
 // Completed item fixture for uncomplete tests
 const DONE_OCC = makeOcc({
   id: 'occ-done', itemId: 'item-done', name: 'Completed Task',

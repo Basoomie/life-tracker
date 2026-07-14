@@ -22,6 +22,7 @@ export type OccurrenceActions = {
   handleSkip: (occ: OccurrenceWithState, reasonId: string | null, comment: string | null) => Promise<void>
   handleExcuse: (occ: OccurrenceWithState, reasonId: string | null, comment: string | null) => Promise<void>
   handleCarryForward: (occ: OccurrenceWithState, targetDay: string, reasonId: string | null, comment: string | null) => Promise<void>
+  handleClearDisposition: (occ: OccurrenceWithState) => Promise<void>
   handleArchive: (occ: OccurrenceWithState) => Promise<void>
 }
 
@@ -141,6 +142,12 @@ export function useOccurrenceActions(
     refresh()
   }, [refresh])
 
+  const handleClearDisposition = useCallback(async (occ: OccurrenceWithState) => {
+    if (!occ.id) return
+    const updated = await api.occurrences.clearDisposition(occ.id)
+    setOccurrences((prev) => prev.map((o) => (o.id !== null && o.id === updated.id ? updated : o)))
+  }, [setOccurrences])
+
   const handleArchive = useCallback(async (occ: OccurrenceWithState) => {
     await api.items.archive(occ.itemId)
     refresh()
@@ -161,6 +168,7 @@ export function useOccurrenceActions(
     handleSkip,
     handleExcuse,
     handleCarryForward,
+    handleClearDisposition,
     handleArchive,
   }
 }

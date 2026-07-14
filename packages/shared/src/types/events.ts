@@ -113,6 +113,17 @@ type AutoClosedEvent = EventBase & {
   }
 }
 
+// User-initiated undo of a skip/excuse/carry-forward: returns the occurrence to
+//'pending' without erasing the disposition event it's undoing — the most-recent-
+// event-wins replay in deriveDisposition() is what makes "pending again" honest
+// rather than a retroactive edit.
+type DispositionClearedEvent = EventBase & {
+  eventType: 'disposition_cleared'
+  payload: {
+    previousDispositionType: 'skipped' | 'excused' | 'rescheduled'
+  }
+}
+
 // §6.7 — user manually reassigns an event to the adjacent day (day-start edge case)
 type EventReassignedEvent = EventBase & {
   eventType: 'event_reassigned'
@@ -415,6 +426,7 @@ export type TrackerEvent =
   | ExcusedEvent
   | RescheduledEvent
   | AutoClosedEvent
+  | DispositionClearedEvent
   | EventReassignedEvent
   | SessionStartedEvent
   | SessionPausedEvent

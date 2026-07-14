@@ -527,6 +527,66 @@ describe('§8.2 — carry-forward via API leaves the original occurrence intact'
   })
 })
 
+// ── clear-disposition (undo skip/excuse/carry-forward) via API ───────────────
+// Not part of the original §8 policy set — added on direct user request.
+
+describe('clear-disposition via API — undo a skip/excuse/carry-forward', () => {
+  it('POST /occurrences/:id/clear-disposition returns the occurrence with disposition back to pending', async () => {
+    const u = await makeUser('api-clear-disposition@test.com')
+    const app = await buildTestApp(u.id)
+
+    const item = await repos.insertItem(getTestPool(), {
+      userId: u.id,
+      name: 'Clear Disposition Task',
+      recurrenceRule: null,
+      creationSource: 'planned',
+    })
+    const occ = await ensureOccurrenceMaterialized(getTestPool(), item, TODAY, u.id)
+
+    const skipRes = await app.inject({
+      method: 'POST',
+      url: `/api/occurrences/${occ.id}/skip`,
+    })
+    expect(skipRes.statusCode).toBe(200)
+    expect(JSON.parse(skipRes.body).disposition.type).toBe('skipped')
+
+    const clearRes = await app.inject({
+      method: 'POST',
+      url: `/api/occurrences/${occ.id}/clear-disposition`,
+    })
+    expect(clearRes.statusCode).toBe(200)
+    expect(JSON.parse(clearRes.body).disposition.type).toBe('pending')
+
+    // The original skipped event is not deleted — only a new event is appended.
+    const events = await repos.findEventsByOccurrence(getTestPool(), occ.id, u.id)
+    expect(events.some((e) => e.eventType === 'skipped')).toBe(true)
+    expect(events.some((e) => e.eventType === 'disposition_cleared')).toBe(true)
+
+    await app.close()
+  })
+
+  it('POST /occurrences/:id/clear-disposition 400s when the occurrence is not skipped/excused/rescheduled', async () => {
+    const u = await makeUser('api-clear-disposition-reject@test.com')
+    const app = await buildTestApp(u.id)
+
+    const item = await repos.insertItem(getTestPool(), {
+      userId: u.id,
+      name: 'Clear Disposition Pending Task',
+      recurrenceRule: null,
+      creationSource: 'planned',
+    })
+    const occ = await ensureOccurrenceMaterialized(getTestPool(), item, TODAY, u.id)
+
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/occurrences/${occ.id}/clear-disposition`,
+    })
+    expect(res.statusCode).toBe(400)
+
+    await app.close()
+  })
+})
+
 // ── §9.1 — live timer: start pause resume stop ────────────────────────────────
 
 describe('§9.1 — live timer start pause resume stop produces correct session events and duration', () => {

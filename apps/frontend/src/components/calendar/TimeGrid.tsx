@@ -27,6 +27,7 @@ type Props = {
   onTimerResume: (occ: OccurrenceWithState) => void
   onTimerStop: (occ: OccurrenceWithState) => void
   onDisposition: (occ: OccurrenceWithState) => void
+  onClearDisposition: (occ: OccurrenceWithState) => void
   onEdit: (itemId: string) => void
   onArchive: (occ: OccurrenceWithState) => void
   onManageSessions: (occ: OccurrenceWithState) => void
@@ -54,6 +55,10 @@ function blockTitle(block: GridBlock): string {
   return name
 }
 
+// Skip/excuse/carry-forward read visually distinct in the day grid too, not
+// just the detail-panel row — same three statuses OccurrenceRow treats specially.
+const DISPOSITIONED_TYPES = new Set(['skipped', 'excused', 'rescheduled'])
+
 export function TimeGrid({
   day,
   isToday,
@@ -70,6 +75,7 @@ export function TimeGrid({
   onTimerResume,
   onTimerStop,
   onDisposition,
+  onClearDisposition,
   onEdit,
   onArchive,
   onManageSessions,
@@ -124,6 +130,7 @@ export function TimeGrid({
         onTimerResume={() => onTimerResume(occ)}
         onTimerStop={() => { onTimerStop(occ); if (closeAfterAction) setSelected(null) }}
         onDisposition={() => { onDisposition(occ); if (closeAfterAction) setSelected(null) }}
+        onClearDisposition={() => onClearDisposition(occ)}
         onEdit={() => onEdit(occ.itemId)}
         onArchive={() => { onArchive(occ); if (closeAfterAction) setSelected(null) }}
         onManageSessions={() => onManageSessions(occ)}
@@ -200,6 +207,7 @@ export function TimeGrid({
                     'cal-block',
                     `cal-block--${block.kind}`,
                     block.occ.completionState.isComplete ? 'cal-block--done' : '',
+                    DISPOSITIONED_TYPES.has(block.occ.disposition.type) ? `cal-block--${block.occ.disposition.type}` : '',
                     isSelected ? 'cal-block--selected' : '',
                   ].filter(Boolean).join(' ')}
                   style={{

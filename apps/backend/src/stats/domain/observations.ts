@@ -23,6 +23,7 @@ import {
 } from '@tracker/shared'
 import type { TrackerEvent } from '@tracker/shared'
 import * as repos from '../../db/repos/index'
+import { deriveDisposition as deriveOccurrenceDisposition } from '../../domain/dispositions'
 import type {
   DayObservation,
   DayDisposition,
@@ -35,30 +36,14 @@ import type { DateWindow } from '@tracker/shared'
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-// Disposition event types — matches enrichOccurrence logic in routes/helpers.ts.
-const DISPOSITION_TYPES = new Set([
-  'item_completed', 'retroactive_completion',
-  'skipped', 'excused', 'rescheduled', 'auto_closed',
-])
-
 // Derive the final disposition outcome from an occurrence's event stream.
-// Most-recent disposition event wins (same logic as enrichOccurrence).
+// Delegates to the same domain replay used by enrichOccurrence (routes/helpers.ts)
+// so a user-initiated clearDispositionByUser undo (disposition_cleared event) is
+// honored identically here — a cleared skip/excuse/carry-forward reads as
+// 'pending' for stats purposes too, not still counted as a miss.
 function deriveDisposition(occ: Occurrence | undefined, events: TrackerEvent[]): DayDisposition {
   if (!occ) return 'missing'
-  for (let i = events.length - 1; i >= 0; i--) {
-    const e = events[i]
-    if (!DISPOSITION_TYPES.has(e.eventType)) continue
-    const p = e.payload as Record<string, unknown>
-    if (e.eventType === 'item_completed' || e.eventType === 'retroactive_completion') {
-      return ((p['completionPercent'] as number) ?? 0) >= 100 ? 'completed' : 'pending'
-    }
-    if (e.eventType === 'skipped')    return 'skipped'
-    if (e.eventType === 'excused')    return 'excused'
-    if (e.eventType === 'rescheduled') return 'rescheduled'
-    if (e.eventType === 'auto_closed') return 'auto_closed'
-    break
-  }
-  return 'pending'
+  return deriveOccurrenceDisposition(events).type
 }
 
 // Derive backfill info from the event stream for the given applies_to_day.

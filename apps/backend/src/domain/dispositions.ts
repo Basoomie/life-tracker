@@ -13,9 +13,99 @@
 // §8.2 carry-forward: explicit human action only; see carryForward().
 
 import type { Pool } from 'pg'
-import type { Occurrence, TrackerEvent } from '@tracker/shared'
+import type { Occurrence, TrackerEvent, OccurrenceDisposition } from '@tracker/shared'
 import * as repos from '../db/repos/index'
 import { getParentCompletionState } from './completion'
+
+// ── Deriving disposition from history ─────────────────────────────────────────
+
+// Event types that determine the occurrence's disposition, in the order
+// enrichOccurrence and clearDispositionByUser both need it: "most recent wins."
+const DERIVABLE_DISPOSITION_EVENT_TYPES = new Set([
+  'item_completed',
+  'retroactive_completion',
+  'skipped',
+  'excused',
+  'rescheduled',
+  'auto_closed',
+  'disposition_cleared',
+])
+
+const PENDING_DISPOSITION: OccurrenceDisposition = {
+  type: 'pending',
+  reasonId: null,
+  comment: null,
+  rescheduledToDay: null,
+  derivedPercentAtClose: null,
+}
+
+/**
+ * Pure replay: given an occurrence's full event history, derive its current
+ * disposition from the most recent disposition-type event. A `disposition_cleared`
+ * event (§ user-initiated undo) resets to 'pending' without deleting the event
+ * it's undoing — history stays intact, only the derived *current* state changes.
+ *
+ * Shared by enrichOccurrence (API responses) and clearDispositionByUser (which
+ * needs to know the current type before allowing an undo).
+ */
+export function deriveDisposition(events: TrackerEvent[]): OccurrenceDisposition {
+  for (let i = events.length - 1; i >= 0; i--) {
+    const e = events[i]
+    if (!DERIVABLE_DISPOSITION_EVENT_TYPES.has(e.eventType)) continue
+
+    const p = e.payload as Record<string, unknown>
+
+    if (e.eventType === 'item_completed' || e.eventType === 'retroactive_completion') {
+      const pct = (p.completionPercent as number) ?? 0
+      return {
+        type: pct >= 100 ? 'completed' : 'pending',
+        reasonId: null,
+        comment: null,
+        rescheduledToDay: null,
+        derivedPercentAtClose: null,
+      }
+    }
+    if (e.eventType === 'skipped') {
+      return {
+        type: 'skipped',
+        reasonId: (p.reasonId as string | null) ?? null,
+        comment: (p.comment as string | null) ?? null,
+        rescheduledToDay: null,
+        derivedPercentAtClose: null,
+      }
+    }
+    if (e.eventType === 'excused') {
+      return {
+        type: 'excused',
+        reasonId: (p.reasonId as string | null) ?? null,
+        comment: (p.comment as string | null) ?? null,
+        rescheduledToDay: null,
+        derivedPercentAtClose: null,
+      }
+    }
+    if (e.eventType === 'rescheduled') {
+      return {
+        type: 'rescheduled',
+        reasonId: (p.reasonId as string | null) ?? null,
+        comment: (p.comment as string | null) ?? null,
+        rescheduledToDay: (p.newDay as string | null) ?? null,
+        derivedPercentAtClose: null,
+      }
+    }
+    if (e.eventType === 'auto_closed') {
+      return {
+        type: 'auto_closed',
+        reasonId: null,
+        comment: null,
+        rescheduledToDay: null,
+        derivedPercentAtClose: (p.derivedPercent as number | null) ?? null,
+      }
+    }
+    // disposition_cleared: falls through to the PENDING_DISPOSITION return below.
+    return { ...PENDING_DISPOSITION }
+  }
+  return { ...PENDING_DISPOSITION }
+}
 
 // ── "Untouched" detection ─────────────────────────────────────────────────────
 
@@ -218,4 +308,50 @@ export async function carryForward(
   })
 
   return { newOccurrence, rescheduleEvent }
+}
+
+// ── User-initiated undo (remove skip / excuse / carry-forward status) ────────
+
+/**
+ * User-initiated undo of a skip/excuse/carry-forward disposition.
+ *
+ * Not part of the original spec's §8 disposition policies — added on direct user
+ * request so a mis-clicked skip/excuse/carry-forward can be reversed. Consistent
+ * with the "never silently mutate" and "events are immutable" rules: this does
+ * NOT delete or edit the skipped/excused/rescheduled event, it appends a new
+ * disposition_cleared event that deriveDisposition() reads as "pending again."
+ *
+ * Carry-forward specifically: clearing only un-dispositions the ORIGINAL
+ * occurrence. The new occurrence already materialized on the target day by
+ * carryForward() is untouched — both are left as independently actionable
+ * occurrences rather than deleting the copy, since deleting a materialized
+ * occurrence (and whatever events it may have gathered since) is not a thing
+ * this system does anywhere else.
+ *
+ * Only valid from skipped/excused/rescheduled — pending/completed/auto_closed
+ * have no "undo" via this path (completed already has uncomplete*; auto_closed
+ * is a system action, not a user one).
+ */
+export async function clearDispositionByUser(
+  pool: Pool,
+  occurrence: Occurrence,
+  userId: string
+): Promise<{ ok: true; event: TrackerEvent } | { ok: false; error: string }> {
+  const events = await repos.findEventsByOccurrence(pool, occurrence.id, userId)
+  const current = deriveDisposition(events)
+
+  if (current.type !== 'skipped' && current.type !== 'excused' && current.type !== 'rescheduled') {
+    return { ok: false, error: `Cannot clear a disposition of type '${current.type}'` }
+  }
+
+  const event = await repos.insertEvent(pool, {
+    userId,
+    eventType: 'disposition_cleared',
+    occurrenceId: occurrence.id,
+    itemId: occurrence.itemId,
+    appliesToDay: occurrence.appliesToDay,
+    payload: { previousDispositionType: current.type },
+  })
+
+  return { ok: true, event }
 }

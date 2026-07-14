@@ -285,6 +285,37 @@ input, select, textarea {
 
 .occ-row--blocked { opacity: 0.4; pointer-events: none; }
 
+/* Skipped/excused/carried-forward — "no longer active today," greyed relative
+   to a normal row but NOT pointer-events:none (unlike blocked): the restore
+   button and edit/archive/manage-time actions stay usable. */
+.occ-row--dispositioned { opacity: 0.7; }
+
+.occ-check--skipped,
+.occ-check--excused,
+.occ-check--rescheduled {
+  font-size: var(--text-sm);
+  line-height: 1;
+  cursor: default;
+}
+
+.occ-check--skipped {
+  background: var(--color-danger-subtle);
+  border-color: var(--color-danger);
+  color: var(--color-danger);
+}
+
+.occ-check--excused {
+  background: var(--color-border-subtle);
+  border-color: var(--color-border);
+  color: var(--color-text-tertiary);
+}
+
+.occ-check--rescheduled {
+  background: var(--color-accent-subtle);
+  border-color: var(--color-accent);
+  color: var(--color-accent-fg-subtle);
+}
+
 .occ-check {
   flex-shrink: 0;
   width: 20px;
@@ -327,7 +358,8 @@ input, select, textarea {
   word-break: break-word;
 }
 
-.occ-name--completed {
+.occ-name--completed,
+.occ-name--dispositioned {
   color: var(--color-text-tertiary);
   text-decoration: line-through;
 }
@@ -338,6 +370,34 @@ input, select, textarea {
   gap: var(--space-3);
   margin-top: var(--space-1);
   flex-wrap: wrap;
+}
+
+/* Skip/excuse/carry-forward status badge — one glance tells you which of the
+   three it is (never just "greyed out" with no explanation). */
+.occ-disposition-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  padding: 1px var(--space-2);
+  border-radius: var(--radius-full);
+  white-space: nowrap;
+}
+
+.occ-disposition-badge--skipped {
+  background: var(--color-danger-subtle);
+  color: var(--color-danger-fg);
+}
+
+.occ-disposition-badge--excused {
+  background: var(--color-border-subtle);
+  color: var(--color-text-secondary);
+}
+
+.occ-disposition-badge--rescheduled {
+  background: var(--color-accent-subtle);
+  color: var(--color-accent-fg-subtle);
 }
 
 .occ-timing {
@@ -1295,6 +1355,29 @@ input, select, textarea {
   border-color: var(--color-border);
   color: var(--color-text-secondary);
   border-style: dashed;
+}
+
+/* Skip/excuse/carry-forward — overrides the kind-based background/border/color
+   above; same three-way color language as OccurrenceRow's badge. */
+.cal-block--skipped {
+  background: var(--color-danger-subtle);
+  border-color: var(--color-danger);
+  color: var(--color-danger-fg);
+  text-decoration: line-through;
+}
+
+.cal-block--excused {
+  background: var(--color-border-subtle);
+  border-color: var(--color-border);
+  color: var(--color-text-tertiary);
+  text-decoration: line-through;
+}
+
+.cal-block--rescheduled {
+  background: var(--color-accent-subtle);
+  border-color: var(--color-accent);
+  color: var(--color-accent-fg-subtle);
+  text-decoration: line-through;
 }
 
 .cal-block--done {

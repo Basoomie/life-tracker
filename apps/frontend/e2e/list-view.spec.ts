@@ -470,6 +470,28 @@ test.describe('§12.3 — Timer + disposition menu are gated to today\'s occurre
     await expect(row.getByTestId('timer-running')).not.toBeVisible()
   })
 
+  // Not part of the original §12.3 spec — added on direct user request.
+  test('a skipped occurrence still shows its status badge on a non-today row, but no restore button (same today-only gate as the disposition menu)', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2025-06-16T09:00:00'))
+
+    const pastSkipped = makeOcc({
+      id: 'occ-past-skipped', itemId: 'item-past-skipped', name: 'Yesterday Skipped',
+      appliesToDay: '2025-06-10',
+      disposition: { type: 'skipped', reasonId: null, comment: null, rescheduledToDay: null, derivedPercentAtClose: null },
+    })
+
+    await setupApiMocks(page, [pastSkipped])
+    await goToListView(page)
+
+    await page.getByTestId('range-custom-date').fill('2025-06-10')
+    await expect(page.getByTestId('range-select')).toHaveValue('custom')
+
+    const row = page.getByTestId('occ-row-occ-past-skipped')
+    await expect(row.getByTestId('occ-disposition-badge')).toContainText('Skipped')
+    await expect(row.getByTestId('occ-restore-btn')).not.toBeVisible()
+    await expect(row.getByTestId('occ-disposition-btn')).not.toBeVisible()
+  })
+
 })
 
 test.describe('§6.7 — "Today" honors the configured day-start, not raw local midnight', () => {

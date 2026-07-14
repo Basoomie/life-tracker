@@ -107,6 +107,8 @@ export const api = {
       apiFetch<OccurrenceWithState>(`/occurrences/${id}/carry-forward`, {
         method: 'POST', body: JSON.stringify(body),
       }),
+    clearDisposition: (id: string) =>
+      apiFetch<OccurrenceWithState>(`/occurrences/${id}/clear-disposition`, { method: 'POST' }),
     sessions: (id: string) =>
       apiFetch<SessionSummary[]>(`/occurrences/${id}/sessions`),
   },

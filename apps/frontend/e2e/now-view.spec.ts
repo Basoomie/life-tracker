@@ -634,6 +634,98 @@ test.describe('§12.2 — Now view tier ordering and rendering', () => {
 
 })
 
+// Not part of the original §8 spec — added on direct user request: a
+// skipped/excused/carried-forward occurrence must be visually distinguishable
+// at a glance, blocked from further action, and reversible via a restore button.
+test.describe('Disposition status is visible and non-interactive (Now view)', () => {
+
+  test('a skipped occurrence shows a distinct badge, disables the checkbox and timer, and offers a restore button', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2025-06-16T05:00:00'))
+    const skippedTrading: OccurrenceWithState = {
+      ...TRADING_OCC,
+      disposition: { type: 'skipped', reasonId: null, comment: null, rescheduledToDay: null, derivedPercentAtClose: null },
+    }
+    await setupApiMocks(page, [skippedTrading])
+
+    await page.goto('/')
+
+    const row = page.getByTestId('occ-row-occ-trading')
+    await expect(row).toHaveClass(/occ-row--skipped/)
+    await expect(row).toHaveAttribute('data-disposition', 'skipped')
+    await expect(row.getByTestId('occ-disposition-badge')).toContainText('Skipped')
+
+    // No interactive completion checkbox — a static status icon instead
+    await expect(row.getByTestId('occ-check')).toHaveCount(0)
+    await expect(row.getByTestId('occ-disposition-icon')).toBeVisible()
+
+    // No live timer controls
+    await expect(row.getByTestId('timer-start')).not.toBeVisible()
+
+    // The "···" disposition menu is replaced by a restore button
+    await expect(row.getByTestId('occ-disposition-btn')).toHaveCount(0)
+    await expect(row.getByTestId('occ-restore-btn')).toBeVisible()
+  })
+
+  test('an excused occurrence is styled neutrally, not as a failure (distinct from skipped)', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2025-06-16T05:00:00'))
+    const excusedTrading: OccurrenceWithState = {
+      ...TRADING_OCC,
+      disposition: { type: 'excused', reasonId: null, comment: null, rescheduledToDay: null, derivedPercentAtClose: null },
+    }
+    await setupApiMocks(page, [excusedTrading])
+
+    await page.goto('/')
+
+    const row = page.getByTestId('occ-row-occ-trading')
+    await expect(row).toHaveClass(/occ-row--excused/)
+    await expect(row).not.toHaveClass(/occ-row--skipped/)
+    await expect(row.getByTestId('occ-disposition-badge')).toContainText('Excused')
+  })
+
+  test('a carried-forward occurrence shows where it was moved to', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2025-06-16T05:00:00'))
+    const rescheduledTrading: OccurrenceWithState = {
+      ...TRADING_OCC,
+      disposition: { type: 'rescheduled', reasonId: null, comment: null, rescheduledToDay: '2025-06-17', derivedPercentAtClose: null },
+    }
+    await setupApiMocks(page, [rescheduledTrading])
+
+    await page.goto('/')
+
+    const row = page.getByTestId('occ-row-occ-trading')
+    await expect(row).toHaveClass(/occ-row--rescheduled/)
+    await expect(row.getByTestId('occ-disposition-badge')).toContainText('Carried forward')
+  })
+
+  test('clicking restore calls clear-disposition and the occurrence becomes interactive again', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2025-06-16T05:00:00'))
+    const skippedTrading: OccurrenceWithState = {
+      ...TRADING_OCC,
+      disposition: { type: 'skipped', reasonId: null, comment: null, rescheduledToDay: null, derivedPercentAtClose: null },
+    }
+    await setupApiMocks(page, [skippedTrading])
+
+    let clearCalled = false
+    await page.route('/api/occurrences/occ-trading/clear-disposition', (route) => {
+      clearCalled = true
+      route.fulfill({ json: TRADING_OCC })
+    })
+
+    await page.goto('/')
+
+    const row = page.getByTestId('occ-row-occ-trading')
+    await row.getByTestId('occ-restore-btn').click()
+
+    expect(clearCalled).toBe(true)
+
+    // Back to pending: interactive checkbox is restored, badge is gone
+    await expect(row.getByTestId('occ-check')).toBeVisible()
+    await expect(row.getByTestId('occ-disposition-badge')).toHaveCount(0)
+    await expect(row.getByTestId('occ-disposition-btn')).toBeVisible()
+  })
+
+})
+
 test.describe('§4 — Uncomplete with confirmation (Now view)', () => {
 
   test('§4 clicking checked checkbox in Done Today shows confirmation modal', async ({ page }) => {

@@ -137,6 +137,37 @@ describe('§3.1 raw adherence including excused is the default headline', () => 
   })
 })
 
+describe('a cleared skip/excuse is not counted as a miss for stats purposes', () => {
+  it('a skip that was undone via clearDispositionByUser no longer counts toward skippedCount', async () => {
+    const u = await makeUser('cleared-skip')
+    const habit = await makeDailyHabit(u.id)
+
+    await complete(habit, MON, u.id)
+    await complete(habit, WED, u.id)
+    await complete(habit, FRI, u.id)
+
+    // Skip THU, then undo it — the observation replay should read this day as
+    // 'pending' (matching the API's derived disposition), not still 'skipped'.
+    const occ = await ensureOccurrenceMaterialized(getTestPool(), habit, THU, u.id)
+    await repos.insertEvent(getTestPool(), {
+      userId: u.id, eventType: 'skipped',
+      occurrenceId: occ.id, itemId: habit.id, appliesToDay: THU,
+      payload: { reasonId: null, comment: null },
+    })
+    await repos.insertEvent(getTestPool(), {
+      userId: u.id, eventType: 'disposition_cleared',
+      occurrenceId: occ.id, itemId: habit.id, appliesToDay: THU,
+      payload: { previousDispositionType: 'skipped' },
+    })
+
+    const finding = await getItemAdherence(getTestPool(), u.id, habit.id, WEEK)
+    expect(finding.type).toBe('leaf_adherence')
+    if (finding.type !== 'leaf_adherence') return
+
+    expect(finding.rawCounts.skippedCount).toBe(0)
+  })
+})
+
 describe('§3.1 adherence-excluding-excused is the secondary lens', () => {
   it('§3.1 adherenceExclExcused excludes excused days from denominator', async () => {
     const u = await makeUser('excl-excused')

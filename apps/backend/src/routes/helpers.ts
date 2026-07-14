@@ -13,6 +13,7 @@ import * as repos from '../db/repos/index'
 import { isBlocked, getIncompletePrerequisites } from '../domain/prerequisites'
 import { getLeafCompletionState, getParentCompletionState } from '../domain/completion'
 import { computeLoggedMinutes, computeSubtreeLoggedMinutes } from '../domain/sessions'
+import { deriveDisposition } from '../domain/dispositions'
 
 // ── HTTP helpers ──────────────────────────────────────────────────────────────
 
@@ -23,19 +24,6 @@ export function notFound(reply: FastifyReply, resource = 'resource') {
 export function badRequest(reply: FastifyReply, error: string, message: string) {
   return reply.status(400).send({ error, message })
 }
-
-// ── Occurrence enrichment ─────────────────────────────────────────────────────
-
-// Event types that determine the occurrence's disposition.
-// Ordered by precedence for the "most recent wins" logic below.
-const DISPOSITION_EVENT_TYPES = new Set([
-  'item_completed',
-  'retroactive_completion',
-  'skipped',
-  'excused',
-  'rescheduled',
-  'auto_closed',
-])
 
 /**
  * §5.4 — Enrich a ComputedOccurrence with derived state for API consumers.
@@ -116,6 +104,9 @@ export async function enrichOccurrence(
   }
 
   // ── Disposition ───────────────────────────────────────────────────────────
+  // Derivation logic (most-recent-event-wins replay) lives in the domain layer
+  // (deriveDisposition) since clearDispositionByUser needs the identical logic
+  // to know what it's undoing — kept in one place rather than duplicated.
 
   let disposition: OccurrenceDisposition = {
     type: 'pending',
@@ -132,57 +123,7 @@ export async function enrichOccurrence(
   if (occ.id) {
     const events = await repos.findEventsByOccurrence(pool, occ.id, userId)
     loggedMinutes = computeLoggedMinutes(events)
-    // Walk in reverse to find the most recent disposition event.
-    for (let i = events.length - 1; i >= 0; i--) {
-      const e = events[i]
-      if (!DISPOSITION_EVENT_TYPES.has(e.eventType)) continue
-
-      const p = e.payload as Record<string, unknown>
-
-      if (e.eventType === 'item_completed' || e.eventType === 'retroactive_completion') {
-        const pct = (p.completionPercent as number) ?? 0
-        disposition = {
-          type: pct >= 100 ? 'completed' : 'pending',
-          reasonId: null,
-          comment: null,
-          rescheduledToDay: null,
-          derivedPercentAtClose: null,
-        }
-      } else if (e.eventType === 'skipped') {
-        disposition = {
-          type: 'skipped',
-          reasonId: (p.reasonId as string | null) ?? null,
-          comment: (p.comment as string | null) ?? null,
-          rescheduledToDay: null,
-          derivedPercentAtClose: null,
-        }
-      } else if (e.eventType === 'excused') {
-        disposition = {
-          type: 'excused',
-          reasonId: (p.reasonId as string | null) ?? null,
-          comment: (p.comment as string | null) ?? null,
-          rescheduledToDay: null,
-          derivedPercentAtClose: null,
-        }
-      } else if (e.eventType === 'rescheduled') {
-        disposition = {
-          type: 'rescheduled',
-          reasonId: (p.reasonId as string | null) ?? null,
-          comment: (p.comment as string | null) ?? null,
-          rescheduledToDay: (p.newDay as string | null) ?? null,
-          derivedPercentAtClose: null,
-        }
-      } else if (e.eventType === 'auto_closed') {
-        disposition = {
-          type: 'auto_closed',
-          reasonId: null,
-          comment: null,
-          rescheduledToDay: null,
-          derivedPercentAtClose: (p.derivedPercent as number | null) ?? null,
-        }
-      }
-      break  // most recent disposition event wins
-    }
+    disposition = deriveDisposition(events)
   }
 
   // §9.1 — a parent's logged time rolls up its whole subtree, the same way

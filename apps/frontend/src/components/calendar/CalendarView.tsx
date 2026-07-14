@@ -89,6 +89,7 @@ export function CalendarView({ onEditItem }: Props) {
     handleSkip,
     handleExcuse,
     handleCarryForward,
+    handleClearDisposition,
     handleArchive,
   } = useOccurrenceActions(setOccurrences, refresh)
 
@@ -162,6 +163,7 @@ export function CalendarView({ onEditItem }: Props) {
         onTimerResume={handleTimerResume}
         onTimerStop={handleTimerStop}
         onDisposition={setDispositionTarget}
+        onClearDisposition={handleClearDisposition}
         onEdit={onEditItem}
         onArchive={setPendingArchive}
         onManageSessions={setSessionManagerTarget}

@@ -4,7 +4,15 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { setupTestDb, teardownTestDb, getTestPool } from './helpers/test-db'
 import * as repos from '../db/repos/index'
-import { runDispositions, applyDisposition, carryForward } from '../domain/dispositions'
+import {
+  runDispositions,
+  applyDisposition,
+  carryForward,
+  skipOccurrenceByUser,
+  excuseOccurrenceByUser,
+  clearDispositionByUser,
+  deriveDisposition,
+} from '../domain/dispositions'
 import { addPrerequisite } from '../domain/prerequisites'
 import { completeLeaf, completeChild } from '../domain/completion'
 import { ensureOccurrenceMaterialized } from '../domain/materialization'
@@ -355,5 +363,105 @@ describe('§6.7 end-of-day boundary uses day-start bucketing correctly', () => {
     await runDispositions(getTestPool(), u.id, DAY_A)
     const eventsA2 = await repos.findEventsByOccurrence(getTestPool(), occA.id, u.id)
     expect(eventsA2.filter((e) => e.eventType === 'skipped')).toHaveLength(1)
+  })
+})
+
+// ── User-initiated undo (clear skip / excuse / carry-forward) ────────────────
+// Not part of the original spec's §8 policies — added on direct user request so
+// a mis-clicked disposition is reversible. Named descriptively rather than with
+// a § tag, matching this codebase's convention for unspecced features.
+
+describe('clearDispositionByUser: undo a skip/excuse/carry-forward without erasing history', () => {
+  it('clearing a skipped occurrence appends disposition_cleared and derives back to pending', async () => {
+    const u = await makeUser('disp-clear-skip@test.com')
+    const item = await makeHabit(u.id, 'Clear skip item')
+    const occ = await materialize(item, DAY, u.id)
+
+    await skipOccurrenceByUser(getTestPool(), occ, u.id)
+    const result = await clearDispositionByUser(getTestPool(), occ, u.id)
+    expect(result.ok).toBe(true)
+
+    const events = await repos.findEventsByOccurrence(getTestPool(), occ.id, u.id)
+    // The original skipped event is NOT deleted — history stays intact.
+    expect(events.some((e) => e.eventType === 'skipped')).toBe(true)
+    expect(events.some((e) => e.eventType === 'disposition_cleared')).toBe(true)
+    expect(deriveDisposition(events).type).toBe('pending')
+  })
+
+  it('clearing an excused occurrence derives back to pending', async () => {
+    const u = await makeUser('disp-clear-excuse@test.com')
+    const item = await makeHabit(u.id, 'Clear excuse item')
+    const occ = await materialize(item, DAY, u.id)
+
+    await excuseOccurrenceByUser(getTestPool(), occ, u.id)
+    await clearDispositionByUser(getTestPool(), occ, u.id)
+
+    const events = await repos.findEventsByOccurrence(getTestPool(), occ.id, u.id)
+    expect(deriveDisposition(events).type).toBe('pending')
+  })
+
+  it('clearing a rescheduled (carry-forward) occurrence derives it back to pending, leaving the forwarded copy untouched', async () => {
+    const u = await makeUser('disp-clear-reschedule@test.com')
+    const item = await makeHabit(u.id, 'Clear reschedule item')
+    const occ = await materialize(item, DAY, u.id)
+
+    const { newOccurrence } = await carryForward(getTestPool(), occ, '2025-01-16', u.id)
+    await clearDispositionByUser(getTestPool(), occ, u.id)
+
+    const originalEvents = await repos.findEventsByOccurrence(getTestPool(), occ.id, u.id)
+    expect(deriveDisposition(originalEvents).type).toBe('pending')
+
+    // The forwarded copy on the target day is a separate occurrence, unaffected
+    // by clearing the original's disposition.
+    const forwardedEvents = await repos.findEventsByOccurrence(getTestPool(), newOccurrence.id, u.id)
+    expect(deriveDisposition(forwardedEvents).type).toBe('pending')
+    const stillExists = await repos.findOccurrenceById(getTestPool(), newOccurrence.id, u.id)
+    expect(stillExists).not.toBeNull()
+  })
+
+  it('records which disposition type was cleared, for audit', async () => {
+    const u = await makeUser('disp-clear-payload@test.com')
+    const item = await makeHabit(u.id, 'Clear payload item')
+    const occ = await materialize(item, DAY, u.id)
+
+    await skipOccurrenceByUser(getTestPool(), occ, u.id)
+    const result = await clearDispositionByUser(getTestPool(), occ, u.id)
+
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect((result.event.payload as any).previousDispositionType).toBe('skipped')
+    }
+  })
+
+  it('rejects clearing a pending (untouched) occurrence', async () => {
+    const u = await makeUser('disp-clear-pending@test.com')
+    const item = await makeHabit(u.id, 'Clear pending item')
+    const occ = await materialize(item, DAY, u.id)
+
+    const result = await clearDispositionByUser(getTestPool(), occ, u.id)
+    expect(result.ok).toBe(false)
+  })
+
+  it('rejects clearing a completed occurrence', async () => {
+    const u = await makeUser('disp-clear-completed@test.com')
+    const item = await makeHabit(u.id, 'Clear completed item')
+    const occ = await materialize(item, DAY, u.id)
+
+    await completeLeaf(getTestPool(), occ, u.id)
+    const result = await clearDispositionByUser(getTestPool(), occ, u.id)
+    expect(result.ok).toBe(false)
+  })
+
+  it('clearing twice in a row is a no-op the second time (already pending)', async () => {
+    const u = await makeUser('disp-clear-twice@test.com')
+    const item = await makeHabit(u.id, 'Clear twice item')
+    const occ = await materialize(item, DAY, u.id)
+
+    await skipOccurrenceByUser(getTestPool(), occ, u.id)
+    const first = await clearDispositionByUser(getTestPool(), occ, u.id)
+    expect(first.ok).toBe(true)
+
+    const second = await clearDispositionByUser(getTestPool(), occ, u.id)
+    expect(second.ok).toBe(false)
   })
 })

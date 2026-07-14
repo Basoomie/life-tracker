@@ -230,6 +230,14 @@ export function NowView({ onEditItem }: Props) {
     refresh()
   }, [refresh])
 
+  const handleClearDisposition = useCallback(async (occ: OccurrenceWithState) => {
+    if (!occ.id) return
+    const updated = await api.occurrences.clearDisposition(occ.id)
+    setOccurrences((prev) =>
+      prev.map((o) => (o.id !== null && o.id === updated.id ? updated : o))
+    )
+  }, [setOccurrences])
+
   // ── Reorder ────────────────────────────────────────────────────────────────
   // Local patch, not refresh() — see OccurrenceCard's onReordered doc comment
   // for why (refresh() unmounts the tree via the loading flag, collapsing
@@ -308,6 +316,7 @@ export function NowView({ onEditItem }: Props) {
         onTimerResume={() => handleTimerResume(occ)}
         onTimerStop={() => handleTimerStop(occ)}
         onDisposition={() => setDispositionTarget(occ)}
+        onClearDisposition={() => handleClearDisposition(occ)}
         onEdit={() => onEditItem(occ.itemId)}
         onArchive={() => setPendingArchive(occ)}
         onManageSessions={() => setSessionManagerTarget(occ)}
