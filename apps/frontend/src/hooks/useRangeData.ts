@@ -2,12 +2,12 @@
 
 import { useState, useEffect, useCallback, type Dispatch, type SetStateAction } from 'react'
 import { api } from '../lib/api'
+import { getEffectiveDayStart } from '@tracker/shared'
 import type { OccurrenceWithState, Bucket, DayStartEntry } from '@tracker/shared'
 
 export type RangeDataResult = {
   occurrences: OccurrenceWithState[]
   buckets: Bucket[]
-  dayStartEntries: DayStartEntry[]
   loading: boolean
   error: string | null
   refresh: () => void
@@ -15,16 +15,29 @@ export type RangeDataResult = {
 }
 
 // Returns the effective day-start value for a given day (most recent entry <= day).
+// Delegates to the shared package's canonical lookup (also used by the backend's
+// bucketing) so frontend and backend can never drift on this again — the '00:00'
+// (midnight) fallback matches the spec's documented default when unconfigured (§6.7).
 export function effectiveDayStart(entries: DayStartEntry[], day: string): string {
-  const sorted = [...entries].sort((a, b) => b.startsOn.localeCompare(a.startsOn))
-  const entry = sorted.find((e) => e.startsOn <= day)
-  return entry?.value ?? '04:00'
+  return getEffectiveDayStart(entries, day) ?? '00:00'
+}
+
+// Fetched independently of any range — List/Calendar need this *before* they can
+// even compute which range to request (§6.7: "today" is day-start-bucketed via
+// bucketTimestamp(now, dayStartEntries), so the range depends on this loading first).
+export function useDayStartEntries(): DayStartEntry[] {
+  const [dayStartEntries, setDayStartEntries] = useState<DayStartEntry[]>([])
+
+  useEffect(() => {
+    api.dayStart.list().then(setDayStartEntries).catch(() => {})
+  }, [])
+
+  return dayStartEntries
 }
 
 export function useRangeData(start: string, end: string): RangeDataResult {
   const [occurrences, setOccurrences] = useState<OccurrenceWithState[]>([])
   const [buckets, setBuckets] = useState<Bucket[]>([])
-  const [dayStartEntries, setDayStartEntries] = useState<DayStartEntry[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -49,7 +62,6 @@ export function useRangeData(start: string, end: string): RangeDataResult {
   // Stable config — fetched once
   useEffect(() => {
     api.buckets.list().then(setBuckets).catch(() => {})
-    api.dayStart.list().then(setDayStartEntries).catch(() => {})
   }, [])
 
   // Refetch when range changes
@@ -57,5 +69,5 @@ export function useRangeData(start: string, end: string): RangeDataResult {
 
   const refresh = useCallback(() => { fetchOccurrences(false) }, [fetchOccurrences])
 
-  return { occurrences, buckets, dayStartEntries, loading, error, refresh, setOccurrences }
+  return { occurrences, buckets, loading, error, refresh, setOccurrences }
 }

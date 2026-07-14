@@ -4,7 +4,8 @@
 import type { FastifyInstance } from 'fastify'
 import { pool } from '../db'
 import * as repos from '../db/repos/index'
-import { badRequest, todayLocal } from './helpers'
+import { badRequest } from './helpers'
+import { todayLocal } from '../domain/day'
 import type { CreateDayStartBody } from '@tracker/shared'
 
 export async function dayStartRoutes(app: FastifyInstance) {

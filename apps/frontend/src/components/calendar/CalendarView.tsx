@@ -3,7 +3,7 @@
 // Desktop: all days side-by-side (horizontal scroll for week/month).
 
 import { useState, useEffect, useMemo, useCallback } from 'react'
-import { useRangeData, effectiveDayStart } from '../../hooks/useRangeData'
+import { useRangeData, useDayStartEntries, effectiveDayStart } from '../../hooks/useRangeData'
 import { useOccurrenceActions } from '../../hooks/useOccurrenceActions'
 import { DispositionModal } from '../now/DispositionModal'
 import { SessionManagerModal } from '../now/SessionManagerModal'
@@ -14,6 +14,7 @@ import { applyFilters, makeDefaultFilters, serializeFilters, deserializeFilters 
 import { getRangeDates, getDaysInRange, formatDayLabel, todayStr } from '../../lib/date-range'
 import { buildOccurrenceTree, type OccurrenceNode } from '../../lib/occurrence-tree'
 import { api } from '../../lib/api'
+import { bucketTimestamp } from '@tracker/shared'
 import type { RangeKey } from '../../lib/date-range'
 import type { OccurrenceWithState, Category, Reason } from '@tracker/shared'
 
@@ -54,12 +55,19 @@ export function CalendarView({ onEditItem }: Props) {
     return () => clearInterval(id)
   }, [])
 
-  const { start, end } = useMemo(() => getRangeDates(range, undefined, customDate), [range, customDate])
+  // §6.7 — "today" honors the user's configured day-start boundary, not raw local
+  // midnight. Falls back to todayStr()'s plain local day until dayStartEntries
+  // loads (bucketTimestamp(now, []) already equals that), self-correcting the
+  // render once the fetch resolves. Reuses the existing `now` tick (already
+  // advancing every minute for the now-indicator below) rather than a fresh
+  // `new Date()`, so "today" advances on the same cadence.
+  const dayStartEntries = useDayStartEntries()
+  const today = bucketTimestamp(now, dayStartEntries)
+  const { start, end } = useMemo(() => getRangeDates(range, today, customDate), [range, today, customDate])
 
   const {
     occurrences,
     buckets,
-    dayStartEntries,
     loading,
     error,
     refresh,
@@ -85,7 +93,6 @@ export function CalendarView({ onEditItem }: Props) {
   } = useOccurrenceActions(setOccurrences, refresh)
 
   const days = useMemo(() => getDaysInRange(start, end), [start, end])
-  const today = todayStr()
 
   // Keep focusedDay clamped within range when range changes
   const clampedFocus = focusedDay < start ? start : focusedDay > end ? end : focusedDay

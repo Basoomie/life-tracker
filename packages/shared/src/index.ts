@@ -70,6 +70,7 @@ export type { TrackerEvent, EventType } from './types/events'
 export {
   bucketLocalDateTime,
   bucketTimestamp,
+  getEffectiveDayStart,
   getDueDays,
   itemAnchorDate,
   deriveLeafCompletion,

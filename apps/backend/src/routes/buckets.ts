@@ -6,7 +6,8 @@ import type { FastifyInstance } from 'fastify'
 import { pool } from '../db'
 import * as repos from '../db/repos/index'
 import { validateBucketTiling } from '../domain/buckets'
-import { notFound, badRequest, todayLocal } from './helpers'
+import { notFound, badRequest } from './helpers'
+import { todayLocal } from '../domain/day'
 import type { CreateBucketBody, UpdateBucketBoundariesBody } from '@tracker/shared'
 
 export async function bucketRoutes(app: FastifyInstance) {

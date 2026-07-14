@@ -1,4 +1,4 @@
-export { bucketLocalDateTime, bucketTimestamp } from './day-start'
+export { bucketLocalDateTime, bucketTimestamp, getEffectiveDayStart } from './day-start'
 export { getDueDays, itemAnchorDate } from './recurrence'
 export {
   deriveLeafCompletion,

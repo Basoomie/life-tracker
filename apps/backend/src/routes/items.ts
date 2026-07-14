@@ -10,7 +10,8 @@ import {
   topUpMaterializationForItem,
 } from '../domain/materialization'
 import { addPrerequisite, removePrerequisite } from '../domain/prerequisites'
-import { notFound, badRequest, todayLocal } from './helpers'
+import { notFound, badRequest } from './helpers'
+import { logicalToday } from '../domain/day'
 import type {
   CreateItemBody,
   UpdateItemBody,
@@ -113,10 +114,10 @@ export async function itemRoutes(app: FastifyInstance) {
     // regeneration that happens on template edit — §5.3), so today's occurrence
     // (if due) is stored right away instead of waiting for the nightly background job.
     if (!item.recurrenceRule) {
-      const day = body.day ?? todayLocal()
+      const day = body.day ?? (await logicalToday(pool, userId))
       await ensureOccurrenceMaterialized(pool, item, day, userId)
     } else {
-      await topUpMaterializationForItem(pool, item, userId, todayLocal())
+      await topUpMaterializationForItem(pool, item, userId, await logicalToday(pool, userId))
     }
 
     return reply.status(201).send(item)
@@ -162,7 +163,7 @@ export async function itemRoutes(app: FastifyInstance) {
     })
 
     // §5.3 — regenerate untouched future occurrences with the new snapshot
-    await regenerateFutureOccurrences(pool, updated, userId, todayLocal())
+    await regenerateFutureOccurrences(pool, updated, userId, await logicalToday(pool, userId))
 
     return reply.send(updated)
   })

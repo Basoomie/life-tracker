@@ -11,6 +11,7 @@ import { ConfigurableListSection } from './ConfigurableListSection'
 import { BucketSection } from './BucketSection'
 import { DayStartSection } from './DayStartSection'
 import { PreferencesSection } from './PreferencesSection'
+import { getEffectiveDayStart } from '@tracker/shared'
 import type { Category, Reason, Bucket, DayStartEntry } from '@tracker/shared'
 import type { Theme } from '../../hooks/useTheme'
 
@@ -30,18 +31,6 @@ type State = {
 
 function byName<T extends { name: string }>(items: T[]): T[] {
   return [...items].sort((a, b) => a.name.localeCompare(b.name))
-}
-
-/** Returns the effective HH:MM day-start for today from a timeline. */
-function getEffectiveDayStart(entries: DayStartEntry[]): string {
-  const today = todayStr()
-  const applicable = entries
-    .filter((e) => e.startsOn <= today)
-    .sort((a, b) => {
-      if (b.startsOn !== a.startsOn) return b.startsOn.localeCompare(a.startsOn)
-      return String(b.recordedAt).localeCompare(String(a.recordedAt))
-    })
-  return applicable[0]?.value ?? '00:00'
 }
 
 export function SettingsView({ theme, onToggleTheme }: Props) {
@@ -159,7 +148,7 @@ export function SettingsView({ theme, onToggleTheme }: Props) {
     )
   }
 
-  const effectiveDayStart = getEffectiveDayStart(state.dayStartEntries)
+  const effectiveDayStart = getEffectiveDayStart(state.dayStartEntries, todayStr()) ?? '00:00'
 
   return (
     <div className="settings-view">

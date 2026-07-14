@@ -9,7 +9,7 @@ import { setupTestDb, teardownTestDb, getTestPool } from './helpers/test-db'
 import * as repos from '../db/repos/index'
 import { buildApp } from '../app'
 import { ensureOccurrenceMaterialized } from '../domain/materialization'
-import { todayLocal } from '../routes/helpers'
+import { todayLocal } from '../domain/day'
 import type { FastifyInstance } from 'fastify'
 
 beforeAll(async () => { await setupTestDb() })

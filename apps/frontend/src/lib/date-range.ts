@@ -30,13 +30,15 @@ export function addDays(dateStr: string, n: number): string {
   return d.toISOString().slice(0, 10)
 }
 
+// `today` is supplied by the caller rather than derived internally here — List
+// and Calendar views compute it via bucketTimestamp(now, dayStartEntries) so
+// "Today" and the is-today highlight honor the user's configured day-start
+// (§6.7), which this module has no way to know about on its own.
 export function getRangeDates(
   key: RangeKey,
-  ref: Date = new Date(),
+  today: string,
   customDate?: string
 ): { start: string; end: string } {
-  const today = todayStr(ref)
-
   if (key === 'custom') {
     const day = customDate ?? today
     return { start: day, end: day }

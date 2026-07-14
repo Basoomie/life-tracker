@@ -33,12 +33,23 @@ function prevCalendarDay(dateStr: string): string {
 
 // Find the effective day-start value (HH:MM) for a given calendar day.
 // Returns the value whose startsOn is the latest one ≤ calendarDay.
-// Returns null when no entry exists at or before that day.
-function getEffectiveDayStart(timeline: DayStartEntry[], calendarDay: string): string | null {
+// Returns null when no entry exists at or before that day — callers should
+// treat that as midnight ('00:00'), the spec's documented fallback (§6.7).
+// Exported so frontend and backend share this one lookup instead of each
+// re-implementing "find the latest entry with startsOn <= day" separately.
+export function getEffectiveDayStart(timeline: DayStartEntry[], calendarDay: string): string | null {
   let best: DayStartEntry | null = null
   for (const entry of timeline) {
     if (entry.startsOn <= calendarDay) {
-      if (!best || entry.startsOn > best.startsOn) {
+      // Ties on startsOn (two entries appended for the same day) break on
+      // recordedAt — latest wins. Matches the backend's SQL lookup
+      // (ORDER BY starts_on DESC, recorded_at DESC), so this stays
+      // order-independent regardless of what order the caller's array is in.
+      if (
+        !best ||
+        entry.startsOn > best.startsOn ||
+        (entry.startsOn === best.startsOn && entry.recordedAt > best.recordedAt)
+      ) {
         best = entry
       }
     }

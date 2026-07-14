@@ -1,7 +1,7 @@
 // §12.3 — List view: flat sorted list per time-range; priority-flip grouping.
 
 import { useState, useEffect, useMemo, useCallback } from 'react'
-import { useRangeData } from '../../hooks/useRangeData'
+import { useRangeData, useDayStartEntries } from '../../hooks/useRangeData'
 import { useOccurrenceActions } from '../../hooks/useOccurrenceActions'
 import { OccurrenceRow } from '../now/OccurrenceRow'
 import { DispositionModal } from '../now/DispositionModal'
@@ -15,6 +15,7 @@ import { applyFilters, makeDefaultFilters, serializeFilters, deserializeFilters 
 import { getRangeDates, getDaysInRange, formatDayLabel, todayStr } from '../../lib/date-range'
 import { buildOccurrenceTree, type OccurrenceNode } from '../../lib/occurrence-tree'
 import { api } from '../../lib/api'
+import { bucketTimestamp } from '@tracker/shared'
 import type { RangeKey } from '../../lib/date-range'
 import type { OccurrenceWithState, Category, Reason } from '@tracker/shared'
 
@@ -47,7 +48,13 @@ export function ListView({ onEditItem }: Props) {
   useEffect(() => { localStorage.setItem('tracker:list-priorityFlip', String(priorityFlip)) }, [priorityFlip])
   useEffect(() => { localStorage.setItem('tracker:list-filters', serializeFilters(filters)) }, [filters])
 
-  const { start, end } = useMemo(() => getRangeDates(range, undefined, customDate), [range, customDate])
+  // §6.7 — "today" honors the user's configured day-start boundary, not raw local
+  // midnight. Falls back to todayStr()'s plain local day until dayStartEntries
+  // loads (bucketTimestamp(now, []) already equals that), self-correcting the
+  // render once the fetch resolves.
+  const dayStartEntries = useDayStartEntries()
+  const today = bucketTimestamp(new Date(), dayStartEntries)
+  const { start, end } = useMemo(() => getRangeDates(range, today, customDate), [range, today, customDate])
 
   const {
     occurrences,
@@ -135,7 +142,7 @@ export function ListView({ onEditItem }: Props) {
         occ={occ}
         buckets={buckets}
         isChild={isChild}
-        isToday={occ.appliesToDay === todayStr()}
+        isToday={occ.appliesToDay === today}
         session={sessions.get(occId)}
         onComplete={() => handleComplete(occ)}
         onUncomplete={() => setPendingUncompletion(occ)}

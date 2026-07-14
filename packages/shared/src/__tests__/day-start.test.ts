@@ -8,11 +8,11 @@
 
 import { describe, it, expect } from 'vitest'
 import type { DayStartEntry } from '../types/entities'
-import { bucketLocalDateTime, bucketTimestamp } from '../domain/day-start'
+import { bucketLocalDateTime, bucketTimestamp, getEffectiveDayStart } from '../domain/day-start'
 
 // Minimal DayStartEntry factory — only the fields bucketLocalDateTime uses.
-function makeEntry(startsOn: string, value: string): DayStartEntry {
-  return { id: '1', userId: 'u', startsOn, value, recordedAt: new Date() }
+function makeEntry(startsOn: string, value: string, recordedAt: Date = new Date()): DayStartEntry {
+  return { id: '1', userId: 'u', startsOn, value, recordedAt }
 }
 
 const TIMELINE_4AM: DayStartEntry[] = [makeEntry('2024-01-01', '04:00')]
@@ -87,6 +87,14 @@ describe('§6.7 timeline lookup', () => {
     const timeline = [makeEntry('2000-01-01', '03:00')]
     expect(bucketLocalDateTime('2024-12-31', '02:59', timeline)).toBe('2024-12-30')
     expect(bucketLocalDateTime('2024-12-31', '03:00', timeline)).toBe('2024-12-31')
+  })
+
+  it('§6.7 getEffectiveDayStart: two entries with the same startsOn break the tie on recordedAt (latest wins), regardless of array order', () => {
+    const earlier = makeEntry('2024-01-15', '04:00', new Date('2024-01-15T08:00:00Z'))
+    const later   = makeEntry('2024-01-15', '06:00', new Date('2024-01-15T09:00:00Z'))
+    expect(getEffectiveDayStart([earlier, later], '2024-01-15')).toBe('06:00')
+    // Order-independence: same result with the array reversed.
+    expect(getEffectiveDayStart([later, earlier], '2024-01-15')).toBe('06:00')
   })
 })
 

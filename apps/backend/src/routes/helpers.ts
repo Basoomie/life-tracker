@@ -24,30 +24,6 @@ export function badRequest(reply: FastifyReply, error: string, message: string) 
   return reply.status(400).send({ error, message })
 }
 
-// ── Date helper ───────────────────────────────────────────────────────────────
-
-/**
- * Returns the current local calendar date as YYYY-MM-DD.
- *
- * "Local" here means the host process's system timezone — see
- * packages/shared/src/domain/day-start.ts, whose bucketTimestamp() uses the same
- * convention. Using UTC would make this disagree with a native <input type="date">
- * (always local) for part of every day, splitting completions/time logs recorded
- * "today" across two different appliesToDay values depending on which UI path
- * produced the date string. Matches the frontend's todayStr() (see
- * apps/frontend/src/lib/date-range.ts).
- */
-export function todayLocal(): string {
-  const d = new Date()
-  return (
-    String(d.getFullYear()) +
-    '-' +
-    String(d.getMonth() + 1).padStart(2, '0') +
-    '-' +
-    String(d.getDate()).padStart(2, '0')
-  )
-}
-
 // ── Occurrence enrichment ─────────────────────────────────────────────────────
 
 // Event types that determine the occurrence's disposition.

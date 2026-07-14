@@ -21,7 +21,7 @@ import type { Pool } from 'pg'
 import { runBackgroundJob } from './domain/materialization'
 import { runScheduledReviews } from './review/generate'
 import { findSoleUser } from './db/repos/users'
-import { todayLocal } from './routes/helpers'
+import { resolveLogicalToday } from './domain/day'
 
 const POLL_INTERVAL_MS = 60 * 60 * 1000
 
@@ -97,7 +97,15 @@ export function startScheduler(pool: Pool): void {
 
   async function tick() {
     try {
-      lastRunDay = await runDailyTick(pool, todayLocal(), lastRunDay)
+      // §6.7 — bucket "now" through the user's day-start timeline before deciding
+      // whether the logical day has advanced; a raw calendar-day rollover isn't
+      // enough (see resolveLogicalToday). Resolved here, not inside runDailyTick,
+      // because computing it needs the DB (day-start timeline lookup) — findSoleUser
+      // runs a second time inside runDailyTick too, which is a deliberately accepted
+      // duplication to keep that function's existing signature and tests untouched.
+      const resolved = await resolveLogicalToday(pool)
+      if (!resolved) return  // fresh install — bootstrap hasn't created the user yet
+      lastRunDay = await runDailyTick(pool, resolved.today, lastRunDay)
     } catch (err) {
       console.error('[scheduler] daily tick failed', err)
     }

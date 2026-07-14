@@ -6,8 +6,10 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { setupTestDb, teardownTestDb, getTestPool } from './helpers/test-db'
 import * as repos from '../db/repos/index'
+import { findSoleUser } from '../db/repos/users'
 import { ensureOccurrenceMaterialized } from '../domain/materialization'
 import { planDailyTick, previousDay, runDailyTick } from '../scheduler'
+import { resolveLogicalToday } from '../domain/day'
 import type { Item, Occurrence } from '@tracker/shared'
 
 beforeAll(async () => { await setupTestDb() })
@@ -105,5 +107,32 @@ describe('§8.4 runDailyTick: closes out yesterday, never today, and is idempote
 
     const eventsAfterSecond = await repos.findEventsByOccurrence(pool, occYesterday.id, u.id)
     expect(eventsAfterSecond.filter((e) => e.eventType === 'skipped')).toHaveLength(1)
+  })
+})
+
+// ── §6.7 day-start-aware tick: the scheduler must not treat the logical day as
+// advanced (and so must not close out dispositions) until the configured
+// day-start has actually passed, even though the raw calendar day already has ──
+
+describe('§6.7 resolveLogicalToday: scheduler bucketing honors the configured day-start', () => {
+  it('§6.7 with a 4:00am day-start, resolveLogicalToday still reports YESTERDAY at 1:30am and TODAY at 5:00am', async () => {
+    const pool = getTestPool()
+    // Reuses the single user already established by the earlier describe block in
+    // this file — findSoleUser (which resolveLogicalToday calls internally) only
+    // makes sense while exactly one user exists, per this file's existing convention.
+    const existing = await findSoleUser(pool)
+    if (!existing) throw new Error('expected a user from an earlier test in this file')
+
+    await repos.insertDayStartEntry(pool, { userId: existing.id, startsOn: '2020-01-01', value: '04:00' })
+
+    // Local-time Date constructor: "1:30am/5:00am on this date" regardless of the
+    // host machine's UTC offset — deterministic across timezones.
+    const beforeDayStart = await resolveLogicalToday(pool, new Date(2025, 5, 20, 1, 30))
+    expect(beforeDayStart).not.toBeNull()
+    expect(beforeDayStart!.userId).toBe(existing.id)
+    expect(beforeDayStart!.today).toBe('2025-06-19')
+
+    const afterDayStart = await resolveLogicalToday(pool, new Date(2025, 5, 20, 5, 0))
+    expect(afterDayStart!.today).toBe('2025-06-20')
   })
 })

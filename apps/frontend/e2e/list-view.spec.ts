@@ -3,7 +3,11 @@
 
 import { test, expect, type Page } from '@playwright/test'
 import type { OccurrenceWithState } from '@tracker/shared'
-import type { Bucket } from '@tracker/shared'
+import type { Bucket, DayStartEntry } from '@tracker/shared'
+
+function makeDayStartEntry(o: { id: string; value: string; startsOn: string }): DayStartEntry {
+  return { id: o.id, userId: 'u1', value: o.value, startsOn: o.startsOn, recordedAt: new Date() }
+}
 
 // ── Fixture builders ───────────────────────────────────────────────────────
 
@@ -140,7 +144,8 @@ const TRETINOIN_OCC = makeOcc({
 async function setupApiMocks(
   page: Page,
   todayOccs: OccurrenceWithState[],
-  buckets: Bucket[] = BUCKETS
+  buckets: Bucket[] = BUCKETS,
+  dayStartEntries: DayStartEntry[] = []
 ) {
   await page.route('/me', (route) =>
     route.fulfill({ json: { id: 'u1', email: 'test@tracker.local', createdAt: new Date().toISOString() } })
@@ -151,7 +156,7 @@ async function setupApiMocks(
   )
   await page.route('/api/occurrences/today', (route) => route.fulfill({ json: todayOccs }))
   await page.route('/api/buckets',     (route) => route.fulfill({ json: buckets }))
-  await page.route('/api/day-start',   (route) => route.fulfill({ json: [] }))
+  await page.route('/api/day-start',   (route) => route.fulfill({ json: dayStartEntries }))
   await page.route('/api/categories',  (route) => route.fulfill({ json: [] }))
   await page.route('/api/reasons',     (route) => route.fulfill({ json: [] }))
   await page.route('/api/preferences', (route) => route.fulfill({ json: {} }))
@@ -443,6 +448,42 @@ test.describe('§12.3 — Timer + disposition menu are gated to today\'s occurre
     // Future day's row: neither should render
     await expect(futureRow.getByTestId('timer-start')).not.toBeVisible()
     await expect(futureRow.getByTestId('occ-disposition-btn')).not.toBeVisible()
+  })
+
+})
+
+test.describe('§6.7 — "Today" honors the configured day-start, not raw local midnight', () => {
+
+  test('§6.7 with a 4:00am day-start, "Today" at 1:30am fetches and gates on YESTERDAY, not the raw calendar day', async ({ page }) => {
+    // Local 1:30am on Wednesday June 18 — before the configured 4am day-start, so the
+    // logical day is still Tuesday the 17th even though the raw calendar date has
+    // already flipped. Both days stay within the same ISO week (Mon 6/16-Sun 6/22),
+    // unlike June 15/16 which straddle a week boundary and would confound the
+    // "this-week" range switch used below.
+    await page.clock.setFixedTime(new Date('2025-06-18T01:30:00'))
+
+    const stillTodayOcc = makeOcc({ id: 'occ-still-today', itemId: 'item-still-today', name: 'Still Today Task', appliesToDay: '2025-06-17' })
+    const rawMidnightOcc = makeOcc({ id: 'occ-raw-midnight', itemId: 'item-raw-midnight', name: 'Raw Midnight Task', appliesToDay: '2025-06-18' })
+    const dayStartEntries = [makeDayStartEntry({ id: 'ds1', value: '04:00', startsOn: '2020-01-01' })]
+
+    await setupApiMocks(page, [stillTodayOcc, rawMidnightOcc], BUCKETS, dayStartEntries)
+    await goToListView(page)
+
+    // Switch to "This Week" so both days' occurrences render together
+    await page.getByTestId('range-select').selectOption('this-week')
+
+    const stillTodayRow = page.getByTestId('occ-row-occ-still-today')
+    const rawMidnightRow = page.getByTestId('occ-row-occ-raw-midnight')
+    await expect(stillTodayRow).toBeVisible()
+    await expect(rawMidnightRow).toBeVisible()
+
+    // The day-start-bucketed logical day (June 15) is "today" — gets the timer/menu.
+    await expect(stillTodayRow.getByTestId('timer-start')).toBeVisible()
+    await expect(stillTodayRow.getByTestId('occ-disposition-btn')).toBeVisible()
+
+    // The raw calendar day (June 16) is NOT yet "today" per the day-start boundary.
+    await expect(rawMidnightRow.getByTestId('timer-start')).not.toBeVisible()
+    await expect(rawMidnightRow.getByTestId('occ-disposition-btn')).not.toBeVisible()
   })
 
 })
