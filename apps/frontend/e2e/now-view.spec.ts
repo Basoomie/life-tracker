@@ -171,7 +171,7 @@ async function setupApiMocks(
   await page.route('/me', (route) =>
     route.fulfill({ json: { id: 'u1', email: 'test@tracker.local', createdAt: new Date().toISOString() } })
   )
-  await page.route('/api/occurrences/today', (route) =>
+  await page.route(/\/api\/occurrences\?start=.*&end=.*/, (route) =>
     route.fulfill({ json: occurrences })
   )
   await page.route('/api/buckets', (route) =>
@@ -259,7 +259,7 @@ test.describe('§12.2 — Now view tier ordering and rendering', () => {
     // Track whether the child has been completed so the refresh returns updated data
     let tretCompleted = false
 
-    await page.route('/api/occurrences/today', (route) => {
+    await page.route(/\/api\/occurrences\?start=.*&end=.*/, (route) => {
       route.fulfill({
         json: tretCompleted
           ? [routineWith100pct, completedTret]
@@ -346,7 +346,7 @@ test.describe('§12.2 — Now view tier ordering and rendering', () => {
     // §9.1 — the occurrence's loggedMinutes is server-computed from all finalized
     // sessions today; it grows with each stop rather than resetting.
     let stopCount = 0
-    await page.route('/api/occurrences/today', (route) => {
+    await page.route(/\/api\/occurrences\?start=.*&end=.*/, (route) => {
       const loggedMinutes = [0, 5, 15][stopCount]
       route.fulfill({ json: [{ ...TRADING_OCC, loggedMinutes }] })
     })
@@ -430,7 +430,7 @@ test.describe('§12.2 — Now view tier ordering and rendering', () => {
     }
 
     let completed = false
-    await page.route('/api/occurrences/today', (route) => {
+    await page.route(/\/api\/occurrences\?start=.*&end=.*/, (route) => {
       route.fulfill({ json: completed ? [completedTrading] : [TRADING_OCC] })
     })
     await page.route('/api/buckets',     (route) => route.fulfill({ json: BUCKETS }))
@@ -510,7 +510,7 @@ test.describe('§12.2 — Now view tier ordering and rendering', () => {
 
     // After ad-hoc create, the refresh fetches updated occurrences
     let adhocCreated = false
-    await page.route('/api/occurrences/today', (route) => {
+    await page.route(/\/api\/occurrences\?start=.*&end=.*/, (route) => {
       if (adhocCreated) {
         route.fulfill({ json: [newOcc] })
       } else {
@@ -585,7 +585,7 @@ test.describe('§12.2 — Now view tier ordering and rendering', () => {
         route.fulfill({ json: {} })
       }
     })
-    await page.route('/api/occurrences/today', (route) => route.fulfill({ json: [] }))
+    await page.route(/\/api\/occurrences\?start=.*&end=.*/, (route) => route.fulfill({ json: [] }))
     await page.route('/api/buckets',           (route) => route.fulfill({ json: [] }))
     await page.route('/api/categories',        (route) => route.fulfill({ json: [] }))
     await page.route('/api/reasons',           (route) => route.fulfill({ json: [] }))
@@ -729,8 +729,8 @@ test.describe('§9.3 — Timer persistence across navigation', () => {
     await page.clock.setFixedTime(new Date('2025-06-16T05:00:00'))
     await page.route('/me', (r) => r.fulfill({ json: { id: 'u1', email: 'test@tracker.local', createdAt: new Date().toISOString() } }))
 
-    // Set up both Now and List view endpoints
-    await page.route('/api/occurrences/today', (route) => route.fulfill({ json: [TRADING_OCC] }))
+    // Set up the range endpoint shared by Now and List (both request
+    // start=end=today once "today" is bucketed client-side)
     await page.route(/\/api\/occurrences\?start=.*&end=.*/, (route) => route.fulfill({ json: [TRADING_OCC] }))
     await page.route('/api/buckets', (route) => route.fulfill({ json: BUCKETS }))
     await page.route('/api/day-start', (route) => route.fulfill({ json: [] }))
@@ -809,7 +809,7 @@ test.describe('§3 — Archive / delete task (Now view)', () => {
     await page.route('/me', (r) => r.fulfill({ json: { id: 'u1', email: 'test@tracker.local', createdAt: new Date().toISOString() } }))
 
     let archived = false
-    await page.route('/api/occurrences/today', (route) =>
+    await page.route(/\/api\/occurrences\?start=.*&end=.*/, (route) =>
       route.fulfill({ json: archived ? [] : [ROUTINE_OCC] })
     )
     await page.route('/api/buckets', (route) => route.fulfill({ json: BUCKETS }))
@@ -998,7 +998,7 @@ test.describe('Manual child reordering (drag-and-drop, Now view)', () => {
 
     let todayFetchCount = 0
     await page.route('/me', (r) => r.fulfill({ json: { id: 'u1', email: 'test@tracker.local', createdAt: new Date().toISOString() } }))
-    await page.route('/api/occurrences/today', (route) => {
+    await page.route(/\/api\/occurrences\?start=.*&end=.*/, (route) => {
       todayFetchCount++
       return route.fulfill({ json: [ROUTINE_OCC, CHILD_A_OCC, CHILD_B_OCC] })
     })
@@ -1096,7 +1096,7 @@ test.describe('Manual root reordering (drag-and-drop, unscheduled tier, Now view
 
     let todayFetchCount = 0
     await page.route('/me', (r) => r.fulfill({ json: { id: 'u1', email: 'test@tracker.local', createdAt: new Date().toISOString() } }))
-    await page.route('/api/occurrences/today', (route) => {
+    await page.route(/\/api\/occurrences\?start=.*&end=.*/, (route) => {
       todayFetchCount++
       return route.fulfill({ json: [ROOT_A_OCC, ROOT_B_OCC] })
     })

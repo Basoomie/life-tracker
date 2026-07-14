@@ -150,11 +150,11 @@ async function setupApiMocks(
   await page.route('/me', (route) =>
     route.fulfill({ json: { id: 'u1', email: 'test@tracker.local', createdAt: new Date().toISOString() } })
   )
-  // Mock range endpoint (used by List view)
+  // Mock range endpoint (used by List and Now views alike — both request
+  // start=end=today for "today" once bucketed client-side)
   await page.route(/\/api\/occurrences\?start=.*&end=.*/, (route) =>
     route.fulfill({ json: todayOccs })
   )
-  await page.route('/api/occurrences/today', (route) => route.fulfill({ json: todayOccs }))
   await page.route('/api/buckets',     (route) => route.fulfill({ json: buckets }))
   await page.route('/api/day-start',   (route) => route.fulfill({ json: dayStartEntries }))
   await page.route('/api/categories',  (route) => route.fulfill({ json: [] }))
@@ -262,7 +262,6 @@ test.describe('§12.3 — List view', () => {
       fetchedRanges.push(route.request().url())
       route.fulfill({ json: [] })
     })
-    await page.route('/api/occurrences/today', (route) => route.fulfill({ json: [] }))
     await page.route('/api/buckets',     (route) => route.fulfill({ json: [] }))
     await page.route('/api/day-start',   (route) => route.fulfill({ json: [] }))
     await page.route('/api/categories',  (route) => route.fulfill({ json: [] }))
@@ -303,7 +302,6 @@ test.describe('§12.3 — List view', () => {
       fetchedRanges.push(route.request().url())
       route.fulfill({ json: [] })
     })
-    await page.route('/api/occurrences/today', (route) => route.fulfill({ json: [] }))
     await page.route('/api/buckets',     (route) => route.fulfill({ json: [] }))
     await page.route('/api/day-start',   (route) => route.fulfill({ json: [] }))
     await page.route('/api/categories',  (route) => route.fulfill({ json: [] }))
@@ -448,6 +446,28 @@ test.describe('§12.3 — Timer + disposition menu are gated to today\'s occurre
     // Future day's row: neither should render
     await expect(futureRow.getByTestId('timer-start')).not.toBeVisible()
     await expect(futureRow.getByTestId('occ-disposition-btn')).not.toBeVisible()
+  })
+
+  test('§9.1 a non-today occurrence with logged time shows the read-only total, never a play button', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2025-06-16T09:00:00'))
+
+    const pastOcc = makeOcc({
+      id: 'occ-past', itemId: 'item-past', name: 'Yesterday Reading',
+      appliesToDay: '2025-06-10', loggedMinutes: 45,
+    })
+
+    await setupApiMocks(page, [pastOcc])
+    await goToListView(page)
+
+    // Navigate to the occurrence's own day so it's within the requested range
+    // (List filters rendered rows to the selected range, same as the real backend would).
+    await page.getByTestId('range-custom-date').fill('2025-06-10')
+    await expect(page.getByTestId('range-select')).toHaveValue('custom')
+
+    const row = page.getByTestId('occ-row-occ-past')
+    await expect(row.getByTestId('timer-logged')).toHaveText('45:00')
+    await expect(row.getByTestId('timer-start')).not.toBeVisible()
+    await expect(row.getByTestId('timer-running')).not.toBeVisible()
   })
 
 })
@@ -661,7 +681,6 @@ test.describe('§3 — Archive / delete task (List view)', () => {
     await page.route(/\/api\/occurrences\?start=.*&end=.*/, (route) =>
       route.fulfill({ json: archived ? [] : [UNSCHEDULED] })
     )
-    await page.route('/api/occurrences/today', (route) => route.fulfill({ json: [UNSCHEDULED] }))
     await page.route('/api/buckets', (route) => route.fulfill({ json: BUCKETS }))
     await page.route('/api/day-start', (route) => route.fulfill({ json: [] }))
     await page.route('/api/categories', (route) => route.fulfill({ json: [] }))

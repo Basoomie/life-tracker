@@ -5,7 +5,7 @@ test('frontend loads and renders the app heading', async ({ page }) => {
   await page.route('/me', (route) =>
     route.fulfill({ json: { id: 'u1', email: 'test@tracker.local', createdAt: new Date().toISOString() } })
   )
-  await page.route('/api/occurrences/today', (route) => route.fulfill({ json: [] }))
+  await page.route(/\/api\/occurrences\?start=.*&end=.*/, (route) => route.fulfill({ json: [] }))
   await page.route('/api/buckets', (route) => route.fulfill({ json: [] }))
   await page.route('/api/categories', (route) => route.fulfill({ json: [] }))
   await page.route('/api/preferences', (route) => route.fulfill({ json: {} }))

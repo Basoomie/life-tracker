@@ -3,7 +3,7 @@
 //
 // The API is mocked via page.route(); a mutable `sessions` array in each test
 // closure stands in for the server's event-sourced session list so
-// GET /occurrences/:id/sessions and GET /occurrences/today (loggedMinutes)
+// GET /occurrences/:id/sessions and GET /occurrences?start=&end= (loggedMinutes)
 // stay consistent with each other across add/edit/delete, the same way the
 // real backend derives both from the same event stream.
 
@@ -84,7 +84,7 @@ async function setupSessionMocks(page: Page, sessions: SessionSummary[]) {
   await page.route('/me', (route) =>
     route.fulfill({ json: { id: 'u1', email: 'test@tracker.local', createdAt: new Date().toISOString() } })
   )
-  await page.route('/api/occurrences/today', (route) =>
+  await page.route(/\/api\/occurrences\?start=.*&end=.*/, (route) =>
     route.fulfill({ json: [{ ...OCC, loggedMinutes: sumMinutes(sessions) }] })
   )
   await page.route('/api/buckets', (route) => route.fulfill({ json: BUCKETS }))
@@ -257,7 +257,7 @@ test.describe('§9.1 — Session manager: list, add, edit, delete individual log
     await page.route('/me', (route) =>
       route.fulfill({ json: { id: 'u1', email: 'test@tracker.local', createdAt: new Date().toISOString() } })
     )
-    await page.route('/api/occurrences/today', (route) =>
+    await page.route(/\/api\/occurrences\?start=.*&end=.*/, (route) =>
       route.fulfill({ json: [{ ...completedOcc, loggedMinutes: sumMinutes(sessions) }] })
     )
     await page.route('/api/buckets', (route) => route.fulfill({ json: BUCKETS }))

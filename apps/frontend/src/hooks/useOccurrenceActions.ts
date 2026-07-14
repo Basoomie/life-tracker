@@ -70,7 +70,7 @@ export function useOccurrenceActions(
   }, [setOccurrences, refresh])
 
   const handleTimerStart = useCallback(async (occ: OccurrenceWithState) => {
-    const { sessionId, occurrenceId } = await api.sessions.start({ itemId: occ.itemId })
+    const { sessionId, occurrenceId } = await api.sessions.start({ itemId: occ.itemId, day: occ.appliesToDay })
     setSessions((prev) => {
       const next = new Map(prev)
       next.set(occurrenceId, {

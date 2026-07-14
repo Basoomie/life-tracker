@@ -1,4 +1,9 @@
 // Fetches today's occurrences + buckets and polls every 30s for live state.
+//
+// "Today" is the caller's responsibility (§6.7 — day-start-bucketed, computed
+// client-side via bucketTimestamp, same as List/Calendar) rather than this hook
+// asking the server independently — that asymmetry used to let Now disagree with
+// List/Calendar about which day "today" was.
 
 import { useState, useEffect, useCallback, useMemo, type Dispatch, type SetStateAction } from 'react'
 import { api } from '../lib/api'
@@ -21,6 +26,7 @@ export type NowDataResult = {
 }
 
 export function useNowData(
+  today: string,   // YYYY-MM-DD — day-start-bucketed, computed by the caller
   imminentWindowMin = 90,
   alwaysShowNext = false
 ): NowDataResult {
@@ -32,7 +38,7 @@ export function useNowData(
 
   const fetchOccurrences = useCallback(async () => {
     try {
-      const data = await api.occurrences.today()
+      const data = await api.occurrences.range(today, today)
       setOccurrences(data)
       setError(null)
     } catch (e) {
@@ -40,7 +46,7 @@ export function useNowData(
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [today])
 
   // Buckets are stable config — fetch once
   useEffect(() => {

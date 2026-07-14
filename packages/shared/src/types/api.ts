@@ -149,6 +149,7 @@ export type AdHocCaptureBody = {
   name: string
   categoryId?: string | null
   valence?: Valence | null
+  day?: string   // YYYY-MM-DD; defaults to today
 }
 
 export type CreateCategoryBody = {

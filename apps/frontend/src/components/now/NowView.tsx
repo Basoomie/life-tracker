@@ -3,6 +3,8 @@
 
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import { useNowData } from '../../hooks/useNowData'
+import { useDayStartEntries } from '../../hooks/useRangeData'
+import { bucketTimestamp } from '@tracker/shared'
 import { TierSection } from './TierSection'
 import { OccurrenceRow } from './OccurrenceRow'
 import { AdHocModal } from './AdHocModal'
@@ -41,8 +43,16 @@ export function NowView({ onEditItem }: Props) {
     localStorage.setItem('tracker:alwaysNext', String(alwaysNext))
   }, [alwaysNext])
 
+  // §6.7 — "today" honors the user's configured day-start boundary, not raw local
+  // midnight, and is computed the same way List/Calendar compute it so all three
+  // views agree on which day "today" is instead of each asking the server
+  // independently. Falls back to plain local day until dayStartEntries loads
+  // (bucketTimestamp(now, []) already equals that), self-correcting on load.
+  const dayStartEntries = useDayStartEntries()
+  const today = bucketTimestamp(new Date(), dayStartEntries)
+
   const { tiers, occurrences, buckets, loading, error, refresh, setOccurrences } =
-    useNowData(imminentWindow, alwaysNext)
+    useNowData(today, imminentWindow, alwaysNext)
 
   // Full parent/child tree for rendering (NowView only ever shows today, so
   // no per-day bucketing needed). Children never appear as independent tier
@@ -143,7 +153,7 @@ export function NowView({ onEditItem }: Props) {
   // ── Timer ──────────────────────────────────────────────────────────────────
 
   const handleTimerStart = useCallback(async (occ: OccurrenceWithState) => {
-    const { sessionId, occurrenceId } = await api.sessions.start({ itemId: occ.itemId })
+    const { sessionId, occurrenceId } = await api.sessions.start({ itemId: occ.itemId, day: occ.appliesToDay })
     setSessions((prev) => {
       const next = new Map(prev)
       next.set(occurrenceId, {
@@ -252,6 +262,7 @@ export function NowView({ onEditItem }: Props) {
       name,
       categoryId: categoryId ?? undefined,
       valence: valence ?? undefined,
+      day: today,
     })
     setSessions((prev) => {
       const next = new Map(prev)
@@ -266,13 +277,18 @@ export function NowView({ onEditItem }: Props) {
       return next
     })
     refresh()
-  }, [refresh])
+  }, [refresh, today])
 
   // ── Date display ───────────────────────────────────────────────────────────
+  // Derived from the same bucketed `today` the data was fetched with (rather than
+  // a fresh, unbucketed `new Date()`), so the header always describes what's shown.
 
-  const today = new Date().toLocaleDateString(undefined, {
-    weekday: 'long', month: 'long', day: 'numeric',
-  })
+  const todayLabel = useMemo(() => {
+    const [y, m, d] = today.split('-').map(Number)
+    return new Date(y, m - 1, d).toLocaleDateString(undefined, {
+      weekday: 'long', month: 'long', day: 'numeric',
+    })
+  }, [today])
 
   // ── Render helpers ─────────────────────────────────────────────────────────
 
@@ -339,7 +355,7 @@ export function NowView({ onEditItem }: Props) {
     <>
       <div className="now-view">
         <div className="now-view__toolbar">
-          <span className="now-view__date">{today}</span>
+          <span className="now-view__date">{todayLabel}</span>
           <button
             className="btn btn--ghost now-view__adhoc-btn"
             onClick={() => setShowAdHoc(true)}

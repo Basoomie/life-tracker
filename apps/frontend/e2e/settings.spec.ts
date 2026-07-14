@@ -41,7 +41,7 @@ async function setupMocks(page: Page, state: MockState) {
     route.fulfill({ json: { id: 'u1', email: 'test@tracker.local', createdAt: new Date().toISOString() } })
   )
   // Standard routes the app hits on load
-  await page.route('/api/occurrences/today', (route) => route.fulfill({ json: [] }))
+  await page.route(/\/api\/occurrences\?start=.*&end=.*/, (route) => route.fulfill({ json: [] }))
   await page.route('/api/preferences', (route) => route.fulfill({ json: {} }))
 
   // Day-start: simple GET-only (overridden in specific tests)
@@ -476,7 +476,7 @@ test.describe('§7/§3.4 CategoryPicker and ReasonPicker — only non-archived s
 
     // Test ReasonPicker: open disposition modal via skip-like flow
     // (We mock an occurrence so we can open the disposition modal)
-    await page.route('/api/occurrences/today', (route) =>
+    await page.route(/\/api\/occurrences\?start=.*&end=.*/, (route) =>
       route.fulfill({
         json: [{
           id: 'occ-1', userId: 'u1', itemId: 'item-1', appliesToDay: '2025-06-16',

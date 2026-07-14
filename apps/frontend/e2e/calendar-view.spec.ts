@@ -183,7 +183,6 @@ async function setupCalApiMocks(
   await page.route(/\/api\/occurrences\?start=.*&end=.*/, (route) =>
     route.fulfill({ json: occs })
   )
-  await page.route('/api/occurrences/today', (route) => route.fulfill({ json: occs }))
   await page.route('/api/buckets',     (route) => route.fulfill({ json: buckets }))
   await page.route('/api/day-start',   (route) => route.fulfill({ json: dayStartEntries }))
   await page.route('/api/categories',  (route) => route.fulfill({ json: [] }))
@@ -519,7 +518,6 @@ test.describe('§12.4 — Calendar view custom date picker', () => {
       fetchedRanges.push(route.request().url())
       route.fulfill({ json: [] })
     })
-    await page.route('/api/occurrences/today', (route) => route.fulfill({ json: [] }))
     await page.route('/api/buckets',     (route) => route.fulfill({ json: BUCKETS }))
     await page.route('/api/day-start',   (route) => route.fulfill({ json: DAY_START_ENTRIES }))
     await page.route('/api/categories',  (route) => route.fulfill({ json: [] }))
@@ -686,7 +684,6 @@ test.describe('§3 — Archive / delete task (Calendar view)', () => {
     await page.route(/\/api\/occurrences\?start=.*&end=.*/, (route) =>
       route.fulfill({ json: archived ? [] : [UNSCHEDULED] })
     )
-    await page.route('/api/occurrences/today', (route) => route.fulfill({ json: archived ? [] : [UNSCHEDULED] }))
     await page.route('/api/buckets', (route) => route.fulfill({ json: BUCKETS }))
     await page.route('/api/day-start', (route) => route.fulfill({ json: DAY_START_ENTRIES }))
     await page.route('/api/categories', (route) => route.fulfill({ json: [] }))
@@ -746,6 +743,24 @@ test.describe('§12.4 — Timer + disposition menu are gated to today\'s occurre
     // Future day's row: neither should render
     await expect(futureRow.getByTestId('timer-start')).not.toBeVisible()
     await expect(futureRow.getByTestId('occ-disposition-btn')).not.toBeVisible()
+  })
+
+  test('§9.1 a non-today occurrence with logged time shows the read-only total, never a play button', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2025-06-16T07:00:00'))
+
+    const futureOcc = makeOcc({
+      id: 'occ-future-logged', itemId: 'item-future-logged', name: 'Future Reading',
+      appliesToDay: '2025-06-18', loggedMinutes: 45,
+    })
+
+    await setupCalApiMocks(page, [futureOcc])
+    await goToCalendarView(page)
+    await page.getByTestId('cal-range-select').selectOption('this-week')
+
+    const row = desktopGrid(page).getByTestId('cal-gutter-2025-06-18').getByTestId('occ-row-occ-future-logged')
+    await expect(row.getByTestId('timer-logged')).toHaveText('45:00')
+    await expect(row.getByTestId('timer-start')).not.toBeVisible()
+    await expect(row.getByTestId('timer-running')).not.toBeVisible()
   })
 
 })

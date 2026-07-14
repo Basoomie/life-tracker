@@ -14,7 +14,7 @@ export async function adHocRoutes(app: FastifyInstance) {
   app.post('/ad-hoc', async (req, reply) => {
     const body = req.body as AdHocCaptureBody
     const userId = req.userId
-    const today = await logicalToday(pool, userId)
+    const today = body.day ?? (await logicalToday(pool, userId))
 
     // §9.2: ad_hoc items use creationSource 'ad_hoc', no recurrence, skip disposition
     const item = await repos.insertItem(pool, {

@@ -8,8 +8,10 @@ type Props = {
   occ: OccurrenceWithState
   buckets: Bucket[]
   isChild?: boolean
-  // Timer + skip/excuse/carry-forward only make sense for the current day's
-  // occurrences — defaults to true since NowView only ever shows today.
+  // Live timer controls (start/pause/resume/stop) and skip/excuse/carry-forward
+  // only make sense for the current day's occurrences — a non-today occurrence
+  // still shows its logged-time total, just read-only, via TimerControl's
+  // readOnly branch. Defaults to true since NowView only ever shows today.
   isToday?: boolean
   session: SessionState | undefined
   onComplete: () => void
@@ -94,7 +96,7 @@ export function OccurrenceRow({
 
       {/* Actions */}
       <div className="occ-actions">
-        {occ.id && isToday && (
+        {occ.id && (
           <TimerControl
             session={session}
             loggedMinutes={occ.loggedMinutes}
@@ -102,7 +104,7 @@ export function OccurrenceRow({
             onPause={onTimerPause}
             onResume={onTimerResume}
             onStop={onTimerStop}
-            readOnly={isComplete}
+            readOnly={isComplete || !isToday}
           />
         )}
         {onManageSessions && occ.id && (

@@ -16,7 +16,6 @@ import {
 } from '../domain/completion'
 import { skipOccurrenceByUser, excuseOccurrenceByUser, carryForward } from '../domain/dispositions'
 import { notFound, badRequest, enrichOccurrence } from './helpers'
-import { logicalToday } from '../domain/day'
 import type { DeclarePercentBody, DispositionBody, CarryForwardBody, RetroactiveBody } from '@tracker/shared'
 
 // An occurrence whose own item has children is a parent node — its completion
@@ -36,15 +35,6 @@ export async function occurrenceRoutes(app: FastifyInstance) {
     }
     const userId = req.userId
     const occs = await getOccurrencesInRange(pool, userId, start, end)
-    const enriched = await Promise.all(occs.map((o) => enrichOccurrence(pool, o, userId)))
-    return reply.send(enriched)
-  })
-
-  // GET /occurrences/today — shortcut for start=end=today
-  app.get('/occurrences/today', async (req, reply) => {
-    const userId = req.userId
-    const today = await logicalToday(pool, userId)
-    const occs = await getOccurrencesInRange(pool, userId, today, today)
     const enriched = await Promise.all(occs.map((o) => enrichOccurrence(pool, o, userId)))
     return reply.send(enriched)
   })

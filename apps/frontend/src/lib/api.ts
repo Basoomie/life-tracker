@@ -84,8 +84,6 @@ export const api = {
   },
 
   occurrences: {
-    today: () =>
-      apiFetch<OccurrenceWithState[]>('/occurrences/today'),
     range: (start: string, end: string) =>
       apiFetch<OccurrenceWithState[]>(`/occurrences?start=${start}&end=${end}`),
     complete: (id: string) =>
