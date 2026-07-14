@@ -8,7 +8,7 @@ import { pool } from '../db'
 import * as repos from '../db/repos/index'
 import { ensureOccurrenceMaterialized } from '../domain/materialization'
 import { computeSessionDurationMin } from '../domain/sessions'
-import { notFound, todayUTC } from './helpers'
+import { notFound, todayLocal } from './helpers'
 import type { StartSessionBody, ManualSessionBody, EditSessionBody } from '@tracker/shared'
 
 export async function sessionRoutes(app: FastifyInstance) {
@@ -20,7 +20,7 @@ export async function sessionRoutes(app: FastifyInstance) {
     const item = await repos.findItemById(pool, body.itemId, userId)
     if (!item) return notFound(reply, 'item')
 
-    const day = body.day ?? todayUTC()
+    const day = body.day ?? todayLocal()
     const occ = await ensureOccurrenceMaterialized(pool, item, day, userId)
 
     const sessionId = randomUUID()
@@ -112,7 +112,7 @@ export async function sessionRoutes(app: FastifyInstance) {
     const item = await repos.findItemById(pool, body.itemId, userId)
     if (!item) return notFound(reply, 'item')
 
-    const day = body.day ?? todayUTC()
+    const day = body.day ?? todayLocal()
     const occ = await ensureOccurrenceMaterialized(pool, item, day, userId)
 
     const startedAt = new Date(body.startedAt)

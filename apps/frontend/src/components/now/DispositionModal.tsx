@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { Reason } from '@tracker/shared'
 import { ReasonPicker } from '../shared/ReasonPicker'
+import { todayStr, addDays } from '../../lib/date-range'
 
 type DispositionType = 'skip' | 'excuse' | 'carry-forward'
 
@@ -24,11 +25,7 @@ export function DispositionModal({
   const [selected, setSelected] = useState<DispositionType>('skip')
   const [reasonId, setReasonId] = useState('')
   const [comment, setComment] = useState('')
-  const [targetDay, setTargetDay] = useState(() => {
-    const d = new Date()
-    d.setDate(d.getDate() + 1)
-    return d.toISOString().slice(0, 10)
-  })
+  const [targetDay, setTargetDay] = useState(() => addDays(todayStr(), 1))
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 

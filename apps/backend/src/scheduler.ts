@@ -21,7 +21,7 @@ import type { Pool } from 'pg'
 import { runBackgroundJob } from './domain/materialization'
 import { runScheduledReviews } from './review/generate'
 import { findSoleUser } from './db/repos/users'
-import { todayUTC } from './routes/helpers'
+import { todayLocal } from './routes/helpers'
 
 const POLL_INTERVAL_MS = 60 * 60 * 1000
 
@@ -97,7 +97,7 @@ export function startScheduler(pool: Pool): void {
 
   async function tick() {
     try {
-      lastRunDay = await runDailyTick(pool, todayUTC(), lastRunDay)
+      lastRunDay = await runDailyTick(pool, todayLocal(), lastRunDay)
     } catch (err) {
       console.error('[scheduler] daily tick failed', err)
     }

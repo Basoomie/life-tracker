@@ -4,6 +4,7 @@
 import { useState, useEffect, useRef } from 'react'
 import type { Bucket, Item, CreateItemBody } from '@tracker/shared'
 import { api } from '../../lib/api'
+import { todayStr, addDays } from '../../lib/date-range'
 
 type DayOption = 'today' | 'tomorrow' | 'custom'
 type TimeOption = 'none' | 'bucket' | 'point'
@@ -14,19 +15,10 @@ type Props = {
   onOpenFullEdit: (itemId: string) => void
 }
 
-function todayISO() {
-  return new Date().toISOString().slice(0, 10)
-}
-function tomorrowISO() {
-  const d = new Date()
-  d.setDate(d.getDate() + 1)
-  return d.toISOString().slice(0, 10)
-}
-
 export function QuickAddModal({ buckets, onClose, onOpenFullEdit }: Props) {
   const [name, setName] = useState('')
   const [dayOption, setDayOption] = useState<DayOption>('today')
-  const [customDay, setCustomDay] = useState(todayISO)
+  const [customDay, setCustomDay] = useState(todayStr)
   const [timeOption, setTimeOption] = useState<TimeOption>('none')
   const [bucketId, setBucketId] = useState<string>(buckets[0]?.id ?? '')
   const [pointTime, setPointTime] = useState('')
@@ -39,8 +31,8 @@ export function QuickAddModal({ buckets, onClose, onOpenFullEdit }: Props) {
   useEffect(() => { nameRef.current?.focus() }, [])
 
   function resolveDay(): string {
-    if (dayOption === 'today') return todayISO()
-    if (dayOption === 'tomorrow') return tomorrowISO()
+    if (dayOption === 'today') return todayStr()
+    if (dayOption === 'tomorrow') return addDays(todayStr(), 1)
     return customDay
   }
 

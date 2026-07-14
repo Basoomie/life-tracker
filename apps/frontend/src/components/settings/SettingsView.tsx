@@ -6,6 +6,7 @@
 
 import { useState, useEffect } from 'react'
 import { api } from '../../lib/api'
+import { todayStr } from '../../lib/date-range'
 import { ConfigurableListSection } from './ConfigurableListSection'
 import { BucketSection } from './BucketSection'
 import { DayStartSection } from './DayStartSection'
@@ -33,7 +34,7 @@ function byName<T extends { name: string }>(items: T[]): T[] {
 
 /** Returns the effective HH:MM day-start for today from a timeline. */
 function getEffectiveDayStart(entries: DayStartEntry[]): string {
-  const today = new Date().toISOString().slice(0, 10)
+  const today = todayStr()
   const applicable = entries
     .filter((e) => e.startsOn <= today)
     .sort((a, b) => {

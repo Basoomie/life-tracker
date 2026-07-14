@@ -394,7 +394,10 @@ test.describe('§6.7 Day-start — forward-only timeline append', () => {
     }
     await setupMocks(page, state)
 
-    const today = new Date().toISOString().slice(0, 10)
+    // Local calendar date — matches DayStartSection's todayStr() (see date-range.ts),
+    // not UTC, so this agrees with what the <input type="date"> min/value actually is.
+    const now = new Date()
+    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
     const newEntry = makeDayStartEntry({ id: 'ds-new', value: '05:00', startsOn: today })
 
     // Override day-start route with POST support

@@ -15,6 +15,7 @@ import type {
 } from '@tracker/shared'
 import { api } from '../../lib/api'
 import { CategoryPicker } from '../shared/CategoryPicker'
+import { todayStr } from '../../lib/date-range'
 
 type Props = {
   itemId: string | null   // null = create mode
@@ -27,10 +28,6 @@ type Props = {
 type RecurrenceType = 'daily' | 'days_of_week' | 'interval_day' | 'interval_week' | 'monthly'
 
 const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
-
-function todayISO() {
-  return new Date().toISOString().slice(0, 10)
-}
 
 function buildRecurrenceRule(
   recType: RecurrenceType,
@@ -67,7 +64,7 @@ export function ItemFormModal({ itemId, categories, buckets, onSaved, onClose }:
   const [recType, setRecType] = useState<RecurrenceType>('daily')
   const [recDays, setRecDays] = useState<number[]>([])       // for days_of_week
   const [recEvery, setRecEvery] = useState(2)                // for interval
-  const [anchorDay, setAnchorDay] = useState(todayISO)        // §5.1 — recurrence start day
+  const [anchorDay, setAnchorDay] = useState(todayStr)        // §5.1 — recurrence start day
 
   // Quota
   const [quotaEnabled, setQuotaEnabled] = useState(false)
@@ -82,7 +79,7 @@ export function ItemFormModal({ itemId, categories, buckets, onSaved, onClose }:
   const [plannedDurationMin, setPlannedDurationMin] = useState('')
 
   // One-time day
-  const [day, setDay] = useState(todayISO)
+  const [day, setDay] = useState(todayStr)
 
   // Relationships
   const [allItems, setAllItems] = useState<Item[]>([])
@@ -125,6 +122,8 @@ export function ItemFormModal({ itemId, categories, buckets, onSaved, onClose }:
           if (data.recurrenceRule.type === 'interval') {
             setRecEvery(data.recurrenceRule.every)
           }
+          // Matches itemAnchorDate()'s intentional UTC fallback (packages/shared/src/domain/recurrence.ts)
+          // — the documented pre-amendment default for items with no explicit anchorDay.
           setAnchorDay(data.anchorDay ?? new Date(data.createdAt).toISOString().slice(0, 10))
         }
         if (data.quotaTarget) {

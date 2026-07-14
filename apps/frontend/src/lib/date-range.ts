@@ -1,10 +1,27 @@
 // §12.3 / §12.4 — Range computation for List and Calendar views.
-// All dates are UTC to match backend todayUTC().
+//
+// "Today" is the user's local wall-clock calendar date — matching what a native
+// <input type="date"> shows/highlights as today, and matching the backend's
+// today() helper (see apps/backend/src/routes/helpers.ts). Using UTC here would
+// make the "Today" quick-select disagree with a manually-picked "today" date for
+// part of every day (whenever the local and UTC calendar dates differ), splitting
+// completions/time logs across two appliesToDay buckets for what the user
+// experiences as one day.
+//
+// Once anchored to a date-only YYYY-MM-DD string, all further arithmetic below
+// stays UTC-based deliberately — that's just string date math (no DST pitfalls),
+// not a statement about which day "now" is.
 
 export type RangeKey = 'today' | 'tomorrow' | 'this-week' | 'this-month' | 'custom'
 
 export function todayStr(ref: Date = new Date()): string {
-  return ref.toISOString().slice(0, 10)
+  return (
+    String(ref.getFullYear()) +
+    '-' +
+    String(ref.getMonth() + 1).padStart(2, '0') +
+    '-' +
+    String(ref.getDate()).padStart(2, '0')
+  )
 }
 
 export function addDays(dateStr: string, n: number): string {

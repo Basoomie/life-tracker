@@ -4,7 +4,7 @@
 import type { FastifyInstance } from 'fastify'
 import { pool } from '../db'
 import * as repos from '../db/repos/index'
-import { badRequest, todayUTC } from './helpers'
+import { badRequest, todayLocal } from './helpers'
 import type { CreateDayStartBody } from '@tracker/shared'
 
 export async function dayStartRoutes(app: FastifyInstance) {
@@ -18,7 +18,7 @@ export async function dayStartRoutes(app: FastifyInstance) {
   app.post('/day-start', async (req, reply) => {
     const body = req.body as CreateDayStartBody
     const userId = req.userId
-    const today = todayUTC()
+    const today = todayLocal()
 
     // §6.7 — no retroactive changes: effectiveFrom must be >= today
     if (body.effectiveFrom < today) {

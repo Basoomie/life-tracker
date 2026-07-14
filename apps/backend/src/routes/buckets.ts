@@ -6,7 +6,7 @@ import type { FastifyInstance } from 'fastify'
 import { pool } from '../db'
 import * as repos from '../db/repos/index'
 import { validateBucketTiling } from '../domain/buckets'
-import { notFound, badRequest, todayUTC } from './helpers'
+import { notFound, badRequest, todayLocal } from './helpers'
 import type { CreateBucketBody, UpdateBucketBoundariesBody } from '@tracker/shared'
 
 export async function bucketRoutes(app: FastifyInstance) {
@@ -46,7 +46,7 @@ export async function bucketRoutes(app: FastifyInstance) {
     )
 
     // Get effective day-start; fall back to '00:00' if not configured (§6.6)
-    const dayStartEntry = await repos.findEffectiveDayStart(pool, userId, todayUTC())
+    const dayStartEntry = await repos.findEffectiveDayStart(pool, userId, todayLocal())
     const dayStart = dayStartEntry?.value ?? '00:00'
 
     const tilingError = validateBucketTiling(proposedBuckets, dayStart)

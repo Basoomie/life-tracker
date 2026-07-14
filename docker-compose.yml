@@ -10,6 +10,12 @@ services:
     environment:
       NODE_ENV: production
       PORT: "3000"
+      # IANA timezone name (e.g. America/Phoenix), required so the backend's notion
+      # of "today" (todayLocal() in routes/helpers.ts) matches the user's actual wall
+      # clock. Without this the container defaults to UTC regardless of the host's
+      # timezone, which desyncs from the frontend's local-time "today" for part of
+      # every day. See Dockerfile for the tzdata package this depends on.
+      TZ: "${TZ:?required}"
       DATABASE_URL: "postgresql://${POSTGRES_USER:?required}:${POSTGRES_PASSWORD:?required}@db:5432/${POSTGRES_DB:?required}"
       INITIAL_USER_EMAIL: "${INITIAL_USER_EMAIL:?required}"
       INITIAL_USER_PASSWORD: "${INITIAL_USER_PASSWORD:?required}"

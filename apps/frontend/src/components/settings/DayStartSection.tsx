@@ -8,6 +8,7 @@
 
 import { useState } from 'react'
 import type { DayStartEntry } from '@tracker/shared'
+import { todayStr } from '../../lib/date-range'
 
 type Props = {
   entries: DayStartEntry[]      // ascending order (oldest first)
@@ -15,17 +16,17 @@ type Props = {
 }
 
 export function DayStartSection({ entries, onAppend }: Props) {
-  const todayUTC = new Date().toISOString().slice(0, 10)
+  const today = todayStr()
 
   const currentEntry = [...entries]
-    .filter((e) => e.startsOn <= todayUTC)
+    .filter((e) => e.startsOn <= today)
     .sort((a, b) => {
       if (b.startsOn !== a.startsOn) return b.startsOn.localeCompare(a.startsOn)
       return String(b.recordedAt).localeCompare(String(a.recordedAt))
     })[0]
 
   const [newValue, setNewValue] = useState(currentEntry?.value ?? '04:00')
-  const [effectiveFrom, setEffectiveFrom] = useState(todayUTC)
+  const [effectiveFrom, setEffectiveFrom] = useState(today)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
@@ -91,7 +92,7 @@ export function DayStartSection({ entries, onAppend }: Props) {
                 className="field__input"
                 type="date"
                 value={effectiveFrom}
-                min={todayUTC}
+                min={today}
                 onChange={(e) => { setEffectiveFrom(e.target.value); setSuccess(false) }}
                 required
                 data-testid="day-start-effective-from"
@@ -135,7 +136,7 @@ export function DayStartSection({ entries, onAppend }: Props) {
                 >
                   <span className="ds-timeline__date">from {entry.startsOn}</span>
                   <span className="ds-timeline__value">{entry.value}</span>
-                  {i === 0 && entry.startsOn <= todayUTC && (
+                  {i === 0 && entry.startsOn <= today && (
                     <span className="ds-timeline__badge">active</span>
                   )}
                 </div>

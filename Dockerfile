@@ -18,6 +18,12 @@ RUN npm run build --workspace=apps/frontend
 FROM node:22-alpine AS runtime
 WORKDIR /app
 
+# tzdata: Alpine's musl libc has no built-in zoneinfo database, so without this
+# package a named TZ (e.g. America/Phoenix) silently fails to resolve and Date's
+# local-time getters fall back to UTC — the exact bug this image's TZ env var
+# (see docker-compose.yml) exists to fix. See routes/helpers.ts's todayLocal().
+RUN apk add --no-cache tzdata
+
 COPY package.json package-lock.json ./
 COPY packages/shared/package.json ./packages/shared/
 COPY apps/backend/package.json ./apps/backend/

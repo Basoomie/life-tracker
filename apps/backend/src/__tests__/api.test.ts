@@ -9,6 +9,7 @@ import { setupTestDb, teardownTestDb, getTestPool } from './helpers/test-db'
 import * as repos from '../db/repos/index'
 import { buildApp } from '../app'
 import { ensureOccurrenceMaterialized } from '../domain/materialization'
+import { todayLocal } from '../routes/helpers'
 import type { FastifyInstance } from 'fastify'
 
 beforeAll(async () => { await setupTestDb() })
@@ -429,7 +430,7 @@ describe('§5.4 — POST /items tops up a recurring item\'s horizon on creation,
   it('§5.4 a daily item created via the API has a materialized (non-null id) occurrence for today', async () => {
     const u = await makeUser('api-create-topup-daily@test.com')
     const app = await buildTestApp(u.id)
-    const today = new Date().toISOString().slice(0, 10)
+    const today = todayLocal()
 
     const createRes = await app.inject({
       method: 'POST',
@@ -458,7 +459,7 @@ describe('§5.4 — POST /items tops up a recurring item\'s horizon on creation,
   it('§5.4 a one-time task created via the API is unaffected (still materializes only its own day)', async () => {
     const u = await makeUser('api-create-topup-onetime@test.com')
     const app = await buildTestApp(u.id)
-    const today = new Date().toISOString().slice(0, 10)
+    const today = todayLocal()
 
     const createRes = await app.inject({
       method: 'POST',
@@ -965,7 +966,7 @@ describe('§6.6 — bucket boundary update that breaks tiling is rejected at the
   it('§6.6 PATCH /buckets/:id/boundaries returns 400 when tiling is violated', async () => {
     const u = await makeUser('api-bucket-tiling@test.com')
     const app = await buildTestApp(u.id)
-    const today = new Date().toISOString().slice(0, 10)
+    const today = todayLocal()
 
     // Post day-start at 04:00 (use actual today to pass the >= today validation)
     const dsRes = await app.inject({
@@ -1011,7 +1012,7 @@ describe('§6.7 — day-start write appends to timeline and does not re-bucket p
     const u = await makeUser('api-day-start@test.com')
     const app = await buildTestApp(u.id)
 
-    const today  = new Date().toISOString().slice(0, 10)
+    const today  = todayLocal()
     const future = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
     const past   = '2020-01-01'
 

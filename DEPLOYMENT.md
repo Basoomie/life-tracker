@@ -28,6 +28,7 @@ Fill in every value:
 | Variable | What to set |
 |---|---|
 | `APP_HOST_PORT` | High-range port (e.g. `37801`) — must not conflict with other NAS services |
+| `TZ` | Your IANA timezone name (e.g. `America/Phoenix`) — the backend computes "today" (day boundaries, occurrence day, session defaults) in this timezone. Without it the container defaults to UTC, which will disagree with the frontend's local-time "today" for part of every day. |
 | `POSTGRES_DB` | `tracker` (neutral name; keep it) |
 | `POSTGRES_USER` | `tracker` |
 | `POSTGRES_PASSWORD` | Strong random password — generate with `openssl rand -hex 32` |
