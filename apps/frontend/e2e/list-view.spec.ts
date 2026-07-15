@@ -470,8 +470,14 @@ test.describe('§12.3 — Timer + disposition menu are gated to today\'s occurre
     await expect(row.getByTestId('timer-running')).not.toBeVisible()
   })
 
-  // Not part of the original §12.3 spec — added on direct user request.
-  test('a skipped occurrence still shows its status badge on a non-today row, but no restore button (same today-only gate as the disposition menu)', async ({ page }) => {
+  // Not part of the original §12.3 spec — added on direct user request: a
+  // disposition set on a past day (e.g. auto-skipped end-of-day per §8) must
+  // still be undoable, or a missed manual-completion becomes permanently stuck
+  // as a skip. "Setting" a new disposition stays today-only (the "···" menu),
+  // but "clearing" an existing one is a plain event append with no day
+  // restriction server-side (clearDispositionByUser), so the restore button
+  // must render on any day.
+  test('a skipped occurrence on a non-today row shows its badge and a restore button, but not the disposition menu', async ({ page }) => {
     await page.clock.setFixedTime(new Date('2025-06-16T09:00:00'))
 
     const pastSkipped = makeOcc({
@@ -488,8 +494,36 @@ test.describe('§12.3 — Timer + disposition menu are gated to today\'s occurre
 
     const row = page.getByTestId('occ-row-occ-past-skipped')
     await expect(row.getByTestId('occ-disposition-badge')).toContainText('Skipped')
-    await expect(row.getByTestId('occ-restore-btn')).not.toBeVisible()
+    await expect(row.getByTestId('occ-restore-btn')).toBeVisible()
     await expect(row.getByTestId('occ-disposition-btn')).not.toBeVisible()
+  })
+
+  test('clicking restore on a non-today row clears the disposition even though it is not today', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2025-06-16T09:00:00'))
+
+    const pastSkipped = makeOcc({
+      id: 'occ-past-skipped', itemId: 'item-past-skipped', name: 'Yesterday Skipped',
+      appliesToDay: '2025-06-10',
+      disposition: { type: 'skipped', reasonId: null, comment: null, rescheduledToDay: null, derivedPercentAtClose: null },
+    })
+
+    await setupApiMocks(page, [pastSkipped])
+
+    let clearCalled = false
+    await page.route('/api/occurrences/occ-past-skipped/clear-disposition', (route) => {
+      clearCalled = true
+      route.fulfill({ json: { ...pastSkipped, disposition: { type: 'pending', reasonId: null, comment: null, rescheduledToDay: null, derivedPercentAtClose: null } } })
+    })
+
+    await goToListView(page)
+    await page.getByTestId('range-custom-date').fill('2025-06-10')
+    await expect(page.getByTestId('range-select')).toHaveValue('custom')
+
+    const row = page.getByTestId('occ-row-occ-past-skipped')
+    await row.getByTestId('occ-restore-btn').click()
+
+    expect(clearCalled).toBe(true)
+    await expect(row.getByTestId('occ-disposition-badge')).toHaveCount(0)
   })
 
 })

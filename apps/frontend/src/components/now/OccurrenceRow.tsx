@@ -192,28 +192,31 @@ export function OccurrenceRow({
             🗑
           </button>
         )}
-        {occ.id && isToday && (
-          isDispositioned ? (
-            <button
-              className="disp-btn"
-              onClick={onClearDisposition}
-              aria-label={`Remove ${dispositionMeta.label.toLowerCase()} status from ${occ.snapshot.name}`}
-              data-testid="occ-restore-btn"
-              title={`Remove "${dispositionMeta.label}" status`}
-            >
-              ↺
-            </button>
-          ) : (
-            <button
-              className="disp-btn"
-              onClick={onDisposition}
-              aria-label="More options"
-              data-testid="occ-disposition-btn"
-              title="Skip / excuse / carry forward"
-            >
-              ···
-            </button>
-          )
+        {occ.id && isDispositioned && (
+          // Undoing an existing skip/excuse/carry-forward is valid on any day —
+          // unlike *setting* one, "clear" just appends a disposition_cleared event
+          // and has no isToday restriction server-side (clearDispositionByUser).
+          // Gating this on isToday would strand yesterday's auto-skips forever.
+          <button
+            className="disp-btn"
+            onClick={onClearDisposition}
+            aria-label={`Remove ${dispositionMeta.label.toLowerCase()} status from ${occ.snapshot.name}`}
+            data-testid="occ-restore-btn"
+            title={`Remove "${dispositionMeta.label}" status`}
+          >
+            ↺
+          </button>
+        )}
+        {occ.id && isToday && !isDispositioned && (
+          <button
+            className="disp-btn"
+            onClick={onDisposition}
+            aria-label="More options"
+            data-testid="occ-disposition-btn"
+            title="Skip / excuse / carry forward"
+          >
+            ···
+          </button>
         )}
       </div>
     </div>
