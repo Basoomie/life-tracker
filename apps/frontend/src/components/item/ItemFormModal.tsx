@@ -87,8 +87,14 @@ export function ItemFormModal({ itemId, categories, buckets, onSaved, onClose }:
   const [initialPrereqIds, setInitialPrereqIds] = useState<string[]>([])
   const [parentId, setParentId] = useState<string | null>(null)
 
-  // Disposition
-  const [dispositionPolicy, setDispositionPolicy] = useState<DispositionPolicy>('skip')
+  // Disposition — §8.1 default: one-time tasks default to 'require_manual' (a
+  // missed one-off usually means "haven't gotten to it," not "choosing to skip
+  // it"); recurring habits keep the spec's stated default of 'skip'. Matches
+  // the backend default in routes/items.ts. `dispositionTouched` tracks whether
+  // the user has manually picked a value, so toggling Type in create mode can
+  // keep swapping the default without ever clobbering an explicit choice.
+  const [dispositionPolicy, setDispositionPolicy] = useState<DispositionPolicy>('require_manual')
+  const [dispositionTouched, setDispositionTouched] = useState(false)
 
   // UI
   const [loading, setLoading] = useState(itemId !== null)
@@ -162,6 +168,17 @@ export function ItemFormModal({ itemId, categories, buckets, onSaved, onClose }:
   const parentCandidates = allItems.filter(
     (it) => it.id !== itemId && !it.archivedAt
   )
+
+  // §8.1 — switching Type in create mode re-defaults the disposition policy
+  // (skip for recurring, require_manual for one-time), unless the user already
+  // picked one explicitly. Edit mode never touches this — dispositionPolicy
+  // there reflects the item's saved config, loaded once above.
+  function handleTypeChange(recurring: boolean) {
+    setIsRecurring(recurring)
+    if (!isEdit && !dispositionTouched) {
+      setDispositionPolicy(recurring ? 'skip' : 'require_manual')
+    }
+  }
 
   function togglePrereq(id: string) {
     setSelectedPrereqIds((prev) =>
@@ -388,7 +405,7 @@ export function ItemFormModal({ itemId, categories, buckets, onSaved, onClose }:
                     name="if-type"
                     value="one-time"
                     checked={!isRecurring}
-                    onChange={() => setIsRecurring(false)}
+                    onChange={() => handleTypeChange(false)}
                     className="sr-only"
                   />
                   One-time task
@@ -402,7 +419,7 @@ export function ItemFormModal({ itemId, categories, buckets, onSaved, onClose }:
                     name="if-type"
                     value="recurring"
                     checked={isRecurring}
-                    onChange={() => setIsRecurring(true)}
+                    onChange={() => handleTypeChange(true)}
                     className="sr-only"
                   />
                   Recurring habit
@@ -742,7 +759,7 @@ export function ItemFormModal({ itemId, categories, buckets, onSaved, onClose }:
                           key={val}
                           type="button"
                           className={`disp-option${dispositionPolicy === val ? ' disp-option--selected' : ''}`}
-                          onClick={() => setDispositionPolicy(val)}
+                          onClick={() => { setDispositionPolicy(val); setDispositionTouched(true) }}
                           data-testid={`if-disp-${val}`}
                         >
                           <span className="disp-option__icon">{icon}</span>

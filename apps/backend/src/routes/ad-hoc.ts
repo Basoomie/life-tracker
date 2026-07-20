@@ -16,7 +16,8 @@ export async function adHocRoutes(app: FastifyInstance) {
     const userId = req.userId
     const today = body.day ?? (await logicalToday(pool, userId))
 
-    // §9.2: ad_hoc items use creationSource 'ad_hoc', no recurrence, skip disposition
+    // §9.2 / §8.1: ad_hoc items are one-time tasks (no recurrence) — same default
+    // as any other one-time task (routes/items.ts): 'require_manual', not 'skip'.
     const item = await repos.insertItem(pool, {
       userId,
       name: body.name,
@@ -25,7 +26,7 @@ export async function adHocRoutes(app: FastifyInstance) {
       recurrenceRule: null,         // one-time task
       creationSource: 'ad_hoc',
       timingPrecision: 'none',
-      dispositionPolicy: 'skip',
+      dispositionPolicy: 'require_manual',
     })
 
     // §10.2 — template_created event

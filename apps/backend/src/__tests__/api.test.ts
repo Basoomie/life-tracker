@@ -484,6 +484,80 @@ describe('§5.4 — POST /items tops up a recurring item\'s horizon on creation,
   })
 })
 
+// ── §8.1 amendment — one-time tasks default to require_manual, not skip ───────
+// Not part of the original §8.1 spec text — added on direct user request: a
+// missed one-off is far more often "haven't gotten to it yet" than a deliberate
+// skip. Recurring habits keep the spec's stated 'skip' default.
+
+describe('§8.1 amendment — POST /items disposition-policy default depends on recurrence', () => {
+  it('§8.1 a one-time item (no recurrenceRule) created without an explicit dispositionPolicy defaults to require_manual', async () => {
+    const u = await makeUser('api-disp-default-onetime@test.com')
+    const app = await buildTestApp(u.id)
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/items',
+      payload: { name: 'Renew passport', recurrenceRule: null, creationSource: 'planned' },
+    })
+    expect(res.statusCode).toBe(201)
+    expect(JSON.parse(res.body).dispositionPolicy).toBe('require_manual')
+
+    await app.close()
+  })
+
+  it('§8.1 a recurring item created without an explicit dispositionPolicy still defaults to skip', async () => {
+    const u = await makeUser('api-disp-default-recurring@test.com')
+    const app = await buildTestApp(u.id)
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/items',
+      payload: { name: 'Daily habit', recurrenceRule: { type: 'daily' }, creationSource: 'planned' },
+    })
+    expect(res.statusCode).toBe(201)
+    expect(JSON.parse(res.body).dispositionPolicy).toBe('skip')
+
+    await app.close()
+  })
+
+  it('§8.1 an explicit dispositionPolicy in the request body is never overridden by the recurrence-based default', async () => {
+    const u = await makeUser('api-disp-default-explicit@test.com')
+    const app = await buildTestApp(u.id)
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/items',
+      payload: {
+        name: 'One-off, but excused by choice',
+        recurrenceRule: null,
+        creationSource: 'planned',
+        dispositionPolicy: 'excuse',
+      },
+    })
+    expect(res.statusCode).toBe(201)
+    expect(JSON.parse(res.body).dispositionPolicy).toBe('excuse')
+
+    await app.close()
+  })
+
+  it('§9.2 / §8.1 an ad-hoc capture (also a one-time task) defaults to require_manual', async () => {
+    const u = await makeUser('api-disp-default-adhoc@test.com')
+    const app = await buildTestApp(u.id)
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/ad-hoc',
+      payload: { name: 'Spontaneous workout' },
+    })
+    expect(res.statusCode).toBe(201)
+
+    const item = await repos.findItemById(getTestPool(), JSON.parse(res.body).item.id, u.id)
+    expect(item!.dispositionPolicy).toBe('require_manual')
+
+    await app.close()
+  })
+})
+
 // ── §8.2 — carry-forward leaves original intact ───────────────────────────────
 
 describe('§8.2 — carry-forward via API leaves the original occurrence intact', () => {
@@ -582,6 +656,58 @@ describe('clear-disposition via API — undo a skip/excuse/carry-forward', () =>
       url: `/api/occurrences/${occ.id}/clear-disposition`,
     })
     expect(res.statusCode).toBe(400)
+
+    await app.close()
+  })
+})
+
+// ── §8 amendment — skip/excuse are valid on past (non-today) occurrences ──────
+// Not part of the original §8 spec text — added on direct user request: the
+// frontend previously only exposed skip/excuse/carry-forward for today's
+// occurrences even though these routes never enforced that restriction.
+// This locks in the route-level behavior the relaxed frontend gate now relies on.
+
+describe('§8 amendment — user-initiated skip/excuse via API are not restricted to today\'s occurrence', () => {
+  it('POST /occurrences/:id/skip succeeds on an occurrence materialized for a past day', async () => {
+    const u = await makeUser('api-skip-past-day@test.com')
+    const app = await buildTestApp(u.id)
+
+    const item = await repos.insertItem(getTestPool(), {
+      userId: u.id,
+      name: 'Past Skip Task',
+      recurrenceRule: null,
+      creationSource: 'planned',
+    })
+    const pastOcc = await ensureOccurrenceMaterialized(getTestPool(), item, TUESDAY, u.id)
+
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/occurrences/${pastOcc.id}/skip`,
+    })
+    expect(res.statusCode).toBe(200)
+    expect(JSON.parse(res.body).disposition.type).toBe('skipped')
+
+    await app.close()
+  })
+
+  it('POST /occurrences/:id/excuse succeeds on an occurrence materialized for a past day', async () => {
+    const u = await makeUser('api-excuse-past-day@test.com')
+    const app = await buildTestApp(u.id)
+
+    const item = await repos.insertItem(getTestPool(), {
+      userId: u.id,
+      name: 'Past Excuse Task',
+      recurrenceRule: null,
+      creationSource: 'planned',
+    })
+    const pastOcc = await ensureOccurrenceMaterialized(getTestPool(), item, TUESDAY, u.id)
+
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/occurrences/${pastOcc.id}/excuse`,
+    })
+    expect(res.statusCode).toBe(200)
+    expect(JSON.parse(res.body).disposition.type).toBe('excused')
 
     await app.close()
   })

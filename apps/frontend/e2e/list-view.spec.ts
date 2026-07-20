@@ -420,9 +420,9 @@ test.describe('§12.3 — List view', () => {
 
 })
 
-test.describe('§12.3 — Timer + disposition menu are gated to today\'s occurrences', () => {
+test.describe('§12.3 — Timer is gated to today\'s occurrences; skip/excuse/carry is not', () => {
 
-  test('§12.3 timer and skip/excuse/carry menu are hidden on a non-today occurrence, shown on today\'s', async ({ page }) => {
+  test('§12.3 timer is hidden on a non-today occurrence, shown on today\'s; skip/excuse/carry menu is available on both', async ({ page }) => {
     await page.clock.setFixedTime(new Date('2025-06-16T09:00:00'))
 
     const todayOcc = makeOcc({ id: 'occ-today', itemId: 'item-today', name: 'Today Task', appliesToDay: '2025-06-16' })
@@ -443,9 +443,11 @@ test.describe('§12.3 — Timer + disposition menu are gated to today\'s occurre
     await expect(todayRow.getByTestId('timer-start')).toBeVisible()
     await expect(todayRow.getByTestId('occ-disposition-btn')).toBeVisible()
 
-    // Future day's row: neither should render
+    // Future day's row: timer is gated to today, but skip/excuse/carry-forward
+    // is a valid action on any day (backend never restricted it to today either) —
+    // e.g. skipping/excusing a past occurrence that was never touched.
     await expect(futureRow.getByTestId('timer-start')).not.toBeVisible()
-    await expect(futureRow.getByTestId('occ-disposition-btn')).not.toBeVisible()
+    await expect(futureRow.getByTestId('occ-disposition-btn')).toBeVisible()
   })
 
   test('§9.1 a non-today occurrence with logged time shows the read-only total, never a play button', async ({ page }) => {
@@ -473,11 +475,10 @@ test.describe('§12.3 — Timer + disposition menu are gated to today\'s occurre
   // Not part of the original §12.3 spec — added on direct user request: a
   // disposition set on a past day (e.g. auto-skipped end-of-day per §8) must
   // still be undoable, or a missed manual-completion becomes permanently stuck
-  // as a skip. "Setting" a new disposition stays today-only (the "···" menu),
-  // but "clearing" an existing one is a plain event append with no day
-  // restriction server-side (clearDispositionByUser), so the restore button
-  // must render on any day.
-  test('a skipped occurrence on a non-today row shows its badge and a restore button, but not the disposition menu', async ({ page }) => {
+  // as a skip. The "···" menu (set a new disposition) and the restore button
+  // (clear an existing one) are mutually exclusive per occurrence — only one
+  // is ever shown, based on whether a disposition is already set, not on day.
+  test('a skipped occurrence on a non-today row shows its badge and a restore button, but not the disposition menu (mutually exclusive with restore, not gated by day)', async ({ page }) => {
     await page.clock.setFixedTime(new Date('2025-06-16T09:00:00'))
 
     const pastSkipped = makeOcc({
@@ -553,13 +554,14 @@ test.describe('§6.7 — "Today" honors the configured day-start, not raw local 
     await expect(stillTodayRow).toBeVisible()
     await expect(rawMidnightRow).toBeVisible()
 
-    // The day-start-bucketed logical day (June 15) is "today" — gets the timer/menu.
+    // The day-start-bucketed logical day (June 15) is "today" — gets the timer.
     await expect(stillTodayRow.getByTestId('timer-start')).toBeVisible()
     await expect(stillTodayRow.getByTestId('occ-disposition-btn')).toBeVisible()
 
-    // The raw calendar day (June 16) is NOT yet "today" per the day-start boundary.
+    // The raw calendar day (June 16) is NOT yet "today" per the day-start boundary,
+    // so its timer stays gated — but skip/excuse/carry-forward is valid on any day.
     await expect(rawMidnightRow.getByTestId('timer-start')).not.toBeVisible()
-    await expect(rawMidnightRow.getByTestId('occ-disposition-btn')).not.toBeVisible()
+    await expect(rawMidnightRow.getByTestId('occ-disposition-btn')).toBeVisible()
   })
 
 })

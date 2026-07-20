@@ -834,3 +834,82 @@ test.describe('§4c-ii — Full-edit: parent nesting, disposition, edit mode', (
   })
 
 })
+
+// ─────────────────────────────────────────────────────────────────────────────
+// §8.1 amendment — one-time tasks default to 'require_manual', not 'skip'
+// ─────────────────────────────────────────────────────────────────────────────
+// Not part of the original §8.1 spec text — added on direct user request: a
+// missed one-off is far more often "haven't gotten to it yet" than a deliberate
+// skip, so defaulting a fresh one-time task to auto-skip at end-of-day is the
+// wrong default. Recurring habits keep the spec's stated 'skip' default.
+test.describe('§8.1 amendment — create-mode disposition-policy default', () => {
+
+  async function openCreateForm(page: Page) {
+    await setupBase(page)
+    await page.goto('/')
+    await page.getByTestId('new-item-btn').click()
+    await expect(page.getByTestId('item-form-modal')).toBeVisible()
+    await expect(page.getByTestId('if-name')).toBeVisible()
+  }
+
+  test('§8.1 a brand-new item form defaults to one-time + require_manual', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2026-07-07T08:00:00'))
+    await openCreateForm(page)
+
+    await expect(page.getByTestId('if-type-onetime')).toHaveClass(/qa-radio--active/)
+
+    await page.getByTestId('if-advanced-toggle').click()
+    await expect(page.getByTestId('if-disp-require_manual')).toHaveClass(/disp-option--selected/)
+  })
+
+  test('§8.1 switching Type to Recurring re-defaults disposition to skip; switching back re-defaults to require_manual', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2026-07-07T08:00:00'))
+    await openCreateForm(page)
+    await page.getByTestId('if-advanced-toggle').click()
+
+    await expect(page.getByTestId('if-disp-require_manual')).toHaveClass(/disp-option--selected/)
+
+    await page.getByTestId('if-type-recurring').click()
+    await expect(page.getByTestId('if-disp-skip')).toHaveClass(/disp-option--selected/)
+
+    await page.getByTestId('if-type-onetime').click()
+    await expect(page.getByTestId('if-disp-require_manual')).toHaveClass(/disp-option--selected/)
+  })
+
+  test('§8.1 an explicit disposition choice survives toggling Type (auto-default never clobbers a manual pick)', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2026-07-07T08:00:00'))
+    await openCreateForm(page)
+    await page.getByTestId('if-advanced-toggle').click()
+
+    // User explicitly picks 'excuse' for this one-time task
+    await page.getByTestId('if-disp-excuse').click()
+    await expect(page.getByTestId('if-disp-excuse')).toHaveClass(/disp-option--selected/)
+
+    // Toggling Type back and forth must not silently override the explicit choice
+    await page.getByTestId('if-type-recurring').click()
+    await page.getByTestId('if-type-onetime').click()
+    await expect(page.getByTestId('if-disp-excuse')).toHaveClass(/disp-option--selected/)
+  })
+
+  test('§8.1 submitting a new one-time item without touching disposition sends require_manual', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2026-07-07T08:00:00'))
+    await openCreateForm(page)
+
+    let capturedBody: Record<string, unknown> | null = null
+    await page.route('/api/items', async (route) => {
+      if (route.request().method() === 'POST') {
+        capturedBody = JSON.parse(route.request().postData() ?? '{}') as Record<string, unknown>
+        await route.fulfill({ status: 201, json: makeItem({ id: 'new-one-time', name: 'Renew passport' }) })
+      } else {
+        await route.fulfill({ json: [] })
+      }
+    })
+
+    await page.getByTestId('if-name').fill('Renew passport')
+    await page.getByTestId('if-submit').click()
+
+    await expect(page.getByTestId('item-form-modal')).not.toBeVisible()
+    expect(capturedBody!['dispositionPolicy']).toBe('require_manual')
+  })
+
+})

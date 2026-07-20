@@ -9,10 +9,12 @@ type Props = {
   occ: OccurrenceWithState
   buckets: Bucket[]
   isChild?: boolean
-  // Live timer controls (start/pause/resume/stop) and skip/excuse/carry-forward
-  // only make sense for the current day's occurrences — a non-today occurrence
-  // still shows its logged-time total, just read-only, via TimerControl's
-  // readOnly branch. Defaults to true since NowView only ever shows today.
+  // Live timer controls (start/pause/resume/stop) only make sense for the
+  // current day's occurrences — a non-today occurrence still shows its logged-time
+  // total, just read-only, via TimerControl's readOnly branch. Skip/excuse/
+  // carry-forward, by contrast, are valid on any day (matches backend, which
+  // never restricted them to today). Defaults to true since NowView only ever
+  // shows today.
   isToday?: boolean
   session: SessionState | undefined
   onComplete: () => void
@@ -207,7 +209,10 @@ export function OccurrenceRow({
             ↺
           </button>
         )}
-        {occ.id && isToday && !isDispositioned && (
+        {occ.id && !isDispositioned && (
+          // Skip/excuse/carry-forward are valid on any day, not just today — the
+          // backend (skipOccurrenceByUser/excuseOccurrenceByUser/carryForward) has
+          // never enforced an isToday restriction; only this button used to.
           <button
             className="disp-btn"
             onClick={onDisposition}

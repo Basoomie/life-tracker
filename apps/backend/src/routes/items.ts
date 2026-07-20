@@ -94,7 +94,11 @@ export async function itemRoutes(app: FastifyInstance) {
       plannedDurationMin: body.plannedDurationMin ?? null,
       parentId: body.parentId ?? null,
       sortOrder,
-      dispositionPolicy: body.dispositionPolicy ?? 'skip',
+      // §8.1 default: recurring habits default to 'skip' (the spec's stated
+      // default for "most habits"); one-time tasks (no recurrenceRule) default
+      // to 'require_manual' instead — a missed one-off is far more often "I
+      // haven't gotten to it yet" than "I'm choosing to skip it."
+      dispositionPolicy: body.dispositionPolicy ?? (body.recurrenceRule ? 'skip' : 'require_manual'),
       creationSource: body.creationSource ?? 'planned',
     })
 
