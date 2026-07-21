@@ -42,10 +42,12 @@ export async function occurrenceRoutes(app: FastifyInstance) {
   // GET /occurrences/overdue?before=YYYY-MM-DD — §8 amendment: the "Overdue"
   // backlog. `before` (today, day-start-bucketed) is supplied by the caller,
   // same convention as ?start/?end on GET /occurrences — this route never
-  // computes "today" itself. Surfaces materialized occurrences from earlier
-  // days that are still pending (e.g. one-time require_manual tasks, which
-  // otherwise sit invisible on their original day forever since Now only
-  // shows today and List's other ranges require guessing the exact date).
+  // computes "today" itself. Surfaces materialized **one-time** occurrences
+  // from earlier days that are still pending — recurring habits already get
+  // their configured end-of-day policy, so it's specifically the require_manual
+  // one-time tasks that otherwise sit invisible on their original day forever,
+  // since Now only shows today and List's other ranges require guessing the
+  // exact date. See getOverdueOccurrences for the one-time scoping.
   app.get('/occurrences/overdue', async (req, reply) => {
     const { before } = req.query as { before?: string }
     if (!before) {

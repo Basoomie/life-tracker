@@ -1312,6 +1312,26 @@ describe('§8 amendment — GET /occurrences/overdue backlog', () => {
     await app.close()
   })
 
+  it('excludes a materialized recurring occurrence, even if still pending — only one-time tasks are "overdue"', async () => {
+    const u = await makeUser('api-overdue-excl-recurring@test.com')
+    const app = await buildTestApp(u.id)
+
+    const item = await repos.insertItem(getTestPool(), {
+      userId: u.id,
+      name: 'Missed daily habit',
+      recurrenceRule: { type: 'daily' },
+      creationSource: 'planned',
+      dispositionPolicy: 'require_manual',
+    })
+    const occ = await ensureOccurrenceMaterialized(getTestPool(), item, TUESDAY, u.id)
+
+    const res = await app.inject({ method: 'GET', url: `/api/occurrences/overdue?before=${TODAY}` })
+    const body = JSON.parse(res.body) as Array<{ id: string }>
+    expect(body.some((o) => o.id === occ.id)).toBe(false)
+
+    await app.close()
+  })
+
   it('excludes an occurrence that has already been skipped', async () => {
     const u = await makeUser('api-overdue-excl-skipped@test.com')
     const app = await buildTestApp(u.id)

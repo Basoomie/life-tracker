@@ -243,8 +243,12 @@ export async function getOccurrencesInRange(
 }
 
 /**
- * §8 amendment — "Overdue" backlog: materialized occurrences from before `today`
- * that haven't been given a stored row's worth of attention yet. Unlike
+ * §8 amendment — "Overdue" backlog: materialized **one-time** occurrences from
+ * before `today` that haven't been given a stored row's worth of attention yet.
+ * Scoped to one-time tasks only (snapshot.recurrenceRule === null) — a missed
+ * recurring habit already gets its configured end-of-day policy (skip/excuse/
+ * auto_close) via the background job; only require_manual one-time tasks are
+ * the ones that silently pile up with nowhere to be found. Unlike
  * getOccurrencesInRange, this never expands a recurrence rule across history —
  * only stored rows are read, since an unmaterialized occurrence can't yet be
  * "missed." Excludes archived items, same as getOccurrencesInRange.
@@ -263,7 +267,7 @@ export async function getOverdueOccurrences(
     repos.findOccurrencesBeforeDay(pool, userId, today),
   ])
   const activeItemIds = new Set(items.map((item) => item.id))
-  return stored.filter((occ) => activeItemIds.has(occ.itemId))
+  return stored.filter((occ) => activeItemIds.has(occ.itemId) && occ.snapshot.recurrenceRule === null)
 }
 
 /**
