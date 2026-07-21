@@ -112,6 +112,24 @@ export async function findOccurrencesByRange(
   return rows.map(toOccurrence)
 }
 
+// §8 amendment — all materialized rows before a given day, for the "Overdue"
+// backlog query. Deliberately does NOT expand recurrence rules (unlike
+// findOccurrencesByRange's caller, getOccurrencesInRange) — a virtual/
+// unmaterialized occurrence can't yet be "missed," so only stored rows matter.
+export async function findOccurrencesBeforeDay(
+  pool: Pool,
+  userId: string,
+  beforeDay: string   // YYYY-MM-DD exclusive
+): Promise<Occurrence[]> {
+  const { rows } = await pool.query<OccurrenceRow>(
+    `SELECT * FROM occurrences
+     WHERE user_id = $1 AND applies_to_day < $2
+     ORDER BY applies_to_day, item_id`,
+    [userId, beforeDay]
+  )
+  return rows.map(toOccurrence)
+}
+
 // Fetch occurrences for a set of item IDs on a specific day (bulk, for parent-derived % computation)
 export async function findOccurrencesByItemsAndDay(
   pool: Pool,

@@ -243,6 +243,30 @@ export async function getOccurrencesInRange(
 }
 
 /**
+ * §8 amendment — "Overdue" backlog: materialized occurrences from before `today`
+ * that haven't been given a stored row's worth of attention yet. Unlike
+ * getOccurrencesInRange, this never expands a recurrence rule across history —
+ * only stored rows are read, since an unmaterialized occurrence can't yet be
+ * "missed." Excludes archived items, same as getOccurrencesInRange.
+ *
+ * Returns raw stored occurrences; the route layer enriches each (to derive
+ * disposition from events) and filters to disposition.type === 'pending' —
+ * that filter can't happen here since disposition isn't a stored column.
+ */
+export async function getOverdueOccurrences(
+  pool: Pool,
+  userId: string,
+  today: string   // YYYY-MM-DD
+): Promise<Occurrence[]> {
+  const [items, stored] = await Promise.all([
+    repos.findItemsByUser(pool, userId),
+    repos.findOccurrencesBeforeDay(pool, userId, today),
+  ])
+  const activeItemIds = new Set(items.map((item) => item.id))
+  return stored.filter((occ) => activeItemIds.has(occ.itemId))
+}
+
+/**
  * §8.4 — Background job entry point.
  * Phase (a): tops up near-term materialization for all active items.
  * Phase (b): end-of-day dispositions for untouched occurrences on `day`.

@@ -86,6 +86,8 @@ export const api = {
   occurrences: {
     range: (start: string, end: string) =>
       apiFetch<OccurrenceWithState[]>(`/occurrences?start=${start}&end=${end}`),
+    overdue: (before: string) =>
+      apiFetch<OccurrenceWithState[]>(`/occurrences/overdue?before=${before}`),
     complete: (id: string) =>
       apiFetch<OccurrenceWithState>(`/occurrences/${id}/complete`, { method: 'POST' }),
     completeByItemDay: (itemId: string, appliesToDay: string) =>

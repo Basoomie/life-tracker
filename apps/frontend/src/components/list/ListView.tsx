@@ -1,7 +1,7 @@
 // §12.3 — List view: flat sorted list per time-range; priority-flip grouping.
 
 import { useState, useEffect, useMemo, useCallback } from 'react'
-import { useRangeData, useDayStartEntries } from '../../hooks/useRangeData'
+import { useRangeData, useOverdueData, useDayStartEntries } from '../../hooks/useRangeData'
 import { useOccurrenceActions } from '../../hooks/useOccurrenceActions'
 import { OccurrenceRow } from '../now/OccurrenceRow'
 import { DispositionModal } from '../now/DispositionModal'
@@ -56,6 +56,15 @@ export function ListView({ onEditItem }: Props) {
   const today = bucketTimestamp(new Date(), dayStartEntries)
   const { start, end } = useMemo(() => getRangeDates(range, today, customDate), [range, today, customDate])
 
+  // §8 amendment — "Overdue" queries a dedicated endpoint (materialized-but-
+  // pending rows only) instead of a plain date range; see useOverdueData's
+  // doc comment for why. Both hooks are always called (rules of hooks forbid
+  // conditional calls) but only the active mode's `enabled` flag lets its
+  // fetch actually run.
+  const isOverdue = range === 'overdue'
+  const rangeData = useRangeData(start, end, !isOverdue)
+  const overdueData = useOverdueData(today, isOverdue)
+
   const {
     occurrences,
     buckets,
@@ -63,7 +72,7 @@ export function ListView({ onEditItem }: Props) {
     error,
     refresh,
     setOccurrences,
-  } = useRangeData(start, end)
+  } = isOverdue ? overdueData : rangeData
 
   useEffect(() => {
     api.categories.list().then(setCategories).catch(() => {})
@@ -100,8 +109,16 @@ export function ListView({ onEditItem }: Props) {
     }))
   }, [setOccurrences])
 
-  // Days in selected range (single element for today/tomorrow, multiple for week/month)
-  const days = useMemo(() => getDaysInRange(start, end), [start, end])
+  // Days in selected range (single element for today/tomorrow, multiple for week/month).
+  // Overdue isn't a contiguous range — it's whatever distinct days the backlog
+  // query actually returned — so its days come from the results themselves,
+  // not from enumerating every date between a floor and yesterday.
+  const days = useMemo(() => {
+    if (isOverdue) {
+      return Array.from(new Set(occurrences.map((o) => o.appliesToDay))).sort()
+    }
+    return getDaysInRange(start, end)
+  }, [isOverdue, occurrences, start, end])
   const isMultiDay = days.length > 1
 
   // Per-day occurrence lookup
@@ -205,6 +222,10 @@ export function ListView({ onEditItem }: Props) {
   }
 
   function renderContent() {
+    if (isOverdue && days.length === 0) {
+      return <div className="list-empty" data-testid="overdue-empty">Nothing overdue — you're all caught up.</div>
+    }
+
     if (priorityFlip) {
       // All roots across all days grouped by priority (children stay nested
       // in their card regardless of their own priority)
@@ -258,6 +279,7 @@ export function ListView({ onEditItem }: Props) {
           <option value="tomorrow">Tomorrow</option>
           <option value="this-week">This Week</option>
           <option value="this-month">This Month</option>
+          <option value="overdue">Overdue</option>
           <option value="custom">Custom date</option>
         </select>
 

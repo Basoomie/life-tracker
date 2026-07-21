@@ -5,7 +5,7 @@ import type { FastifyInstance } from 'fastify'
 import type { Pool } from 'pg'
 import { pool } from '../db'
 import * as repos from '../db/repos/index'
-import { getOccurrencesInRange, ensureOccurrenceMaterialized } from '../domain/materialization'
+import { getOccurrencesInRange, getOverdueOccurrences, ensureOccurrenceMaterialized } from '../domain/materialization'
 import {
   completeLeaf,
   uncompleteLeaf,
@@ -37,6 +37,25 @@ export async function occurrenceRoutes(app: FastifyInstance) {
     const occs = await getOccurrencesInRange(pool, userId, start, end)
     const enriched = await Promise.all(occs.map((o) => enrichOccurrence(pool, o, userId)))
     return reply.send(enriched)
+  })
+
+  // GET /occurrences/overdue?before=YYYY-MM-DD — §8 amendment: the "Overdue"
+  // backlog. `before` (today, day-start-bucketed) is supplied by the caller,
+  // same convention as ?start/?end on GET /occurrences — this route never
+  // computes "today" itself. Surfaces materialized occurrences from earlier
+  // days that are still pending (e.g. one-time require_manual tasks, which
+  // otherwise sit invisible on their original day forever since Now only
+  // shows today and List's other ranges require guessing the exact date).
+  app.get('/occurrences/overdue', async (req, reply) => {
+    const { before } = req.query as { before?: string }
+    if (!before) {
+      return badRequest(reply, 'missing_params', 'Query param ?before (YYYY-MM-DD) is required')
+    }
+    const userId = req.userId
+    const stored = await getOverdueOccurrences(pool, userId, before)
+    const enriched = await Promise.all(stored.map((o) => enrichOccurrence(pool, o, userId)))
+    const pending = enriched.filter((o) => o.disposition.type === 'pending')
+    return reply.send(pending)
   })
 
   // GET /occurrences/:id

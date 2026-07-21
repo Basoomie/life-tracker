@@ -35,7 +35,12 @@ export function useDayStartEntries(): DayStartEntry[] {
   return dayStartEntries
 }
 
-export function useRangeData(start: string, end: string): RangeDataResult {
+// `enabled` lets a caller that conditionally switches between this hook and
+// another data source (e.g. ListView's Overdue mode, see useOverdueData below)
+// skip the network call when this hook isn't the active one — React's rules
+// of hooks forbid calling a hook conditionally, but the fetch inside it can
+// still be gated.
+export function useRangeData(start: string, end: string, enabled = true): RangeDataResult {
   const [occurrences, setOccurrences] = useState<OccurrenceWithState[]>([])
   const [buckets, setBuckets] = useState<Bucket[]>([])
   const [loading, setLoading] = useState(true)
@@ -47,6 +52,7 @@ export function useRangeData(start: string, end: string): RangeDataResult {
   // unmount it via the views' loading-gate render and collapse every
   // expanded OccurrenceCard (its expand state is local useState).
   const fetchOccurrences = useCallback(async (showLoading: boolean) => {
+    if (!enabled) return
     try {
       if (showLoading) setLoading(true)
       const data = await api.occurrences.range(start, end)
@@ -57,7 +63,7 @@ export function useRangeData(start: string, end: string): RangeDataResult {
     } finally {
       setLoading(false)
     }
-  }, [start, end])
+  }, [start, end, enabled])
 
   // Stable config — fetched once
   useEffect(() => {
@@ -65,6 +71,44 @@ export function useRangeData(start: string, end: string): RangeDataResult {
   }, [])
 
   // Refetch when range changes
+  useEffect(() => { fetchOccurrences(true) }, [fetchOccurrences])
+
+  const refresh = useCallback(() => { fetchOccurrences(false) }, [fetchOccurrences])
+
+  return { occurrences, buckets, loading, error, refresh, setOccurrences }
+}
+
+// §8 amendment — the "Overdue" backlog: fetches via a dedicated endpoint
+// (materialized-but-pending rows only) instead of a date range, since a plain
+// range fetch of "everything before today" would make getOccurrencesInRange
+// expand every recurring item's rule across the app's full history just to
+// surface a handful of untouched one-time tasks. Mirrors useRangeData's
+// shape (including the `enabled` gate) so ListView can wire it into the same
+// useOccurrenceActions() calls without double-fetching in both modes.
+export function useOverdueData(before: string, enabled = true): RangeDataResult {
+  const [occurrences, setOccurrences] = useState<OccurrenceWithState[]>([])
+  const [buckets, setBuckets] = useState<Bucket[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  const fetchOccurrences = useCallback(async (showLoading: boolean) => {
+    if (!enabled) return
+    try {
+      if (showLoading) setLoading(true)
+      const data = await api.occurrences.overdue(before)
+      setOccurrences(data)
+      setError(null)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to load')
+    } finally {
+      setLoading(false)
+    }
+  }, [before, enabled])
+
+  useEffect(() => {
+    api.buckets.list().then(setBuckets).catch(() => {})
+  }, [])
+
   useEffect(() => { fetchOccurrences(true) }, [fetchOccurrences])
 
   const refresh = useCallback(() => { fetchOccurrences(false) }, [fetchOccurrences])

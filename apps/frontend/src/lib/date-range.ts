@@ -12,7 +12,11 @@
 // stays UTC-based deliberately — that's just string date math (no DST pitfalls),
 // not a statement about which day "now" is.
 
-export type RangeKey = 'today' | 'tomorrow' | 'this-week' | 'this-month' | 'custom'
+export type RangeKey = 'today' | 'tomorrow' | 'this-week' | 'this-month' | 'overdue' | 'custom'
+
+// Matches the v2 stats "all time" floor (stats-presentation.ts) — simplest
+// honest lower bound for a single-user app at this scale.
+const OVERDUE_FLOOR = '2000-01-01'
 
 export function todayStr(ref: Date = new Date()): string {
   return (
@@ -58,6 +62,14 @@ export function getRangeDates(
     const mon = addDays(today, daysToMon)
     const sun = addDays(mon, 6)
     return { start: mon, end: sun }
+  }
+
+  if (key === 'overdue') {
+    // Descriptive only — ListView queries a dedicated /occurrences/overdue
+    // endpoint rather than fetching this whole span (avoids expanding every
+    // recurring item's rule across decades just to find a handful of
+    // untouched one-time tasks).
+    return { start: OVERDUE_FLOOR, end: addDays(today, -1) }
   }
 
   // this-month

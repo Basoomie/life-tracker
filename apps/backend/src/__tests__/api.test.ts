@@ -1279,3 +1279,157 @@ describe('§8.4 — background job runs dispositions for a day and produces expe
     await app.close()
   })
 })
+
+// ── §8 amendment — "Overdue" backlog: GET /occurrences/overdue ───────────────
+// Not part of the original spec — added because require_manual one-time tasks
+// (see the §8.1 amendment above) never auto-resolve and previously had no
+// surface to find them on: Now only ever shows today, and List's other ranges
+// require guessing the exact missed date. This endpoint lets a single "Overdue"
+// filter find every still-pending past occurrence in one call.
+
+describe('§8 amendment — GET /occurrences/overdue backlog', () => {
+  const FUTURE_DAY = '2025-01-16'
+
+  it('returns a materialized occurrence from before `before` that is still pending', async () => {
+    const u = await makeUser('api-overdue-pending@test.com')
+    const app = await buildTestApp(u.id)
+
+    const item = await repos.insertItem(getTestPool(), {
+      userId: u.id,
+      name: 'Missed one-off',
+      recurrenceRule: null,
+      creationSource: 'planned',
+    })
+    const occ = await ensureOccurrenceMaterialized(getTestPool(), item, TUESDAY, u.id)
+
+    const res = await app.inject({ method: 'GET', url: `/api/occurrences/overdue?before=${TODAY}` })
+    expect(res.statusCode).toBe(200)
+    const body = JSON.parse(res.body) as Array<{ id: string; disposition: { type: string } }>
+    const found = body.find((o) => o.id === occ.id)
+    expect(found).toBeDefined()
+    expect(found!.disposition.type).toBe('pending')
+
+    await app.close()
+  })
+
+  it('excludes an occurrence that has already been skipped', async () => {
+    const u = await makeUser('api-overdue-excl-skipped@test.com')
+    const app = await buildTestApp(u.id)
+
+    const item = await repos.insertItem(getTestPool(), {
+      userId: u.id,
+      name: 'Already skipped',
+      recurrenceRule: null,
+      creationSource: 'planned',
+    })
+    const occ = await ensureOccurrenceMaterialized(getTestPool(), item, TUESDAY, u.id)
+    await app.inject({ method: 'POST', url: `/api/occurrences/${occ.id}/skip` })
+
+    const res = await app.inject({ method: 'GET', url: `/api/occurrences/overdue?before=${TODAY}` })
+    const body = JSON.parse(res.body) as Array<{ id: string }>
+    expect(body.some((o) => o.id === occ.id)).toBe(false)
+
+    await app.close()
+  })
+
+  it('excludes an occurrence that has already been completed', async () => {
+    const u = await makeUser('api-overdue-excl-completed@test.com')
+    const app = await buildTestApp(u.id)
+
+    const item = await repos.insertItem(getTestPool(), {
+      userId: u.id,
+      name: 'Already done',
+      recurrenceRule: null,
+      creationSource: 'planned',
+    })
+    const occ = await ensureOccurrenceMaterialized(getTestPool(), item, TUESDAY, u.id)
+    await app.inject({ method: 'POST', url: `/api/occurrences/${occ.id}/complete` })
+
+    const res = await app.inject({ method: 'GET', url: `/api/occurrences/overdue?before=${TODAY}` })
+    const body = JSON.parse(res.body) as Array<{ id: string }>
+    expect(body.some((o) => o.id === occ.id)).toBe(false)
+
+    await app.close()
+  })
+
+  it('excludes an occurrence on or after `before` — today\'s own occurrence is not "overdue"', async () => {
+    const u = await makeUser('api-overdue-excl-today@test.com')
+    const app = await buildTestApp(u.id)
+
+    const item = await repos.insertItem(getTestPool(), {
+      userId: u.id,
+      name: 'Due today, not overdue',
+      recurrenceRule: null,
+      creationSource: 'planned',
+    })
+    const todayOcc = await ensureOccurrenceMaterialized(getTestPool(), item, TODAY, u.id)
+    // Also materialize a genuinely future occurrence to prove it's excluded too.
+    const futureItem = await repos.insertItem(getTestPool(), {
+      userId: u.id,
+      name: 'Due in the future',
+      recurrenceRule: null,
+      creationSource: 'planned',
+    })
+    const futureOcc = await ensureOccurrenceMaterialized(getTestPool(), futureItem, FUTURE_DAY, u.id)
+
+    const res = await app.inject({ method: 'GET', url: `/api/occurrences/overdue?before=${TODAY}` })
+    const body = JSON.parse(res.body) as Array<{ id: string }>
+    expect(body.some((o) => o.id === todayOcc.id)).toBe(false)
+    expect(body.some((o) => o.id === futureOcc.id)).toBe(false)
+
+    await app.close()
+  })
+
+  it('excludes occurrences belonging to an archived item', async () => {
+    const u = await makeUser('api-overdue-excl-archived@test.com')
+    const app = await buildTestApp(u.id)
+
+    const item = await repos.insertItem(getTestPool(), {
+      userId: u.id,
+      name: 'Deleted before I got to it',
+      recurrenceRule: null,
+      creationSource: 'planned',
+    })
+    const occ = await ensureOccurrenceMaterialized(getTestPool(), item, TUESDAY, u.id)
+    await repos.archiveItem(getTestPool(), item.id, u.id)
+
+    const res = await app.inject({ method: 'GET', url: `/api/occurrences/overdue?before=${TODAY}` })
+    const body = JSON.parse(res.body) as Array<{ id: string }>
+    expect(body.some((o) => o.id === occ.id)).toBe(false)
+
+    await app.close()
+  })
+
+  it('a skip that is later undone (clear-disposition) reappears in the backlog', async () => {
+    const u = await makeUser('api-overdue-cleared@test.com')
+    const app = await buildTestApp(u.id)
+
+    const item = await repos.insertItem(getTestPool(), {
+      userId: u.id,
+      name: 'Mis-clicked skip',
+      recurrenceRule: null,
+      creationSource: 'planned',
+    })
+    const occ = await ensureOccurrenceMaterialized(getTestPool(), item, TUESDAY, u.id)
+    await app.inject({ method: 'POST', url: `/api/occurrences/${occ.id}/skip` })
+    await app.inject({ method: 'POST', url: `/api/occurrences/${occ.id}/clear-disposition` })
+
+    const res = await app.inject({ method: 'GET', url: `/api/occurrences/overdue?before=${TODAY}` })
+    const body = JSON.parse(res.body) as Array<{ id: string; disposition: { type: string } }>
+    const found = body.find((o) => o.id === occ.id)
+    expect(found).toBeDefined()
+    expect(found!.disposition.type).toBe('pending')
+
+    await app.close()
+  })
+
+  it('400s when the required ?before query param is missing', async () => {
+    const u = await makeUser('api-overdue-missing-param@test.com')
+    const app = await buildTestApp(u.id)
+
+    const res = await app.inject({ method: 'GET', url: '/api/occurrences/overdue' })
+    expect(res.statusCode).toBe(400)
+
+    await app.close()
+  })
+})

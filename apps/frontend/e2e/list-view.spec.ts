@@ -319,6 +319,109 @@ test.describe('§12.3 — List view', () => {
     expect(fetchedRanges.some((u) => u.includes('start=2025-07-04&end=2025-07-04'))).toBe(true)
   })
 
+  // ── §8 amendment — "Overdue" quick-filter ───────────────────────────────
+  // Not part of the original spec: added because one-time tasks default to
+  // require_manual (§8.1 amendment) and never auto-resolve, so a missed
+  // one-off previously had no surface to be found on — Now only shows today,
+  // and every other List range requires guessing the exact missed date.
+
+  test('§8 amendment: selecting Overdue fetches the dedicated backlog endpoint, not a date range', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2025-06-16T09:00:00'))
+    await page.route('/me', (r) => r.fulfill({ json: { id: 'u1', email: 'test@tracker.local', createdAt: new Date().toISOString() } }))
+
+    let overdueRequestUrl: string | null = null
+    await page.route(/\/api\/occurrences\/overdue\?before=.*/, (route) => {
+      overdueRequestUrl = route.request().url()
+      route.fulfill({ json: [] })
+    })
+    await page.route(/\/api\/occurrences\?start=.*&end=.*/, (route) => route.fulfill({ json: [] }))
+    await page.route('/api/buckets',     (route) => route.fulfill({ json: [] }))
+    await page.route('/api/day-start',   (route) => route.fulfill({ json: [] }))
+    await page.route('/api/categories',  (route) => route.fulfill({ json: [] }))
+    await page.route('/api/reasons',     (route) => route.fulfill({ json: [] }))
+    await page.route('/api/preferences', (route) => route.fulfill({ json: {} }))
+
+    await goToListView(page)
+
+    // waitForResponse (not waitForRequest) — a response only exists once the
+    // route handler's fulfill() has actually run, so this can't race ahead of
+    // overdueRequestUrl being assigned the way waitForRequest's request-sent
+    // event can.
+    const overdueRes = page.waitForResponse(/\/api\/occurrences\/overdue\?before=.*/)
+    await page.getByTestId('range-select').selectOption('overdue')
+    await overdueRes
+
+    expect(overdueRequestUrl).toContain('before=2025-06-16')
+  })
+
+  test('§8 amendment: missed one-time tasks appear grouped under their own (past) day headers and can still be carried forward', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2025-06-16T09:00:00'))
+    // Two different missed days — exercises the day-header grouping itself
+    // (a single-day result renders no header, same as any other single-day range).
+    const MISSED_PASSPORT = makeOcc({
+      id: 'occ-missed-passport', itemId: 'item-missed-passport', name: 'Renew passport',
+      appliesToDay: '2025-06-10',
+      snapshot: { recurrenceRule: null, dispositionPolicy: 'require_manual' },
+    })
+    const MISSED_DENTIST = makeOcc({
+      id: 'occ-missed-dentist', itemId: 'item-missed-dentist', name: 'Book dentist',
+      appliesToDay: '2025-06-12',
+      snapshot: { recurrenceRule: null, dispositionPolicy: 'require_manual' },
+    })
+    await page.route('/me', (r) => r.fulfill({ json: { id: 'u1', email: 'test@tracker.local', createdAt: new Date().toISOString() } }))
+    await page.route(/\/api\/occurrences\/overdue\?before=.*/, (route) => route.fulfill({ json: [MISSED_PASSPORT, MISSED_DENTIST] }))
+    await page.route(/\/api\/occurrences\?start=.*&end=.*/, (route) => route.fulfill({ json: [] }))
+    await page.route('/api/buckets',     (route) => route.fulfill({ json: [] }))
+    await page.route('/api/day-start',   (route) => route.fulfill({ json: [] }))
+    await page.route('/api/categories',  (route) => route.fulfill({ json: [] }))
+    await page.route('/api/reasons',     (route) => route.fulfill({ json: [] }))
+    await page.route('/api/preferences', (route) => route.fulfill({ json: {} }))
+
+    let carryForwardBody: unknown = null
+    await page.route('/api/occurrences/occ-missed-passport/carry-forward', (route) => {
+      carryForwardBody = route.request().postDataJSON()
+      route.fulfill({ json: { newOccurrence: {}, rescheduleEvent: {} } })
+    })
+
+    await goToListView(page)
+    const overdueRes = page.waitForResponse(/\/api\/occurrences\/overdue\?before=.*/)
+    await page.getByTestId('range-select').selectOption('overdue')
+    await overdueRes
+
+    // Each missed task shown under its own day header, not today's
+    await expect(page.getByTestId('day-header-2025-06-10')).toBeVisible()
+    await expect(page.getByTestId('day-header-2025-06-12')).toBeVisible()
+    await expect(page.getByText('Renew passport')).toBeVisible()
+    await expect(page.getByText('Book dentist')).toBeVisible()
+
+    // Still actionable: skip/excuse/carry-forward menu opens and submits
+    await page.getByTestId('day-header-2025-06-10').locator('..').getByTestId('occ-disposition-btn').click()
+    await expect(page.getByTestId('disposition-modal')).toBeVisible()
+    await page.getByTestId('disp-carry').click()
+    await page.getByTestId('disp-targetday').fill('2025-06-17')
+    await page.getByTestId('disp-submit').click()
+    await expect(page.getByTestId('disposition-modal')).not.toBeVisible()
+
+    expect((carryForwardBody as { targetDay?: string } | null)?.targetDay).toBe('2025-06-17')
+  })
+
+  test('§8 amendment: an empty Overdue backlog shows a neutral "caught up" message, not a blank screen', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2025-06-16T09:00:00'))
+    await page.route('/me', (r) => r.fulfill({ json: { id: 'u1', email: 'test@tracker.local', createdAt: new Date().toISOString() } }))
+    await page.route(/\/api\/occurrences\/overdue\?before=.*/, (route) => route.fulfill({ json: [] }))
+    await page.route(/\/api\/occurrences\?start=.*&end=.*/, (route) => route.fulfill({ json: [] }))
+    await page.route('/api/buckets',     (route) => route.fulfill({ json: [] }))
+    await page.route('/api/day-start',   (route) => route.fulfill({ json: [] }))
+    await page.route('/api/categories',  (route) => route.fulfill({ json: [] }))
+    await page.route('/api/reasons',     (route) => route.fulfill({ json: [] }))
+    await page.route('/api/preferences', (route) => route.fulfill({ json: {} }))
+
+    await goToListView(page)
+    await page.getByTestId('range-select').selectOption('overdue')
+
+    await expect(page.getByTestId('overdue-empty')).toBeVisible()
+  })
+
   // ── Filter bar (§12.5) ─────────────────────────────────────────────────
 
   test('§12.5 Filter: priority filter narrows to matching items only', async ({ page }) => {
