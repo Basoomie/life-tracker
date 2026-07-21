@@ -58,6 +58,17 @@ export function App() {
       })
   }, [])
 
+  // Load shared reference data once authenticated. Must be a one-shot effect
+  // keyed on authState, not a plain call in the render body gated on
+  // `categories.length === 0` — a genuinely empty categories/buckets list
+  // (e.g. a fresh install with neither configured yet) made that condition
+  // true forever, re-firing both fetches on every render in an infinite loop.
+  useEffect(() => {
+    if (authState !== 'authenticated') return
+    api.categories.list().then(setCategories).catch(() => {})
+    api.buckets.list().then(setBuckets).catch(() => {})
+  }, [authState])
+
   function handleLogin(user: User) {
     setCurrentUser(user)
     setAuthState('authenticated')
@@ -86,12 +97,6 @@ export function App() {
   }
 
   // ── Main app ──────────────────────────────────────────────────────────────
-
-  // Load shared reference data once authenticated
-  if (categories.length === 0 && buckets.length === 0) {
-    api.categories.list().then(setCategories).catch(() => {})
-    api.buckets.list().then(setBuckets).catch(() => {})
-  }
 
   function handleOpenFullEdit(itemId: string) {
     setShowQuickAdd(false)
