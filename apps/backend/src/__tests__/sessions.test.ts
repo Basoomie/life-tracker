@@ -4,7 +4,7 @@
 // its tests hit a real database via the test pool, same as completion.test.ts.
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
-import { computeLoggedMinutes, computeSubtreeLoggedMinutes } from '../domain/sessions'
+import { computeLoggedMinutes, computeSubtreeLoggedMinutes, computeSessionDurationMin } from '../domain/sessions'
 import { setupTestDb, teardownTestDb, getTestPool } from './helpers/test-db'
 import * as repos from '../db/repos/index'
 import { ensureOccurrenceMaterialized } from '../domain/materialization'
@@ -105,6 +105,54 @@ describe('§9.1 — computeLoggedMinutes sums finalized sessions, not in-progres
       ev('session_created', { sessionId: 's3', startedAt: '2025-01-15T16:30:00Z', endedAt: '2025-01-15T16:45:00Z', durationMin: 15 }),
     ]
     expect(computeLoggedMinutes(events)).toBe(75)   // s2 (60) + s3 (15); s1 excluded
+  })
+})
+
+// ── §9.1 — computeSessionDurationMin: pause/resume intervals are excluded from tracked time ──
+
+describe('§9.1 — computeSessionDurationMin excludes paused intervals from the tracked duration', () => {
+  it('a plain start-to-stop session with no pauses counts the full elapsed time', () => {
+    const events = [
+      ev('session_started', { sessionId: 's1' }),
+    ]
+    const stoppedAt = new Date('2025-01-15T04:10:00Z')
+    expect(computeSessionDurationMin(events, stoppedAt)).toBe(10)
+  })
+
+  it('a pause fully closed out by a resume before stop excludes exactly the paused interval', () => {
+    const events = [
+      ev('session_started', { sessionId: 's1' }),
+      ev('session_paused',  { sessionId: 's1', pausedAt: '2025-01-15T04:03:00Z' }),
+      ev('session_resumed', { sessionId: 's1', resumedAt: '2025-01-15T04:05:00Z' }),
+    ]
+    const stoppedAt = new Date('2025-01-15T04:15:00Z')
+    // 15 min elapsed - 2 min paused = 13 min
+    expect(computeSessionDurationMin(events, stoppedAt)).toBe(13)
+  })
+
+  it('§9.1 stopping while still paused excludes the trailing paused interval from the tracked duration', () => {
+    const events = [
+      ev('session_started', { sessionId: 's1' }),
+      ev('session_paused',  { sessionId: 's1', pausedAt: '2025-01-15T04:03:00Z' }),
+      // No matching session_resumed — stopped directly from the paused state.
+    ]
+    const stoppedAt = new Date('2025-01-15T04:15:00Z')
+    // Tracked time stops accumulating at the pause; the 12 min from pause to
+    // stop is never counted, so duration is just the 3 min before the pause.
+    expect(computeSessionDurationMin(events, stoppedAt)).toBe(3)
+  })
+
+  it('multiple pause/resume cycles ending in a trailing unresolved pause exclude every paused interval', () => {
+    const events = [
+      ev('session_started', { sessionId: 's1' }),
+      ev('session_paused',  { sessionId: 's1', pausedAt: '2025-01-15T04:02:00Z' }),
+      ev('session_resumed', { sessionId: 's1', resumedAt: '2025-01-15T04:04:00Z' }),
+      ev('session_paused',  { sessionId: 's1', pausedAt: '2025-01-15T04:10:00Z' }),
+      // Second pause is never resumed before stop.
+    ]
+    const stoppedAt = new Date('2025-01-15T04:20:00Z')
+    // 20 min elapsed - 2 min (first pause/resume) - 10 min (trailing pause to stop) = 8 min
+    expect(computeSessionDurationMin(events, stoppedAt)).toBe(8)
   })
 })
 

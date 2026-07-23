@@ -9,8 +9,9 @@
 //   durationMs = stoppedAt - startedAt - totalPausedMs
 //   durationMin = Math.max(0, Math.round(durationMs / 60000))
 //
-// Trailing pauses (pause without a matching resume) are ignored — the timer was
-// stopped while paused; the un-resumed gap is not counted.
+// Trailing pauses (pause without a matching resume) are closed out against
+// stoppedAt — the timer was stopped while paused, so the gap from the last
+// pause to the stop itself is excluded from the tracked duration.
 
 import type { Pool } from 'pg'
 import type { TrackerEvent } from '@tracker/shared'
@@ -50,6 +51,13 @@ export function computeSessionDurationMin(
         pendingPauseAt = null
       }
     }
+  }
+
+  // Still paused when stopped — the trailing paused interval runs from the
+  // last pause up to the stop itself; close it out here so it's excluded
+  // the same as any other paused interval.
+  if (pendingPauseAt !== null) {
+    totalPausedMs += stoppedAt.getTime() - pendingPauseAt.getTime()
   }
 
   const totalMs = stoppedAt.getTime() - startedAt.getTime() - totalPausedMs
