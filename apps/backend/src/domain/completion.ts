@@ -16,10 +16,13 @@ import {
   itemAnchorDate,
   deriveLeafCompletion,
   computeDerivedPercent,
+  computeNodePercent,
+  findDeclaredPercent,
   buildParentCompletionState,
 } from '@tracker/shared'
-import type { LeafCompletionState, ParentCompletionState } from '@tracker/shared'
+import type { LeafCompletionState, ParentCompletionState, CompletionNode } from '@tracker/shared'
 import * as repos from '../db/repos/index'
+import { deriveDisposition } from './disposition-state'
 
 // ── Leaf completion ───────────────────────────────────────────────────────────
 
@@ -181,13 +184,95 @@ export async function getLeafCompletionState(
 }
 
 /**
+ * §6.1 — Is `child` due on `day`? Recurring children answer via 2a's getDueDays;
+ * a one-time child is due only on the day it has a stored occurrence.
+ */
+function isChildDue(child: Item, day: string, childOcc: Occurrence | null): boolean {
+  if (!child.recurrenceRule) return childOcc !== null
+  return getDueDays(child.recurrenceRule, day, day, itemAnchorDate(child)).length > 0
+}
+
+// The same item's children are needed twice while walking the tree (once to know
+// whether it's a parent at all, once to recurse into it), so they're fetched once.
+async function childrenOf(
+  pool: Pool,
+  itemId: string,
+  userId: string,
+  cache: Map<string, Item[]>
+): Promise<Item[]> {
+  const cached = cache.get(itemId)
+  if (cached) return cached
+  const children = await repos.findChildItems(pool, itemId, userId)
+  cache.set(itemId, children)
+  return children
+}
+
+/**
+ * §6.1 — Build the CompletionNode for every child of `parentItemId` that counts
+ * toward its derived % on `day`: due, and not excused.
+ *
+ * Recurses through the containment tree (nested arbitrarily deep, §5), because a
+ * child that is itself a parent has no item_completed event of its own — reading
+ * it as a leaf would score a 6-of-7 sub-routine as 0. computeNodePercent applies
+ * the actual rule; this function only gathers the facts (due-ness, event replay).
+ *
+ * `seen` guards against a malformed parent_id cycle turning this into an
+ * infinite recursion; the containment tree should never contain one.
+ */
+async function buildDueChildNodes(
+  pool: Pool,
+  parentItemId: string,
+  userId: string,
+  day: string,
+  seen: Set<string>,
+  cache: Map<string, Item[]>
+): Promise<CompletionNode[]> {
+  if (seen.has(parentItemId)) return []
+  seen.add(parentItemId)
+
+  const children = await childrenOf(pool, parentItemId, userId, cache)
+  const nodes: CompletionNode[] = []
+
+  for (const child of children) {
+    const childOcc = await repos.findOccurrenceByItemAndDay(pool, child.id, day, userId)
+    if (!isChildDue(child, day, childOcc)) continue
+
+    // An unmaterialized occurrence has no events: untouched, so 0% and no
+    // disposition — but a sub-routine can still score above 0 off its own
+    // children, which is why the recursion below is not gated on childOcc.
+    const childEvents = childOcc
+      ? await repos.findEventsByOccurrence(pool, childOcc.id, userId)
+      : []
+
+    // §8.1 — an excused child is out of the denominator entirely, not a zero.
+    if (deriveDisposition(childEvents).type === 'excused') continue
+
+    const grandChildren = await childrenOf(pool, child.id, userId, cache)
+    nodes.push({
+      isParent: grandChildren.length > 0,
+      leafPercent: deriveLeafCompletion(childEvents).completionPercent,
+      declaredPercent: findDeclaredPercent(childEvents),
+      dueChildren: grandChildren.length > 0
+        ? await buildDueChildNodes(pool, child.id, userId, day, seen, cache)
+        : [],
+    })
+  }
+
+  return nodes
+}
+
+/**
  * §6.1 — Derive completion state for a parent occurrence on a given day.
  *
- * Derived %: for each child item, check if it was due on `day` using getDueDays (2a).
- * Children not due that day are excluded from the denominator.
+ * Derived %: the mean of its due children's own completion values (§6.1 partial
+ * credit — a child sub-routine at 86% contributes 86). Not-due children are
+ * invisible and excluded from the denominator; so are excused ones (§8.1).
  * 0 due children → 100% (vacuous: parent complete on days no children are scheduled).
  *
- * Declared %: from manual_parent_percent_declared events; coexists with derived %.
+ * Declared %: from manual_parent_percent_declared events; coexists with derived %
+ * on THIS occurrence (§6.2 — v1 must not collapse them). Note the asymmetry with
+ * computeNodePercent, which does collapse them for a *nested* parent: there, the
+ * child's single value is what its parent is owed (§6.3).
  */
 export async function getParentCompletionState(
   pool: Pool,
@@ -195,39 +280,11 @@ export async function getParentCompletionState(
   userId: string,
   day: string   // YYYY-MM-DD — the logical day we're computing for
 ): Promise<ParentCompletionState> {
-  const [children, parentEvents] = await Promise.all([
-    repos.findChildItems(pool, parentOccurrence.itemId, userId),
+  const [dueChildNodes, parentEvents] = await Promise.all([
+    buildDueChildNodes(pool, parentOccurrence.itemId, userId, day, new Set<string>(), new Map()),
     repos.findEventsByOccurrence(pool, parentOccurrence.id, userId),
   ])
 
-  // Find which children are due on `day` using 2a's getDueDays
-  const dueChildrenIds: string[] = []
-  for (const child of children) {
-    if (!child.recurrenceRule) {
-      // One-time task child: due only if it has a stored occurrence on that day
-      const occ = await repos.findOccurrenceByItemAndDay(pool, child.id, day, userId)
-      if (occ) dueChildrenIds.push(child.id)
-    } else {
-      const dueDays = getDueDays(child.recurrenceRule, day, day, itemAnchorDate(child))
-      if (dueDays.length > 0) dueChildrenIds.push(child.id)
-    }
-  }
-
-  // Count how many due children have been completed on `day`
-  let completedCount = 0
-  if (dueChildrenIds.length > 0) {
-    const childOccs = await repos.findOccurrencesByItemsAndDay(pool, dueChildrenIds, day, userId)
-    const occByItemId = new Map(childOccs.map((o) => [o.itemId, o]))
-
-    for (const childId of dueChildrenIds) {
-      const childOcc = occByItemId.get(childId)
-      if (!childOcc) continue  // not yet materialized → untouched → not completed
-      const childEvents = await repos.findEventsByOccurrence(pool, childOcc.id, userId)
-      const state = deriveLeafCompletion(childEvents)
-      if (state.completionPercent >= 100) completedCount++
-    }
-  }
-
-  const derivedPercent = computeDerivedPercent(dueChildrenIds.length, completedCount)
+  const derivedPercent = computeDerivedPercent(dueChildNodes.map(computeNodePercent))
   return buildParentCompletionState(derivedPercent, parentEvents)
 }

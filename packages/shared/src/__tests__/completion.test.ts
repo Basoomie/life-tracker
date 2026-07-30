@@ -5,10 +5,30 @@ import { describe, it, expect } from 'vitest'
 import {
   deriveLeafCompletion,
   computeDerivedPercent,
+  computeNodePercent,
   findDeclaredPercent,
   buildParentCompletionState,
 } from '../domain/completion'
+import type { CompletionNode } from '../domain/completion'
 import type { TrackerEvent } from '../types/events'
+
+// Minimal CompletionNode factory — a leaf unless children/declared are supplied.
+function node(overrides: Partial<CompletionNode> = {}): CompletionNode {
+  return {
+    isParent: false,
+    leafPercent: 0,
+    declaredPercent: null,
+    dueChildren: [],
+    ...overrides,
+  }
+}
+
+const doneLeaf = node({ leafPercent: 100 })
+const missedLeaf = node({ leafPercent: 0 })
+
+function parent(dueChildren: CompletionNode[], declaredPercent: number | null = null): CompletionNode {
+  return node({ isParent: true, dueChildren, declaredPercent })
+}
 
 // Minimal event factory — only the fields our pure functions inspect
 function makeEvent(
@@ -131,23 +151,63 @@ describe('§6.4 retroactive_completion event is treated as a completion event', 
 
 // ── §6.1 Derived parent % ─────────────────────────────────────────────────────
 
-describe('§6.1 computeDerivedPercent: correct derivation from child counts', () => {
-  it('§6.1 zero due children → 100% (parent complete when no children are scheduled)', () => {
-    expect(computeDerivedPercent(0, 0)).toBe(100)
+describe('§6.1 computeDerivedPercent: the mean of the due children\'s own values', () => {
+  it('§6.1 no due children → 100% (parent complete when no children are scheduled)', () => {
+    expect(computeDerivedPercent([])).toBe(100)
   })
 
   it('§6.1 all due children completed → 100%', () => {
-    expect(computeDerivedPercent(3, 3)).toBe(100)
+    expect(computeDerivedPercent([100, 100, 100])).toBe(100)
   })
 
   it('§6.1 no due children completed → 0%', () => {
-    expect(computeDerivedPercent(3, 0)).toBe(0)
+    expect(computeDerivedPercent([0, 0, 0])).toBe(0)
   })
 
   it('§6.1 partial completion → correct rounded %', () => {
-    expect(computeDerivedPercent(3, 1)).toBe(33)  // Math.round(1/3 * 100)
-    expect(computeDerivedPercent(2, 1)).toBe(50)
-    expect(computeDerivedPercent(4, 3)).toBe(75)
+    expect(computeDerivedPercent([100, 0, 0])).toBe(33)  // Math.round(1/3 * 100)
+    expect(computeDerivedPercent([100, 0])).toBe(50)
+    expect(computeDerivedPercent([100, 100, 100, 0])).toBe(75)
+  })
+
+  it('§6.1 children carry partial credit — 25/50/75 averages to 50%, not 0%', () => {
+    expect(computeDerivedPercent([25, 50, 75])).toBe(50)
+  })
+})
+
+// ── §6.1/§6.3 Nested parents contribute their own value ───────────────────────
+
+describe('§6.1 a child that is itself a parent contributes its own value, not a binary 0', () => {
+  it('§6.1 a leaf contributes 0 or 100', () => {
+    expect(computeNodePercent(doneLeaf)).toBe(100)
+    expect(computeNodePercent(missedLeaf)).toBe(0)
+  })
+
+  it('§6.1 a sub-parent at 6-of-7 contributes 86, not 0', () => {
+    const subRoutine = parent([doneLeaf, doneLeaf, doneLeaf, doneLeaf, doneLeaf, doneLeaf, missedLeaf])
+    expect(computeNodePercent(subRoutine)).toBe(86)
+  })
+
+  it('§6.1 a parent of sub-parents averages their percentages (partial credit)', () => {
+    const quarterDone = parent([doneLeaf, missedLeaf, missedLeaf, missedLeaf])  // 25
+    const halfDone = parent([doneLeaf, missedLeaf])                             // 50
+    const threeQuarters = parent([doneLeaf, doneLeaf, doneLeaf, missedLeaf])    // 75
+    expect(computeNodePercent(parent([quarterDone, halfDone, threeQuarters]))).toBe(50)
+  })
+
+  it('§6.3 a manually-completed sub-parent contributes its declared %, not its derived %', () => {
+    const declaredComplete = parent([missedLeaf, missedLeaf], 100)
+    expect(computeNodePercent(declaredComplete)).toBe(100)
+    expect(computeNodePercent(parent([declaredComplete, missedLeaf]))).toBe(50)
+  })
+
+  it('§6.1 a sub-parent with no children due today is vacuously 100', () => {
+    expect(computeNodePercent(parent([]))).toBe(100)
+  })
+
+  it('§6.1 nesting recurses to arbitrary depth (§5)', () => {
+    const depth3 = parent([parent([parent([doneLeaf, missedLeaf])])])
+    expect(computeNodePercent(depth3)).toBe(50)
   })
 })
 

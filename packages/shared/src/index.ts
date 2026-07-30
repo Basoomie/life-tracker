@@ -75,10 +75,11 @@ export {
   itemAnchorDate,
   deriveLeafCompletion,
   computeDerivedPercent,
+  computeNodePercent,
   findDeclaredPercent,
   buildParentCompletionState,
 } from './domain/index'
-export type { LeafCompletionState, ParentCompletionState } from './domain/index'
+export type { LeafCompletionState, ParentCompletionState, CompletionNode } from './domain/index'
 
 export type {
   DateWindow,

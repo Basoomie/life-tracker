@@ -251,6 +251,75 @@ describe('§3.1 parent adherence uses mean of daily derived percentages', () => 
   })
 })
 
+// ── §6.1 Nested parents and excused children in the observation arrays ────────
+// The stats path replays the tree itself (buildParentDayObservations), so it has
+// to land on exactly the numbers the app showed on the day — these are the same
+// rules as the §6.1/§8.1 cases in completion.test.ts, asserted through stats.
+
+describe('§6.1 a sub-routine contributes its own % to its parent\'s adherence, not a binary 0', () => {
+  it('§6.1 a 3-of-4 sub-routine makes the parent 75%, not 0%', async () => {
+    const u = await makeUser('nested-partial')
+    const parent = await makeParent(u.id, 'Morning Routine')
+    const sub = await makeChild(u.id, parent.id, 'Morning Stretching')
+    const leaves = await Promise.all(
+      ['a', 'b', 'c', 'd'].map(n => makeChild(u.id, sub.id, `Stretch ${n}`))
+    )
+
+    // Every day of the window: 3 of the sub-routine's 4 leaves done.
+    for (const day of [MON, TUE, WED, THU, FRI]) {
+      for (const leaf of leaves.slice(0, 3)) await complete(leaf, day, u.id)
+    }
+
+    const finding = await getItemAdherence(getTestPool(), u.id, parent.id, WEEK)
+    expect(finding.type).toBe('parent_adherence')
+    if (finding.type !== 'parent_adherence') return
+
+    expect(finding.meanDerivedPercent).toBeCloseTo(75)
+    // The breakdown reports the same number it contributed.
+    const subFinding = finding.children.find(c => c.itemId === sub.id)
+    expect(subFinding).toBeDefined()
+  })
+})
+
+describe('§8.1 an excused child leaves the parent denominator in stats too', () => {
+  it('§8.1 1 done + 1 excused of 3 → 50% that day, not 33%', async () => {
+    const u = await makeUser('excused-denominator')
+    const parent = await makeParent(u.id, 'Excuse Routine')
+    const done = await makeChild(u.id, parent.id, 'Done')
+    const excused = await makeChild(u.id, parent.id, 'Excused')
+    await makeChild(u.id, parent.id, 'Missed')
+
+    for (const day of [MON, TUE, WED, THU, FRI]) {
+      await complete(done, day, u.id)
+      await excuse(excused, day, u.id)
+    }
+
+    const finding = await getItemAdherence(getTestPool(), u.id, parent.id, WEEK)
+    expect(finding.type).toBe('parent_adherence')
+    if (finding.type !== 'parent_adherence') return
+
+    expect(finding.meanDerivedPercent).toBeCloseTo(50)
+  })
+
+  it('§8.1 a skipped child stays in the denominator — 1 done + 1 skipped → 50%', async () => {
+    const u = await makeUser('skipped-denominator')
+    const parent = await makeParent(u.id, 'Skip Routine')
+    const done = await makeChild(u.id, parent.id, 'Done')
+    const skipped = await makeChild(u.id, parent.id, 'Skipped')
+
+    for (const day of [MON, TUE, WED, THU, FRI]) {
+      await complete(done, day, u.id)
+      await skip(skipped, day, u.id)
+    }
+
+    const finding = await getItemAdherence(getTestPool(), u.id, parent.id, WEEK)
+    expect(finding.type).toBe('parent_adherence')
+    if (finding.type !== 'parent_adherence') return
+
+    expect(finding.meanDerivedPercent).toBeCloseTo(50)
+  })
+})
+
 // ── §3.1 Parents always include per-child breakdown ──────────────────────────
 
 describe('§3.1 parents always return a per-child breakdown', () => {

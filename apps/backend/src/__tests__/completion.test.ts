@@ -16,6 +16,7 @@ import {
   getParentCompletionState,
 } from '../domain/completion'
 import { ensureOccurrenceMaterialized } from '../domain/materialization'
+import { skipOccurrenceByUser, excuseOccurrenceByUser } from '../domain/dispositions'
 import type { Item, Occurrence } from '@tracker/shared'
 
 beforeAll(async () => { await setupTestDb() })
@@ -59,12 +60,17 @@ async function makeMWFHabit(userId: string, name = 'MWF Habit') {
   })
 }
 
-async function makeDailyHabit(userId: string, name = 'Daily Habit') {
+async function makeDailyHabit(
+  userId: string,
+  name = 'Daily Habit',
+  opts: Partial<Parameters<typeof repos.insertItem>[1]> = {}
+) {
   return repos.insertItem(getTestPool(), {
     userId,
     name,
     recurrenceRule: { type: 'daily' },
     creationSource: 'planned',
+    ...opts,
   })
 }
 
@@ -213,6 +219,142 @@ describe('§6.1 parent derived % uses getDueDays to determine which children are
     const childOcc  = await materialize(child, MONDAY, u.id)
 
     await completeChild(getTestPool(), childOcc, parentOcc, u.id)
+
+    const state = await getParentCompletionState(getTestPool(), parentOcc, u.id, MONDAY)
+    expect(state.derivedPercent).toBe(100)
+  })
+})
+
+// ── §6.1 Nested parents contribute their own value (partial credit) ───────────
+
+describe('§6.1 a child that is itself a parent contributes its own value to the derived %', () => {
+  it('§6.1 a sub-routine at 6-of-7 contributes 86, not 0 (it carries no item_completed event)', async () => {
+    // Morning Routine → Morning Stretching → 7 leaves, 6 of them done.
+    // Morning Stretching is a parent, so it never gets an item_completed event
+    // (routes/occurrences.ts sends parents down the declared-% path) — read as a
+    // leaf it would contribute 0 and Morning Routine would show 0%.
+    const u = await makeUser('comp-nested-partial@test.com')
+    const root = await makeDailyHabit(u.id, 'Morning Routine')
+    const sub = await makeDailyHabit(u.id, 'Morning Stretching', { parentId: root.id })
+
+    const rootOcc = await materialize(root, MONDAY, u.id)
+    const subOcc = await materialize(sub, MONDAY, u.id)
+
+    for (let i = 0; i < 7; i++) {
+      const leaf = await makeTask(u.id, `Stretch ${i}`, {
+        recurrenceRule: { type: 'daily' },
+        parentId: sub.id,
+      })
+      const leafOcc = await materialize(leaf, MONDAY, u.id)
+      if (i < 6) await completeChild(getTestPool(), leafOcc, subOcc, u.id)
+    }
+
+    const subState = await getParentCompletionState(getTestPool(), subOcc, u.id, MONDAY)
+    expect(subState.derivedPercent).toBe(86)   // 6/7
+
+    const rootState = await getParentCompletionState(getTestPool(), rootOcc, u.id, MONDAY)
+    expect(rootState.derivedPercent).toBe(86)  // its only due child is worth 86
+  })
+
+  it('§6.1 a parent averages its children\'s percentages — 25/50/75 → 50%, not 0%', async () => {
+    const u = await makeUser('comp-nested-average@test.com')
+    const root = await makeDailyHabit(u.id, 'Averaging Routine')
+    const rootOcc = await materialize(root, MONDAY, u.id)
+
+    // Three sub-routines at 1/4, 1/2 and 3/4.
+    for (const [name, total, done] of [['Quarter', 4, 1], ['Half', 2, 1], ['ThreeQ', 4, 3]] as const) {
+      const sub = await makeDailyHabit(u.id, name, { parentId: root.id })
+      const subOcc = await materialize(sub, MONDAY, u.id)
+      for (let i = 0; i < total; i++) {
+        const leaf = await makeTask(u.id, `${name} leaf ${i}`, {
+          recurrenceRule: { type: 'daily' },
+          parentId: sub.id,
+        })
+        const leafOcc = await materialize(leaf, MONDAY, u.id)
+        if (i < done) await completeChild(getTestPool(), leafOcc, subOcc, u.id)
+      }
+    }
+
+    const state = await getParentCompletionState(getTestPool(), rootOcc, u.id, MONDAY)
+    expect(state.derivedPercent).toBe(50)
+  })
+
+  it('§6.3 a manually-completed sub-routine contributes its declared %, not its derived %', async () => {
+    const u = await makeUser('comp-nested-declared@test.com')
+    const root = await makeDailyHabit(u.id, 'Declared-sub Routine')
+    const sub = await makeDailyHabit(u.id, 'Declared Sub', { parentId: root.id })
+    const leaf = await makeTask(u.id, 'Untouched leaf', {
+      recurrenceRule: { type: 'daily' },
+      parentId: sub.id,
+    })
+
+    const rootOcc = await materialize(root, MONDAY, u.id)
+    const subOcc = await materialize(sub, MONDAY, u.id)
+    await materialize(leaf, MONDAY, u.id)
+
+    // Sub-routine's own child is untouched (derived 0), but the user declared it done.
+    await declareParentPercent(getTestPool(), subOcc, u.id, 100)
+
+    const state = await getParentCompletionState(getTestPool(), rootOcc, u.id, MONDAY)
+    expect(state.derivedPercent).toBe(100)
+  })
+})
+
+// ── §8.1 Excused children leave the denominator ───────────────────────────────
+
+describe('§8.1 an excused child is excluded from the parent derived %; a skipped one is not', () => {
+  it('§8.1 excused child leaves the denominator — 1 done + 1 excused of 3 → 50%', async () => {
+    const u = await makeUser('comp-excused-child@test.com')
+    const parent = await makeDailyHabit(u.id, 'Excuse Routine')
+    const parentOcc = await materialize(parent, MONDAY, u.id)
+
+    const [done, excused, missed] = await Promise.all(
+      ['done', 'excused', 'missed'].map((n) =>
+        makeTask(u.id, `Excuse ${n}`, { recurrenceRule: { type: 'daily' }, parentId: parent.id })
+      )
+    )
+    const doneOcc = await materialize(done, MONDAY, u.id)
+    const excusedOcc = await materialize(excused, MONDAY, u.id)
+    await materialize(missed, MONDAY, u.id)
+
+    await completeChild(getTestPool(), doneOcc, parentOcc, u.id)
+    await excuseOccurrenceByUser(getTestPool(), excusedOcc, u.id)
+
+    // Denominator is {done, missed}, not all three → 50%, not 33%.
+    const state = await getParentCompletionState(getTestPool(), parentOcc, u.id, MONDAY)
+    expect(state.derivedPercent).toBe(50)
+  })
+
+  it('§8.1 a skipped child stays in the denominator as a miss — 1 done + 1 skipped → 50%', async () => {
+    const u = await makeUser('comp-skipped-child@test.com')
+    const parent = await makeDailyHabit(u.id, 'Skip Routine')
+    const parentOcc = await materialize(parent, MONDAY, u.id)
+
+    const done = await makeTask(u.id, 'Skip done', { recurrenceRule: { type: 'daily' }, parentId: parent.id })
+    const skipped = await makeTask(u.id, 'Skip skipped', { recurrenceRule: { type: 'daily' }, parentId: parent.id })
+    const doneOcc = await materialize(done, MONDAY, u.id)
+    const skippedOcc = await materialize(skipped, MONDAY, u.id)
+
+    await completeChild(getTestPool(), doneOcc, parentOcc, u.id)
+    await skipOccurrenceByUser(getTestPool(), skippedOcc, u.id)
+
+    const state = await getParentCompletionState(getTestPool(), parentOcc, u.id, MONDAY)
+    expect(state.derivedPercent).toBe(50)
+  })
+
+  it('§8.1 every due child excused → 100% (vacuous), never 0% — an excuse is not a miss', async () => {
+    const u = await makeUser('comp-all-excused@test.com')
+    const parent = await makeDailyHabit(u.id, 'All-excused Routine')
+    const parentOcc = await materialize(parent, MONDAY, u.id)
+
+    for (const n of ['a', 'b']) {
+      const child = await makeTask(u.id, `All-excused ${n}`, {
+        recurrenceRule: { type: 'daily' },
+        parentId: parent.id,
+      })
+      const childOcc = await materialize(child, MONDAY, u.id)
+      await excuseOccurrenceByUser(getTestPool(), childOcc, u.id)
+    }
 
     const state = await getParentCompletionState(getTestPool(), parentOcc, u.id, MONDAY)
     expect(state.derivedPercent).toBe(100)

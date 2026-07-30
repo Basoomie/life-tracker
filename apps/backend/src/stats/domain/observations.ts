@@ -19,9 +19,10 @@ import {
   itemAnchorDate,
   deriveLeafCompletion,
   computeDerivedPercent,
+  computeNodePercent,
   findDeclaredPercent,
 } from '@tracker/shared'
-import type { TrackerEvent } from '@tracker/shared'
+import type { TrackerEvent, CompletionNode } from '@tracker/shared'
 import * as repos from '../../db/repos/index'
 import { deriveDisposition as deriveOccurrenceDisposition } from '../../domain/dispositions'
 import type {
@@ -128,13 +129,91 @@ export async function buildLeafDayObservations(
   })
 }
 
+// Everything the in-memory tree walk needs, bulk-loaded up front so the walk
+// itself does zero I/O (and stays a mirror of domain/completion.ts's walk).
+type SubtreeContext = {
+  childrenByParent: Map<string, Item[]>   // itemId → its direct children
+  dueDays: Map<string, Set<string>>       // itemId → days it was due in the window
+  occs: Map<string, Occurrence>           // `${itemId}:${day}` → occurrence
+  events: Map<string, TrackerEvent[]>     // occurrenceId → its events
+}
+
+function eventsFor(itemId: string, day: string, ctx: SubtreeContext): TrackerEvent[] {
+  const occ = ctx.occs.get(`${itemId}:${day}`)
+  return occ ? (ctx.events.get(occ.id) ?? []) : []
+}
+
 /**
- * Build DayObservation[] for a PARENT item and ChildObservationMap for each child.
+ * §6.1 — Due, non-excused children of `itemId` on `day`, as CompletionNodes.
  *
- * Parent completionPercent = derived % per §6.1 (from children's completions).
- * Not-due children are excluded from the denominator (§6.1 — the Tuesday/MWF case).
- * Uses getDueDays for child due-day computation — not reimplemented.
- * Bulk-fetches all occurrences and events in one round trip.
+ * The stats-side twin of buildDueChildNodes in domain/completion.ts: same rule
+ * (recurse into sub-parents, drop not-due and excused children), different data
+ * access — that one queries lazily per day, this one walks pre-loaded maps over
+ * a whole window. Both hand the result to the same pure computeNodePercent, so
+ * a stat can never disagree with what the app showed on the day.
+ */
+function buildDueChildNodes(itemId: string, day: string, ctx: SubtreeContext): CompletionNode[] {
+  const nodes: CompletionNode[] = []
+  for (const child of ctx.childrenByParent.get(itemId) ?? []) {
+    if (!ctx.dueDays.get(child.id)?.has(day)) continue
+    const events = eventsFor(child.id, day, ctx)
+    // §8.1 — an excused child is out of the denominator entirely, not a zero.
+    if (deriveOccurrenceDisposition(events).type === 'excused') continue
+    nodes.push(buildNode(child.id, day, events, ctx))
+  }
+  return nodes
+}
+
+function buildNode(itemId: string, day: string, events: TrackerEvent[], ctx: SubtreeContext): CompletionNode {
+  const hasChildren = (ctx.childrenByParent.get(itemId) ?? []).length > 0
+  return {
+    isParent: hasChildren,
+    leafPercent: deriveLeafCompletion(events).completionPercent,
+    declaredPercent: findDeclaredPercent(events),
+    dueChildren: hasChildren ? buildDueChildNodes(itemId, day, ctx) : [],
+  }
+}
+
+/**
+ * Load the whole containment subtree under `rootItemId` (nested arbitrarily
+ * deep, §5) — the parent's derived % depends on every level, not just the
+ * direct children. `seen` guards a malformed parent_id cycle.
+ */
+async function collectSubtree(
+  pool: Pool,
+  userId: string,
+  rootItemId: string
+): Promise<{ descendants: Item[]; childrenByParent: Map<string, Item[]> }> {
+  const childrenByParent = new Map<string, Item[]>()
+  const descendants: Item[] = []
+  const queue = [rootItemId]
+  const seen = new Set<string>()
+
+  while (queue.length > 0) {
+    const itemId = queue.shift()!
+    if (seen.has(itemId)) continue
+    seen.add(itemId)
+    const children = await repos.findChildItems(pool, itemId, userId)
+    childrenByParent.set(itemId, children)
+    for (const child of children) {
+      descendants.push(child)
+      queue.push(child.id)
+    }
+  }
+
+  return { descendants, childrenByParent }
+}
+
+/**
+ * Build DayObservation[] for a PARENT item and ChildObservationMap for each
+ * direct child.
+ *
+ * Parent completionPercent = derived % per §6.1: the mean of its due children's
+ * own values, with sub-parents contributing their own (declared ?? derived)
+ * percentage rather than a binary 0. Not-due children are excluded from the
+ * denominator (§6.1 — the Tuesday/MWF case), and so are excused ones (§8.1).
+ * Uses getDueDays for due-day computation — not reimplemented.
+ * Bulk-fetches all occurrences and events for the subtree in one round trip.
  */
 export async function buildParentDayObservations(
   pool: Pool,
@@ -149,34 +228,34 @@ export async function buildParentDayObservations(
     ? getDueDays(parentItem.recurrenceRule, startDay, endDay, itemAnchorDate(parentItem))
     : []
 
-  // Get children (active only)
-  const children = await repos.findChildItems(pool, parentItem.id, userId)
+  // Whole subtree (active only), plus the direct children the breakdown reports on
+  const { descendants, childrenByParent } = await collectSubtree(pool, userId, parentItem.id)
+  const children = childrenByParent.get(parentItem.id) ?? []
 
-  // Compute each child's due days in the window (getDueDays — not reimplemented)
-  const childDueDaysMap = new Map<string, Set<string>>()
-  for (const child of children) {
-    if (child.recurrenceRule) {
-      const days = getDueDays(child.recurrenceRule, startDay, endDay, itemAnchorDate(child))
-      childDueDaysMap.set(child.id, new Set(days))
+  // Compute every descendant's due days in the window (getDueDays — not reimplemented)
+  const dueDaysMap = new Map<string, Set<string>>()
+  for (const item of descendants) {
+    if (item.recurrenceRule) {
+      const days = getDueDays(item.recurrenceRule, startDay, endDay, itemAnchorDate(item))
+      dueDaysMap.set(item.id, new Set(days))
     } else {
-      childDueDaysMap.set(child.id, new Set())  // one-time task: resolved below
+      dueDaysMap.set(item.id, new Set())  // one-time task: resolved below
     }
   }
 
-  // Bulk-fetch all occurrences (parent + children) in the window
-  const allItemIds = [parentItem.id, ...children.map(c => c.id)]
+  // Bulk-fetch all occurrences (parent + whole subtree) in the window
+  const allItemIds = [parentItem.id, ...descendants.map(d => d.id)]
   const allOccs = await repos.findOccurrencesByItemsInRange(pool, allItemIds, userId, startDay, endDay)
 
   // Build occ lookup: 'itemId:day' → Occurrence
   const occMap = new Map<string, Occurrence>()
   for (const occ of allOccs) occMap.set(`${occ.itemId}:${occ.appliesToDay}`, occ)
 
-  // For one-time task children: due on the day their occurrence exists
-  for (const child of children) {
-    if (!child.recurrenceRule) {
-      const childOccs = allOccs.filter(o => o.itemId === child.id)
-      const days = new Set(childOccs.map(o => o.appliesToDay))
-      childDueDaysMap.set(child.id, days)
+  // For one-time tasks: due on the day their occurrence exists
+  for (const item of descendants) {
+    if (!item.recurrenceRule) {
+      const itemOccs = allOccs.filter(o => o.itemId === item.id)
+      dueDaysMap.set(item.id, new Set(itemOccs.map(o => o.appliesToDay)))
     }
   }
 
@@ -184,14 +263,33 @@ export async function buildParentDayObservations(
   const allOccIds = allOccs.map(o => o.id)
   const eventsMap = await repos.findEventsByOccurrenceIds(pool, allOccIds, userId)
 
-  // Build child observations (each child's due days in the window)
+  const ctx: SubtreeContext = {
+    childrenByParent,
+    dueDays: dueDaysMap,
+    occs: occMap,
+    events: eventsMap,
+  }
+
+  // Build child observations (each direct child's due days in the window).
+  // A child that is itself a parent reports its own value (declared ?? derived,
+  // §6.3) — the same number it contributed to the parent above, so the breakdown
+  // can never disagree with the total it feeds.
   const childObs: ChildObservationMap = new Map()
   for (const child of children) {
-    const dueDays = Array.from(childDueDaysMap.get(child.id) ?? []).sort()
+    const dueDays = Array.from(dueDaysMap.get(child.id) ?? []).sort()
+    const hasChildren = (childrenByParent.get(child.id) ?? []).length > 0
     const obs: DayObservation[] = dueDays.map(day => {
       const occ = occMap.get(`${child.id}:${day}`)
       const events = occ ? (eventsMap.get(occ.id) ?? []) : []
-      return buildLeafDayObs(day, occ, events)
+      if (!hasChildren) return buildLeafDayObs(day, occ, events)
+      return {
+        day,
+        completionPercent: computeNodePercent(buildNode(child.id, day, events, ctx)),
+        disposition: deriveDisposition(occ, events),
+        declaredPercent: findDeclaredPercent(events),
+        isBackfilled: false,
+        backfillLagDays: 0,
+      }
     })
     childObs.set(child.id, obs)
   }
@@ -201,21 +299,9 @@ export async function buildParentDayObservations(
     const parentOcc = occMap.get(`${parentItem.id}:${day}`)
     const parentEvents = parentOcc ? (eventsMap.get(parentOcc.id) ?? []) : []
 
-    // Count due and completed children on this day (§6.1 not-due exclusion)
-    let dueCount = 0
-    let completedCount = 0
-    for (const child of children) {
-      const isDue = (childDueDaysMap.get(child.id) ?? new Set()).has(day)
-      if (!isDue) continue
-      dueCount++
-      const childOcc = occMap.get(`${child.id}:${day}`)
-      if (childOcc) {
-        const childEvents = eventsMap.get(childOcc.id) ?? []
-        if (deriveLeafCompletion(childEvents).completionPercent >= 100) completedCount++
-      }
-    }
-
-    const derivedPercent = computeDerivedPercent(dueCount, completedCount)
+    const derivedPercent = computeDerivedPercent(
+      buildDueChildNodes(parentItem.id, day, ctx).map(computeNodePercent)
+    )
     const declaredPercent = findDeclaredPercent(parentEvents)
     const disposition = deriveDisposition(parentOcc, parentEvents)
 

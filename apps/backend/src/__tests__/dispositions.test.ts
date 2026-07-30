@@ -14,7 +14,7 @@ import {
   deriveDisposition,
 } from '../domain/dispositions'
 import { addPrerequisite } from '../domain/prerequisites'
-import { completeLeaf, completeChild } from '../domain/completion'
+import { completeLeaf, completeChild, declareParentPercent } from '../domain/completion'
 import { ensureOccurrenceMaterialized } from '../domain/materialization'
 import type { Item, Occurrence } from '@tracker/shared'
 
@@ -363,6 +363,44 @@ describe('§6.7 end-of-day boundary uses day-start bucketing correctly', () => {
     await runDispositions(getTestPool(), u.id, DAY_A)
     const eventsA2 = await repos.findEventsByOccurrence(getTestPool(), occA.id, u.id)
     expect(eventsA2.filter((e) => e.eventType === 'skipped')).toHaveLength(1)
+  })
+})
+
+// ── §6.2/§6.3 A declared parent % is a disposition ────────────────────────────
+
+describe('§6.2 a manually-completed parent derives as completed, not pending', () => {
+  it('§6.2 declaring 100% on a parent derives disposition "completed"', async () => {
+    const u = await makeUser('disp-declared-complete@test.com')
+    const parent = await makeHabit(u.id, 'Declared complete parent')
+    const occ = await materialize(parent, DAY, u.id)
+
+    await declareParentPercent(getTestPool(), occ, u.id, 100)
+
+    const events = await repos.findEventsByOccurrence(getTestPool(), occ.id, u.id)
+    expect(deriveDisposition(events).type).toBe('completed')
+  })
+
+  it('§6.2 declaring below 100% is still pending — a partial is not a close-out', async () => {
+    const u = await makeUser('disp-declared-partial@test.com')
+    const parent = await makeHabit(u.id, 'Declared partial parent')
+    const occ = await materialize(parent, DAY, u.id)
+
+    await declareParentPercent(getTestPool(), occ, u.id, 60)
+
+    const events = await repos.findEventsByOccurrence(getTestPool(), occ.id, u.id)
+    expect(deriveDisposition(events).type).toBe('pending')
+  })
+
+  it('§8 most recent wins — skipping after declaring 100% derives as skipped', async () => {
+    const u = await makeUser('disp-declared-then-skip@test.com')
+    const parent = await makeHabit(u.id, 'Declared then skipped')
+    const occ = await materialize(parent, DAY, u.id)
+
+    await declareParentPercent(getTestPool(), occ, u.id, 100)
+    await skipOccurrenceByUser(getTestPool(), occ, u.id)
+
+    const events = await repos.findEventsByOccurrence(getTestPool(), occ.id, u.id)
+    expect(deriveDisposition(events).type).toBe('skipped')
   })
 })
 
