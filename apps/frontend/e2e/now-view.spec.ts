@@ -697,6 +697,26 @@ test.describe('Disposition status is visible and non-interactive (Now view)', ()
     await expect(row.getByTestId('occ-disposition-badge')).toContainText('Carried forward')
   })
 
+  test('§8.1 an auto-closed occurrence shows the % it closed at instead of reading as still open', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2025-06-16T05:00:00'))
+    const autoClosedTrading: OccurrenceWithState = {
+      ...TRADING_OCC,
+      disposition: { type: 'auto_closed', reasonId: null, comment: null, rescheduledToDay: null, derivedPercentAtClose: 43 },
+    }
+    await setupApiMocks(page, [autoClosedTrading])
+
+    await page.goto('/')
+
+    const row = page.getByTestId('occ-row-occ-trading')
+    await expect(row).toHaveClass(/occ-row--auto_closed/)
+    await expect(row.getByTestId('occ-disposition-badge')).toContainText('Auto-closed at 43%')
+
+    // A system action, so there is nothing of the user's to restore — but the
+    // row stays correctable (§6.4 never blocks backfill).
+    await expect(row.getByTestId('occ-restore-btn')).toHaveCount(0)
+    await expect(row.getByTestId('occ-check')).toBeVisible()
+  })
+
   test('clicking restore calls clear-disposition and the occurrence becomes interactive again', async ({ page }) => {
     await page.clock.setFixedTime(new Date('2025-06-16T05:00:00'))
     const skippedTrading: OccurrenceWithState = {

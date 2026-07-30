@@ -36,11 +36,10 @@ type Props = {
   onManageSessions?: () => void
 }
 
-// Skip/excuse/carry-forward are the three user-settable "no longer active
-// today" statuses (completed has its own green checkmark treatment; auto_closed
-// is a system action, not something the user set and un-sets). Deliberately
-// distinct visual language per status — not just one generic "greyed out" —
-// so the three are each recognizable at a glance:
+// Statuses that get a badge instead of reading as a plain open row (completed
+// has its own green checkmark treatment). Deliberately distinct visual language
+// per status — not just one generic "greyed out" — so each is recognizable at
+// a glance:
 //   skipped     — read as a miss (danger-tinted), matching "breaks streak" in
 //                 the disposition picker.
 //   excused     — neutral grey, never red: v2's single-miss-constraint ethos
@@ -48,11 +47,24 @@ type Props = {
 //                 must not look like one.
 //   rescheduled — informational accent tint, not a judgment either way; it's
 //                 just been moved.
+//   auto_closed — neutral, and always accompanied by the % it closed at (§8.1:
+//                 "marked complete at whatever the derived child % was"). The
+//                 end-of-day job DID close this occurrence; without a badge the
+//                 row is pixel-identical to a pending one and the record and the
+//                 screen disagree.
 const DISPOSITION_META: Record<string, { label: string; icon: string }> = {
   skipped: { label: 'Skipped', icon: '✗' },
   excused: { label: 'Excused', icon: '∅' },
   rescheduled: { label: 'Carried forward', icon: '→' },
+  auto_closed: { label: 'Auto-closed', icon: '⊘' },
 }
+
+// The three the USER set, and can therefore un-set (↺). auto_closed is
+// deliberately absent: it's a system action, so there is nothing of the user's
+// to undo — and unlike the other three the row stays interactive, because the
+// correction path for a day that closed at the wrong % is to log what actually
+// happened (§6.4 never blocks backfill), not to "clear" the close-out.
+const CLEARABLE_DISPOSITIONS = new Set(['skipped', 'excused', 'rescheduled'])
 
 export function OccurrenceRow({
   occ,
@@ -75,18 +87,26 @@ export function OccurrenceRow({
   const isComplete = occ.completionState.isComplete
   const timingLabel = formatTimingLabel(occ, buckets)
   const derivedPct = occ.completionState.derivedPercent
+  // §6.2 — derived and declared coexist and may disagree; v1 must not collapse
+  // them. A parent the user ticked reads "100% · logged 76%": the declared value
+  // is what they asserted, the derived one is what the children actually say.
+  const declaredPct = occ.completionState.declaredPercent
+  const showBothPercents =
+    derivedPct !== null && declaredPct !== null && Math.round(declaredPct) !== Math.round(derivedPct)
 
   const dispositionMeta = DISPOSITION_META[occ.disposition.type]
   // Skipped/excused/carried-forward: no longer active for today. Visually
   // distinct from both "pending" and "completed," and not interactive — the
   // only action left on the row is undoing the status via onClearDisposition.
-  const isDispositioned = dispositionMeta !== undefined
+  const isDispositioned = CLEARABLE_DISPOSITIONS.has(occ.disposition.type)
+  const isAutoClosed = occ.disposition.type === 'auto_closed'
 
   const rowClasses = [
     'occ-row',
     isChild ? 'occ-row--child' : '',
     occ.isBlocked ? 'occ-row--blocked' : '',
     isDispositioned ? `occ-row--dispositioned occ-row--${occ.disposition.type}` : '',
+    isAutoClosed ? 'occ-row--auto_closed' : '',
   ].filter(Boolean).join(' ')
 
   return (
@@ -123,7 +143,7 @@ export function OccurrenceRow({
           {occ.snapshot.name}
         </div>
         <div className="occ-meta">
-          {isDispositioned && (
+          {dispositionMeta && (
             <span
               className={`occ-disposition-badge occ-disposition-badge--${occ.disposition.type}`}
               data-testid="occ-disposition-badge"
@@ -131,6 +151,9 @@ export function OccurrenceRow({
               {dispositionMeta.icon} {dispositionMeta.label}
               {occ.disposition.type === 'rescheduled' && occ.disposition.rescheduledToDay && (
                 <> → {formatDayLabel(occ.disposition.rescheduledToDay)}</>
+              )}
+              {isAutoClosed && occ.disposition.derivedPercentAtClose !== null && (
+                <> at {Math.round(occ.disposition.derivedPercentAtClose)}%</>
               )}
             </span>
           )}
@@ -142,7 +165,14 @@ export function OccurrenceRow({
           )}
           {derivedPct !== null && (
             <span className="occ-percent" data-testid="derived-pct">
-              {Math.round(derivedPct)}%
+              {showBothPercents ? (
+                <>
+                  {Math.round(declaredPct!)}%
+                  <span className="occ-percent__derived"> · logged {Math.round(derivedPct)}%</span>
+                </>
+              ) : (
+                <>{Math.round(derivedPct)}%</>
+              )}
             </span>
           )}
         </div>

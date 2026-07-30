@@ -315,6 +315,10 @@ input, select, textarea {
    button and edit/archive/manage-time actions stay usable. */
 .occ-row--dispositioned { opacity: 0.7; }
 
+/* Auto-closed: dimmed like the others so it doesn't read as still-open, but
+   fully interactive — the day can still be corrected by logging what happened. */
+.occ-row--auto_closed { opacity: 0.75; }
+
 .occ-check--skipped,
 .occ-check--excused,
 .occ-check--rescheduled {
@@ -425,6 +429,13 @@ input, select, textarea {
   color: var(--color-accent-fg-subtle);
 }
 
+/* Auto-closed by the end-of-day job — neutral, never danger-tinted: it reports
+   what the record says, it isn't a verdict on the day. */
+.occ-disposition-badge--auto_closed {
+  background: var(--color-border-subtle);
+  color: var(--color-text-secondary);
+}
+
 .occ-timing {
   font-size: var(--text-xs);
   color: var(--color-text-secondary);
@@ -447,6 +458,10 @@ input, select, textarea {
   color: var(--color-text-secondary);
   font-variant-numeric: tabular-nums;
 }
+
+/* The derived half of a declared-vs-derived pair (§6.2) — subordinate to the
+   declared number it sits next to, but never hidden. */
+.occ-percent__derived { color: var(--color-text-tertiary); }
 
 .occ-actions {
   display: flex;

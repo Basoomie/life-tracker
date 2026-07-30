@@ -52,8 +52,12 @@ export function OccurrenceCard({ node, depth, renderLeaf, onReordered, defaultEx
         .filter((c): c is OccurrenceNode => c !== undefined)
     : children
 
-  const completedChildren = children.filter((c) => c.occ.completionState.isComplete).length
-  const totalChildren = children.length
+  // §8.1 — an excused child is out of the derived-% denominator on the server,
+  // so it must be out of this label's denominator too; otherwise the count and
+  // the bar next to it describe two different sets of children.
+  const countedChildren = children.filter((c) => c.occ.disposition.type !== 'excused')
+  const completedChildren = countedChildren.filter((c) => c.occ.completionState.isComplete).length
+  const totalChildren = countedChildren.length
   const pct = Math.round(occ.completionState.derivedPercent ?? 0)
 
   const sensors = useSensors(
