@@ -9,8 +9,17 @@
 // Tretinoin (MWF, none, child of Night Routine).
 
 import { test, expect, type Page } from '@playwright/test'
-import type { OccurrenceWithState } from '@tracker/shared'
+import type { OccurrenceWithState, ItemStreakSummary } from '@tracker/shared'
 import type { Bucket } from '@tracker/shared'
+
+// v2 §3.2.5 — the Now view fetches ambient streak badges on load. Stubbed empty by
+// default so tests that predate the badge are unaffected; setupApiMocks' fourth
+// argument overrides this for the tests that assert on it (later route wins).
+test.beforeEach(async ({ page }) => {
+  await page.route(/\/api\/stats\/streaks$/, (route) =>
+    route.fulfill({ json: { type: 'streak_summary', userId: 'u1', asOfDay: '2025-06-16', items: [] } })
+  )
+})
 
 // ── Fixture builders ───────────────────────────────────────────────────────
 // Note: never spread `overrides` at the top level — it would clobber `snapshot`.
@@ -166,10 +175,16 @@ const DONE_OCC = makeOcc({
 async function setupApiMocks(
   page: Page,
   occurrences: OccurrenceWithState[],
-  buckets: Bucket[] = BUCKETS
+  buckets: Bucket[] = BUCKETS,
+  streakSummaries: ItemStreakSummary[] = []
 ) {
   await page.route('/me', (route) =>
     route.fulfill({ json: { id: 'u1', email: 'test@tracker.local', createdAt: new Date().toISOString() } })
+  )
+  // v2 §3.2.5 — the ambient badge feed. Defaults to empty so the existing tests
+  // exercise the "no badge yet" path unchanged.
+  await page.route(/\/api\/stats\/streaks$/, (route) =>
+    route.fulfill({ json: { type: 'streak_summary', userId: 'u1', asOfDay: '2025-06-16', items: streakSummaries } })
   )
   await page.route(/\/api\/occurrences\?start=.*&end=.*/, (route) =>
     route.fulfill({ json: occurrences })
@@ -183,6 +198,112 @@ async function setupApiMocks(
 }
 
 // ── Tests ──────────────────────────────────────────────────────────────────
+
+test.describe('v2 §3.2.5 — the ambient streak badge', () => {
+
+  function summary(itemId: string, o: Partial<ItemStreakSummary> = {}): ItemStreakSummary {
+    return {
+      itemId, streakType: 'daily',
+      currentStreak: 12, currentDayPending: true, currentPeriodProgress: null,
+      adherenceRate30d: 0.88, adherenceDueCount30d: 30, excusedCount30d: 0,
+      ...o,
+    }
+  }
+
+  test('§3.2.5 the streak is rendered on the Now view, always paired with its 30-day rate', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2025-06-16T22:00:00'))
+    await setupApiMocks(page, [ROUTINE_OCC], BUCKETS, [summary(ROUTINE_OCC.itemId)])
+    await page.goto('/')
+
+    const badge = page.getByTestId(`streak-badge-${ROUTINE_OCC.itemId}`)
+    await expect(badge).toBeVisible()
+    await expect(badge).toContainText('12d')
+    // The rate is not optional — the streak must never appear on its own.
+    await expect(badge).toContainText('88%')
+  })
+
+  test('§3.2.5 a zero streak is shown as plain fact, in the same styling as any other value', async ({ page }) => {
+    // 05:00: Trading is active and Routine is unscheduled, so both rows render and
+    // their badges can be compared against each other.
+    await page.clock.setFixedTime(new Date('2025-06-16T05:00:00'))
+    await setupApiMocks(page, [ROUTINE_OCC, TRADING_OCC], BUCKETS, [
+      summary(ROUTINE_OCC.itemId, { currentStreak: 0 }),
+      summary(TRADING_OCC.itemId, { currentStreak: 30 }),
+    ])
+    await page.goto('/')
+
+    const zero = page.getByTestId(`streak-badge-${ROUTINE_OCC.itemId}`)
+    const long = page.getByTestId(`streak-badge-${TRADING_OCC.itemId}`)
+
+    // Shown, not hidden: absence would read as punishment.
+    await expect(zero).toBeVisible()
+    await expect(zero).toContainText('0d')
+
+    // §5.4 — a zero must not be visually marked out as a failure. Same computed
+    // colour and weight as a 30-day streak is the machine-checkable form of that.
+    const zeroStyle = await zero.locator('.streak-badge__value').evaluate((el) => {
+      const s = getComputedStyle(el)
+      return { color: s.color, fontWeight: s.fontWeight }
+    })
+    const longStyle = await long.locator('.streak-badge__value').evaluate((el) => {
+      const s = getComputedStyle(el)
+      return { color: s.color, fontWeight: s.fontWeight }
+    })
+    expect(zeroStyle).toEqual(longStyle)
+  })
+
+  test('§3.2.5/§5.4 no streak-protection framing appears anywhere on the Now view', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2025-06-16T22:00:00'))
+    await setupApiMocks(page, [ROUTINE_OCC], BUCKETS, [
+      summary(ROUTINE_OCC.itemId, { currentStreak: 0, excusedCount30d: 3 }),
+    ])
+    await page.goto('/')
+    await expect(page.getByTestId(`streak-badge-${ROUTINE_OCC.itemId}`)).toBeVisible()
+
+    // Includes the badge's tooltip/aria text, not just visible copy.
+    const rendered = (await page.locator('body').innerText()) + ' ' +
+      (await page.getByTestId(`streak-badge-${ROUTINE_OCC.itemId}`).getAttribute('aria-label'))
+
+    const forbidden = [
+      /keep it going/i,
+      /don.?t break/i,
+      /broke.{0,20}streak/i,
+      /broken.{0,20}streak/i,
+      /streak.{0,20}(lost|at risk|in danger)/i,
+      /missed.{0,15}day/i,
+    ]
+    for (const pattern of forbidden) {
+      expect(rendered).not.toMatch(pattern)
+    }
+  })
+
+  test('§3.2.5 an excused day is surfaced as not having broken the chain', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2025-06-16T22:00:00'))
+    await setupApiMocks(page, [ROUTINE_OCC], BUCKETS, [
+      summary(ROUTINE_OCC.itemId, { excusedCount30d: 2 }),
+    ])
+    await page.goto('/')
+
+    const label = await page.getByTestId(`streak-badge-${ROUTINE_OCC.itemId}`).getAttribute('aria-label')
+    expect(label).toMatch(/2 excused days did not break the chain/i)
+  })
+
+  test('§3.2.2 a quota item shows its progress against its actual target', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2025-06-16T22:00:00'))
+    await setupApiMocks(page, [ROUTINE_OCC], BUCKETS, [
+      summary(ROUTINE_OCC.itemId, {
+        streakType: 'quota',
+        currentStreak: 3,
+        currentPeriodProgress: { completed: 2, target: 4, period: 'week' },
+      }),
+    ])
+    await page.goto('/')
+
+    const badge = page.getByTestId(`streak-badge-${ROUTINE_OCC.itemId}`)
+    await expect(badge).toContainText('3w')
+    await expect(badge).toContainText('2/4')
+  })
+})
 
 test.describe('§12.2 — Now view tier ordering and rendering', () => {
 

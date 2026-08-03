@@ -5,6 +5,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useRangeData, useDayStartEntries, effectiveDayStart } from '../../hooks/useRangeData'
 import { useOccurrenceActions } from '../../hooks/useOccurrenceActions'
+import { useStreakSummaries } from '../../hooks/useStreakSummaries'
 import { DispositionModal } from '../now/DispositionModal'
 import { SessionManagerModal } from '../now/SessionManagerModal'
 import { ConfirmModal } from '../shared/ConfirmModal'
@@ -93,6 +94,18 @@ export function CalendarView({ onEditItem }: Props) {
     handleArchive,
   } = useOccurrenceActions(setOccurrences, refresh)
 
+  // v2 §3.2.5 — badges for the detail row only (TimeGrid never puts them on the
+  // grid). Refetched on the same completion/disposition signal as Now and List.
+  const { streaks, refresh: refreshStreaks } = useStreakSummaries()
+  const completionSignature = useMemo(
+    () => occurrences.map((o) => `${o.itemId}:${o.completionState.isComplete}:${o.disposition.type}`).join('|'),
+    [occurrences]
+  )
+  useEffect(() => {
+    if (!completionSignature) return
+    refreshStreaks()
+  }, [completionSignature, refreshStreaks])
+
   const days = useMemo(() => getDaysInRange(start, end), [start, end])
 
   // Keep focusedDay clamped within range when range changes
@@ -168,6 +181,7 @@ export function CalendarView({ onEditItem }: Props) {
         onArchive={setPendingArchive}
         onManageSessions={setSessionManagerTarget}
         onReordered={handleReordered}
+        streaks={streaks}
       />
     )
   }

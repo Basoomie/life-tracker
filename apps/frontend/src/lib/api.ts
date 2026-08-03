@@ -25,6 +25,7 @@ import type {
   DateWindow,
   AdherenceFinding,
   StreakFinding,
+  StreakSummaryFinding,
   TimeStatsFinding,
   ProcrastinationFinding,
   DataQualityFinding,
@@ -241,6 +242,10 @@ export const api = {
       apiFetch<AdherenceFinding>(`/stats/items/${itemId}/adherence?startDay=${w.startDay}&endDay=${w.endDay}`),
     itemStreaks: (itemId: string, w: DateWindow) =>
       apiFetch<StreakFinding>(`/stats/items/${itemId}/streaks?startDay=${w.startDay}&endDay=${w.endDay}`),
+    // §3.2.5 — every recurring item's ambient badge in one request. No window
+    // parameter: current streak isn't window-scoped and the paired rate is fixed
+    // at 30 days, so there is nothing for the caller to choose.
+    streakSummaries: () => apiFetch<StreakSummaryFinding>('/stats/streaks'),
     itemTime: (itemId: string, w: DateWindow) =>
       apiFetch<TimeStatsFinding>(`/stats/items/${itemId}/time?startDay=${w.startDay}&endDay=${w.endDay}`),
     itemProcrastination: (itemId: string, w: DateWindow) =>

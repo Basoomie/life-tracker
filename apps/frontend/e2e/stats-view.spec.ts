@@ -18,6 +18,7 @@ import type {
   TrajectoryFinding,
   DayOfWeekFinding,
   TwoConditionFinding,
+  ItemStreakSummary,
   AdHocShareFinding,
 } from '@tracker/shared'
 
@@ -69,6 +70,7 @@ function makeStreak(itemId: string, o: Partial<StreakFinding> = {}): StreakFindi
     type: 'streak', userId: 'u1', itemId, window: WINDOW, streakType: 'daily',
     rawCounts: { dueCount: 20, completedCount: 16, excusedCount: 2 },
     currentStreak: 5, longestStreak: 12,
+    currentDayPending: false, currentPeriodProgress: null,
     ...o,
   }
 }
@@ -226,11 +228,38 @@ const ENDPOINT_KEY: Record<string, keyof PerItemFixture> = {
   'weekday-vs-weekend': 'weekdayVsWeekend',
 }
 
+// §3.2.5 — one summary row per recurring item, feeding the Global view's streak
+// column. Defaults are derived from each item's per-item streak fixture so the two
+// surfaces can't silently disagree in a test the way they must not in the app.
+function makeStreakSummary(itemId: string, o: Partial<ItemStreakSummary> = {}): ItemStreakSummary {
+  return {
+    itemId, streakType: 'daily',
+    currentStreak: 5, currentDayPending: false, currentPeriodProgress: null,
+    adherenceRate30d: 0.88, adherenceDueCount30d: 30, excusedCount30d: 2,
+    ...o,
+  }
+}
+
 async function setupStatsMocks(
   page: Page,
-  opts: { items: Item[]; perItem: Record<string, PerItemFixture>; crossItemTime?: AdHocShareFinding }
+  opts: {
+    items: Item[]
+    perItem: Record<string, PerItemFixture>
+    crossItemTime?: AdHocShareFinding
+    streakSummaries?: ItemStreakSummary[]
+  }
 ) {
   const { items, perItem, crossItemTime = makeAdHocShare() } = opts
+  const streakSummaries =
+    opts.streakSummaries ??
+    Object.entries(perItem).map(([itemId, f]) =>
+      makeStreakSummary(itemId, {
+        streakType: f.streaks.streakType,
+        currentStreak: f.streaks.currentStreak,
+        currentDayPending: f.streaks.currentDayPending,
+        currentPeriodProgress: f.streaks.currentPeriodProgress,
+      })
+    )
 
   await page.route('/me', (route) =>
     route.fulfill({ json: { id: 'u1', email: 'test@tracker.local', createdAt: new Date().toISOString() } })
@@ -262,6 +291,10 @@ async function setupStatsMocks(
   })
 
   await page.route(/\/api\/stats\/time(\?.*)?$/, (route) => route.fulfill({ json: crossItemTime }))
+
+  await page.route(/\/api\/stats\/streaks$/, (route) =>
+    route.fulfill({ json: { type: 'streak_summary', userId: 'u1', asOfDay: WINDOW.endDay, items: streakSummaries } })
+  )
 }
 
 async function gotoStats(page: Page) {
@@ -411,6 +444,52 @@ test.describe('v2 §9.5.1 Stats views', () => {
     await expect(page.getByTestId('cross-item-adhoc-share')).toBeVisible()
     await expect(page.getByTestId('cross-item-adhoc-share')).toContainText('62%')
     await expect(page.getByTestId('cross-item-adhoc-share')).toContainText('70%')
+  })
+
+  test('§3.2.5 the Global row carries a streak column beside the adherence rate', async ({ page }) => {
+    const item = makeItem({ id: 'daily-item', name: 'Meditation' })
+    await setupStatsMocks(page, {
+      items: [item],
+      perItem: { 'daily-item': fullItemFixture('daily-item') },
+      streakSummaries: [makeStreakSummary('daily-item', { currentStreak: 9 })],
+    })
+    await gotoStats(page)
+
+    await expect(page.getByTestId('global-stats-row-daily-item-streak')).toHaveText('9d')
+    // §3.2.5 — the rate it must be read next to is the adjacent column.
+    await expect(page.getByTestId('global-stats-row-daily-item-adherence')).toBeVisible()
+  })
+
+  test('§3.2.1 an unfinished current day is reported separately from the count, not as a break', async ({ page }) => {
+    const item = makeItem({ id: 'daily-item', name: 'Meditation' })
+    const fixture = fullItemFixture('daily-item', {
+      streaks: makeStreak('daily-item', { currentStreak: 12, currentDayPending: true }),
+    })
+    await setupStatsMocks(page, { items: [item], perItem: { 'daily-item': fixture } })
+    await gotoStats(page)
+    await page.getByTestId('global-stats-row-daily-item').click()
+
+    const line = page.getByTestId('streak-line')
+    // The chain is intact at 12 — the unfinished day neither zeroed it nor inflated it.
+    await expect(line).toContainText('Current streak: 12 days')
+    await expect(page.getByTestId('streak-line-pending')).toHaveText('Today not yet done')
+  })
+
+  test('§3.2.2 a quota item reports progress against its actual target', async ({ page }) => {
+    const item = makeItem({ id: 'quota-item', name: 'Workout' })
+    const fixture = fullItemFixture('quota-item', {
+      streaks: makeStreak('quota-item', {
+        streakType: 'quota',
+        currentStreak: 3,
+        currentPeriodProgress: { completed: 2, target: 4, period: 'week' },
+      }),
+    })
+    await setupStatsMocks(page, { items: [item], perItem: { 'quota-item': fixture } })
+    await gotoStats(page)
+    await page.getByTestId('global-stats-row-quota-item').click()
+
+    await expect(page.getByTestId('streak-line')).toContainText('Current streak: 3 periods')
+    await expect(page.getByTestId('streak-line-progress')).toHaveText('This week: 2 of 4')
   })
 
   test('§5.4/CLAUDE.md rule 6 — no rendered string ever references a broken streak or a single missed day', async ({ page }) => {

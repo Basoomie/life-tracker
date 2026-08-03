@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useRangeData, useOverdueData, useDayStartEntries } from '../../hooks/useRangeData'
 import { useOccurrenceActions } from '../../hooks/useOccurrenceActions'
+import { useStreakSummaries } from '../../hooks/useStreakSummaries'
 import { OccurrenceRow } from '../now/OccurrenceRow'
 import { DispositionModal } from '../now/DispositionModal'
 import { SessionManagerModal } from '../now/SessionManagerModal'
@@ -78,6 +79,18 @@ export function ListView({ onEditItem }: Props) {
     api.categories.list().then(setCategories).catch(() => {})
     api.reasons.list().then(setReasons).catch(() => {})
   }, [])
+
+  // v2 §3.2.5 — ambient streak badges. Refetched when completion or disposition
+  // state changes, which is exactly what can move a chain (see NowView).
+  const { streaks, refresh: refreshStreaks } = useStreakSummaries()
+  const completionSignature = useMemo(
+    () => occurrences.map((o) => `${o.itemId}:${o.completionState.isComplete}:${o.disposition.type}`).join('|'),
+    [occurrences]
+  )
+  useEffect(() => {
+    if (!completionSignature) return
+    refreshStreaks()
+  }, [completionSignature, refreshStreaks])
 
   const {
     sessions,
@@ -161,6 +174,7 @@ export function ListView({ onEditItem }: Props) {
         buckets={buckets}
         isChild={isChild}
         isToday={occ.appliesToDay === today}
+        streak={streaks.get(occ.itemId)}
         session={sessions.get(occId)}
         onComplete={() => handleComplete(occ)}
         onUncomplete={() => setPendingUncompletion(occ)}

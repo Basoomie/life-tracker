@@ -9,6 +9,7 @@ import type { DateWindow } from '@tracker/shared'
 import {
   getItemAdherence,
   getItemStreak,
+  getStreakSummaries,
   getItemTimeStats,
   getAdHocShare,
   getCategoryTimeStats,
@@ -33,6 +34,15 @@ function parseWindow(qs: Record<string, unknown>): DateWindow | null {
 }
 
 export async function statsRoutes(app: FastifyInstance) {
+  // §3.2.5 — Ambient streak badges for every recurring item, in one request.
+  // Takes no window: current streak is not window-scoped (§3.2.4) and the paired
+  // rate is a fixed 30 days, so there is nothing for a caller to vary.
+  // Registered before '/stats/items/:itemId/...' purely for readability — Fastify
+  // routes on static segments first, so there is no shadowing either way.
+  app.get('/stats/streaks', async (req, reply) => {
+    return reply.send(await getStreakSummaries(pool, req.userId))
+  })
+
   // ── Per-item routes ────────────────────────────────────────────────────────
 
   app.get('/stats/items/:itemId/adherence', async (req, reply) => {

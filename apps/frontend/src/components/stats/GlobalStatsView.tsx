@@ -6,7 +6,14 @@
 
 import { useEffect, useState } from 'react'
 import { api } from '../../lib/api'
-import type { Item, AdherenceFinding, DataQualityFinding, TrajectoryFinding, AdHocShareFinding } from '@tracker/shared'
+import type {
+  Item,
+  AdherenceFinding,
+  DataQualityFinding,
+  TrajectoryFinding,
+  AdHocShareFinding,
+  ItemStreakSummary,
+} from '@tracker/shared'
 import {
   hasLoggingHealthIssue,
   needsAttention,
@@ -28,6 +35,8 @@ type ItemRow = {
   adherence: AdherenceFinding | null
   quality: DataQualityFinding | null
   trajectory: TrajectoryFinding | null
+  // §3.2.5 — absent for one-time items, which have no streak to report.
+  streak: ItemStreakSummary | null
 }
 
 function trajectoryArrow(dir: TrajectoryDirection): string {
@@ -52,13 +61,18 @@ export function GlobalStatsView({ window, onSelectItem }: Props) {
         const items = await api.items.list()
         const topLevel = items.filter((i) => i.parentId === null && i.archivedAt === null)
 
+        // §3.2.5 — one request covers every row's streak, rather than adding a
+        // fourth per-item call to the loop below.
+        const streakSummary = await api.stats.streakSummaries().catch(() => null)
+        const streakByItem = new Map((streakSummary?.items ?? []).map((s) => [s.itemId, s]))
+
         const built = await Promise.all(topLevel.map(async (item): Promise<ItemRow> => {
           const [adherence, quality, trajectory] = await Promise.all([
             api.stats.itemAdherence(item.id, window).catch(() => null),
             api.stats.itemQuality(item.id, window).catch(() => null),
             api.stats.itemTrajectory(item.id, window).catch(() => null),
           ])
-          return { item, adherence, quality, trajectory }
+          return { item, adherence, quality, trajectory, streak: streakByItem.get(item.id) ?? null }
         }))
 
         const crossItemFinding = await api.stats.crossItemTime(window)
@@ -98,7 +112,7 @@ export function GlobalStatsView({ window, onSelectItem }: Props) {
             <p className="form-empty" data-testid="global-stats-empty">No items to show yet.</p>
           ) : (
             <div className="global-stats-table" data-testid="global-stats-table">
-              {rows.map(({ item, adherence, quality, trajectory }) => (
+              {rows.map(({ item, adherence, quality, trajectory, streak }) => (
                 <button
                   key={item.id}
                   className="global-stats-row"
@@ -106,6 +120,13 @@ export function GlobalStatsView({ window, onSelectItem }: Props) {
                   onClick={() => onSelectItem(item.id)}
                 >
                   <span className="global-stats-row__name">{item.name}</span>
+                  {/* §3.2.5 — the streak sits directly beside the adherence column,
+                      which is the rate it must always be read next to. A one-time
+                      item shows a neutral dash: it has no streak, which is a fact
+                      about its recurrence, not a bad result. */}
+                  <span className="global-stats-row__streak" data-testid={`global-stats-row-${item.id}-streak`}>
+                    {streak ? `${streak.currentStreak}${streak.streakType === 'daily' ? 'd' : 'w'}` : '—'}
+                  </span>
                   <span className="global-stats-row__adherence" data-testid={`global-stats-row-${item.id}-adherence`}>
                     {adherence ? formatPercent(adherenceHeadline(adherence)) : '—'}
                   </span>

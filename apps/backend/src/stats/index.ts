@@ -12,13 +12,18 @@ import type { Pool } from 'pg'
 import type {
   AdherenceFinding,
   StreakFinding,
+  StreakSummaryFinding,
+  ItemStreakSummary,
   TimeStatsFinding,
   AdHocShareFinding,
   ProcrastinationFinding,
   DataQualityFinding,
   DateWindow,
+  Item,
 } from '@tracker/shared'
+import { itemAnchorDate } from '@tracker/shared'
 import * as repos from '../db/repos/index'
+import { logicalToday } from '../domain/day'
 import {
   buildLeafDayObservations,
   buildParentDayObservations,
@@ -58,28 +63,122 @@ export async function getItemAdherence(
 
 // ── §3.2 Streaks ──────────────────────────────────────────────────────────────
 
+// Leaf items use their own day observations; a parent uses its derived-% parent
+// days. Shared by the per-item finding and the ambient summary so the badge on the
+// Now view can never disagree with the number on the Stats page.
+async function buildStreakObservations(pool: Pool, userId: string, item: Item, window: DateWindow) {
+  const children = await repos.findChildItems(pool, item.id, userId)
+  if (children.length === 0) {
+    return buildLeafDayObservations(pool, userId, item, window)
+  }
+  const { parentObs } = await buildParentDayObservations(pool, userId, item, window)
+  return parentObs
+}
+
 export async function getItemStreak(
   pool: Pool,
   userId: string,
   itemId: string,
-  window: DateWindow
+  window: DateWindow,
+  now: Date = new Date()
 ): Promise<StreakFinding> {
   const item = await repos.findItemById(pool, itemId, userId)
   if (!item) throw new Error(`item not found: ${itemId}`)
 
-  // Leaf observations for streak computation (parent streaks use parent due days)
-  const children = await repos.findChildItems(pool, itemId, userId)
-  let observations
-  if (children.length === 0) {
-    observations = await buildLeafDayObservations(pool, userId, item, window)
-  } else {
-    const { parentObs } = await buildParentDayObservations(pool, userId, item, window)
-    observations = parentObs
-  }
+  // §3.2.1 — the logical day (v1 §6.7 day-start bucketing), not the calendar date:
+  // with a 4am day-start, 1:30am still belongs to yesterday, and yesterday must not
+  // be treated as a resolved miss while the user is still up doing it.
+  const currentDay = await logicalToday(pool, userId, now)
 
-  // Streak type: 'quota' if item has a quotaTarget; 'daily' otherwise
-  const streakType = item.quotaTarget ? 'quota' : 'daily'
-  return computeStreak(itemId, userId, window, observations, streakType)
+  // §3.2.4 — currentStreak is NOT window-scoped, so it needs the item's history
+  // (back to its anchor, which is as far back as occurrences can exist) up to today,
+  // while longestStreak needs exactly the requested window. Build the union once and
+  // slice it: two builds over an all-time window would double the most expensive
+  // query on the page for no gain, and could only ever agree by construction anyway.
+  const historyWindow: DateWindow = {
+    startDay: minDay(itemAnchorDate(item), window.startDay),
+    endDay: maxDay(currentDay, window.endDay),
+  }
+  const historyObs = await buildStreakObservations(pool, userId, item, historyWindow)
+  const windowObs = historyObs.filter(o => o.day >= window.startDay && o.day <= window.endDay)
+
+  const overHistory = computeStreak(itemId, userId, historyWindow, historyObs, currentDay, item.quotaTarget)
+  const windowed = computeStreak(itemId, userId, window, windowObs, currentDay, item.quotaTarget)
+
+  // rawCounts and longestStreak describe the requested window; the current-chain
+  // fields describe today. Both are labelled as such on the type.
+  return {
+    ...windowed,
+    currentStreak: overHistory.currentStreak,
+    currentDayPending: overHistory.currentDayPending,
+    currentPeriodProgress: overHistory.currentPeriodProgress,
+  }
+}
+
+const minDay = (a: string, b: string) => (a <= b ? a : b)
+const maxDay = (a: string, b: string) => (a >= b ? a : b)
+
+// §3.2.5 — the fixed rate the streak is always shown next to. Deliberately ends
+// YESTERDAY: including an unresolved today in the denominator would make the rate
+// sag every morning and recover every evening, which is the same artifact §3.2.1
+// removes from the streak itself.
+const ADHERENCE_BADGE_DAYS = 30
+
+function badgeAdherenceWindow(currentDay: string): DateWindow {
+  const [y, m, d] = currentDay.split('-').map(Number)
+  const end = new Date(Date.UTC(y, m - 1, d - 1))
+  const start = new Date(Date.UTC(y, m - 1, d - ADHERENCE_BADGE_DAYS))
+  return { startDay: start.toISOString().slice(0, 10), endDay: end.toISOString().slice(0, 10) }
+}
+
+/**
+ * §3.2.5 — Ambient streak badges for every recurring item, in ONE call.
+ *
+ * The Now and List views render this for every row; fetching per item would put an
+ * N-request waterfall on the app's most-used surface. Streak and 30-day rate are
+ * returned together because §3.2.5 requires them to be displayed together — they
+ * cannot be fetched separately and drift.
+ *
+ * One-time items are excluded: a streak is a property of a recurrence.
+ */
+export async function getStreakSummaries(
+  pool: Pool,
+  userId: string,
+  now: Date = new Date()
+): Promise<StreakSummaryFinding> {
+  const currentDay = await logicalToday(pool, userId, now)
+  const rateWindow = badgeAdherenceWindow(currentDay)
+
+  const allItems = await repos.findItemsByUser(pool, userId)
+  const recurring = allItems.filter(i => i.recurrenceRule !== null && i.archivedAt === null)
+
+  const items: ItemStreakSummary[] = await Promise.all(
+    recurring.map(async (item): Promise<ItemStreakSummary> => {
+      // One build over the item's whole history serves both numbers: the backwards
+      // streak walk needs the history, and the 30-day rate is a filter on its tail.
+      const window: DateWindow = { startDay: itemAnchorDate(item), endDay: currentDay }
+      const observations = await buildStreakObservations(pool, userId, item, window)
+      const streak = computeStreak(item.id, userId, window, observations, currentDay, item.quotaTarget)
+
+      const inRate = observations.filter(o => o.day >= rateWindow.startDay && o.day <= rateWindow.endDay)
+      const dueCount = inRate.length
+      const completed = inRate.filter(o => o.completionPercent >= 100).length
+
+      return {
+        itemId: item.id,
+        streakType: streak.streakType,
+        currentStreak: streak.currentStreak,
+        currentDayPending: streak.currentDayPending,
+        currentPeriodProgress: streak.currentPeriodProgress,
+        // Raw adherence per §3.1: excused days stay in the denominator.
+        adherenceRate30d: dueCount > 0 ? completed / dueCount : 0,
+        adherenceDueCount30d: dueCount,
+        excusedCount30d: inRate.filter(o => o.disposition === 'excused').length,
+      }
+    })
+  )
+
+  return { type: 'streak_summary', userId, asOfDay: currentDay, items }
 }
 
 // ── §3.3 Time ─────────────────────────────────────────────────────────────────

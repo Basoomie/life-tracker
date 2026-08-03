@@ -463,6 +463,39 @@ input, select, textarea {
    declared number it sits next to, but never hidden. */
 .occ-percent__derived { color: var(--color-text-tertiary); }
 
+/* ── Ambient streak badge (v2 §3.2.5) ─────────────────────────────────────────
+   Deliberately has NO value-dependent styling. A streak of 0 is the same weight
+   and colour as a streak of 40: per §5.4 a missed day is noise, and colouring the
+   low end would turn this into exactly the all-or-nothing signal the spec forbids.
+   The parent .occ-meta already wraps, so on a narrow screen the badge drops to its
+   own line rather than squeezing the timing label. */
+.streak-badge {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-1);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.streak-badge__value {
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.streak-badge__progress { color: var(--color-text-tertiary); }
+
+/* The rate is never optional (§3.2.5) — it is quieter than the streak, but it is
+   always present, so the streak can't be read on its own. */
+.streak-badge__rate { color: var(--color-text-tertiary); }
+
+.streak-badge__progress::before,
+.streak-badge__rate::before {
+  content: '·';
+  margin-right: var(--space-1);
+  color: var(--color-text-tertiary);
+}
+
 .occ-actions {
   display: flex;
   align-items: center;
@@ -2357,6 +2390,16 @@ input, select, textarea {
   color: var(--color-text-primary);
 }
 
+/* Sits immediately left of the adherence column — §3.2.5 requires the streak to be
+   read next to its rate, and on this surface the adjacent column IS that rate. */
+.global-stats-row__streak {
+  min-width: 34px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+}
+
 .global-stats-row__trajectory {
   min-width: 20px;
   text-align: center;
@@ -2483,7 +2526,12 @@ input, select, textarea {
   gap: var(--space-4);
   font-size: var(--text-sm);
   color: var(--color-text-secondary);
+  flex-wrap: wrap;
 }
+
+/* §3.2.1 — "today not yet done" is a neutral statement of an undecided day, so it
+   is styled like every other fact on this line. It must not read as a warning. */
+.streak-line__item--pending { color: var(--color-text-tertiary); }
 
 /* ── Time stats + histogram ───────────────────────────────────────────────── */
 
@@ -2877,6 +2925,21 @@ input, select, textarea {
 
 @media (max-width: 480px) {
   .stats-view__toolbar { flex-direction: column; align-items: stretch; }
-  .global-stats-row__name { font-size: var(--text-sm); }
   .power-meter__track { width: 56px; }
+
+  /* Five columns (name, streak, adherence, trajectory, flags) do not fit a phone
+     without crushing the name to a few characters. Give the name its own line and
+     let the metrics sit beneath it, left-aligned — the row keeps every value
+     rather than truncating the one thing that identifies which item it is. */
+  .global-stats-row { flex-wrap: wrap; row-gap: var(--space-1); }
+  .global-stats-row__name {
+    flex: 1 0 100%;
+    font-size: var(--text-sm);
+    white-space: normal;
+  }
+  .global-stats-row__streak,
+  .global-stats-row__adherence {
+    min-width: 0;
+    text-align: left;
+  }
 }

@@ -3,6 +3,7 @@
 
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import { useNowData } from '../../hooks/useNowData'
+import { useStreakSummaries } from '../../hooks/useStreakSummaries'
 import { useDayStartEntries } from '../../hooks/useRangeData'
 import { bucketTimestamp } from '@tracker/shared'
 import { TierSection } from './TierSection'
@@ -53,6 +54,10 @@ export function NowView({ onEditItem }: Props) {
 
   const { tiers, occurrences, buckets, loading, error, refresh, setOccurrences } =
     useNowData(today, imminentWindow, alwaysNext)
+
+  // v2 §3.2.5 — ambient streak badges. Refreshed alongside occurrence data below,
+  // since completing today's occurrence is exactly what changes the streak.
+  const { streaks, refresh: refreshStreaks } = useStreakSummaries()
 
   // Full parent/child tree for rendering (NowView only ever shows today, so
   // no per-day bucketing needed). Children never appear as independent tier
@@ -298,6 +303,19 @@ export function NowView({ onEditItem }: Props) {
     })
   }, [today])
 
+  // v2 §3.2.5 — refetch the badges when (and only when) something that can move a
+  // streak actually moved. Keying off the occurrence array itself would refetch on
+  // every 30s poll; keying off completion/disposition state refetches on exactly
+  // the transitions that change a chain, including from the disposition modal.
+  const completionSignature = useMemo(
+    () => occurrences.map((o) => `${o.itemId}:${o.completionState.isComplete}:${o.disposition.type}`).join('|'),
+    [occurrences]
+  )
+  useEffect(() => {
+    if (!completionSignature) return
+    refreshStreaks()
+  }, [completionSignature, refreshStreaks])
+
   // ── Render helpers ─────────────────────────────────────────────────────────
 
   function renderRow(occ: OccurrenceWithState, isChild = false) {
@@ -308,6 +326,7 @@ export function NowView({ onEditItem }: Props) {
         occ={occ}
         buckets={buckets}
         isChild={isChild}
+        streak={streaks.get(occ.itemId)}
         session={sessions.get(occId)}
         onComplete={() => handleComplete(occ)}
         onUncomplete={() => setPendingUncompletion(occ)}

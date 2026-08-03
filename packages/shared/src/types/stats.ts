@@ -69,6 +69,14 @@ export type AdherenceFinding = LeafAdherenceFinding | ParentAdherenceFinding
 // Excused days skip the chain (neither break nor extend) per §3.2.
 // Note: streaks are a display affordance, NOT an analytical primitive — Layer 2
 // reasons in rates over windows, never streaks (§5.3).
+// §3.2.2 — progress of the in-progress quota period toward its target, reported
+// alongside the streak ("3 weeks · this week 1/4"). Null for daily items.
+export type QuotaPeriodProgress = {
+  completed: number
+  target: number
+  period: 'week' | 'month'
+}
+
 export type StreakFinding = {
   type: 'streak'
   userId: string
@@ -80,8 +88,42 @@ export type StreakFinding = {
     completedCount: number
     excusedCount: number
   }
+  // §3.2.4 — walked backwards from the current day; NOT window-scoped, so this is
+  // the same number whichever window was requested.
   currentStreak: number
+  // §3.2.4 — window-scoped, subject to the §3.2.3 partial-period rule.
   longestStreak: number
+  // §3.2.1 — the current day's state is reported SEPARATELY from the count, so the
+  // UI can say "12 days · today not yet done" instead of picking a wrong number.
+  currentDayPending: boolean
+  currentPeriodProgress: QuotaPeriodProgress | null
+}
+
+// ── §3.2.5 The ambient streak badge ───────────────────────────────────────────
+
+// What the Now / List / item-detail / global-row surfaces render. The 30-day
+// adherence rate is part of the payload BY CONSTRUCTION, not by convention: §3.2.5
+// requires the streak to always be shown paired with the rate, so the two cannot
+// be fetched independently and drift apart.
+export type ItemStreakSummary = {
+  itemId: string
+  streakType: 'daily' | 'quota'
+  currentStreak: number
+  currentDayPending: boolean
+  currentPeriodProgress: QuotaPeriodProgress | null
+  // Raw adherence (excused included in the denominator — the §3.1 default) over a
+  // fixed 30-day window, independent of any window the user has selected elsewhere.
+  adherenceRate30d: number      // 0..1
+  adherenceDueCount30d: number  // raw count — Layer 1 never ships a rate without one
+  // §3.2.5 — lets the UI state that an excused day did not break the chain.
+  excusedCount30d: number
+}
+
+export type StreakSummaryFinding = {
+  type: 'streak_summary'
+  userId: string
+  asOfDay: string   // the day-start-bucketed logical day the walk was anchored to
+  items: ItemStreakSummary[]
 }
 
 // ── §3.3 Time ────────────────────────────────────────────────────────────────

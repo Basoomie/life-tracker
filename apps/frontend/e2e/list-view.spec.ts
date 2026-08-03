@@ -5,6 +5,16 @@ import { test, expect, type Page } from '@playwright/test'
 import type { OccurrenceWithState } from '@tracker/shared'
 import type { Bucket, DayStartEntry } from '@tracker/shared'
 
+// v2 §3.2.5 — the List view fetches ambient streak badges on load. Stubbed empty
+// for every test here so none of them depend on a live stats backend; the badge's
+// own behaviour is covered in now-view.spec.ts. Registered first, so any test that
+// mocks this route itself still takes precedence.
+test.beforeEach(async ({ page }) => {
+  await page.route(/\/api\/stats\/streaks$/, (route) =>
+    route.fulfill({ json: { type: 'streak_summary', userId: 'u1', asOfDay: '2025-06-16', items: [] } })
+  )
+})
+
 function makeDayStartEntry(o: { id: string; value: string; startsOn: string }): DayStartEntry {
   return { id: o.id, userId: 'u1', value: o.value, startsOn: o.startsOn, recordedAt: new Date() }
 }

@@ -1,7 +1,8 @@
-import type { OccurrenceWithState } from '@tracker/shared'
+import type { OccurrenceWithState, ItemStreakSummary } from '@tracker/shared'
 import type { Bucket } from '@tracker/shared'
 import type { SessionState } from './TimerControl'
 import { TimerControl } from './TimerControl'
+import { StreakBadge } from '../shared/StreakBadge'
 import { formatTimingLabel } from '../../lib/now-ordering'
 import { formatDayLabel } from '../../lib/date-range'
 
@@ -34,6 +35,9 @@ type Props = {
   // completion — manual sessions are explicitly for backdating and for
   // occurrences you've already completed.
   onManageSessions?: () => void
+  // v2 §3.2.5 — the ambient streak badge. Absent for one-time items (a streak is
+  // a property of a recurrence) and while the summary request is still in flight.
+  streak?: ItemStreakSummary
 }
 
 // Statuses that get a badge instead of reading as a plain open row (completed
@@ -83,6 +87,7 @@ export function OccurrenceRow({
   onEdit,
   onArchive,
   onManageSessions,
+  streak,
 }: Props) {
   const isComplete = occ.completionState.isComplete
   const timingLabel = formatTimingLabel(occ, buckets)
@@ -163,6 +168,7 @@ export function OccurrenceRow({
               {timingLabel}
             </span>
           )}
+          {streak && <StreakBadge summary={streak} />}
           {derivedPct !== null && (
             <span className="occ-percent" data-testid="derived-pct">
               {showBothPercents ? (

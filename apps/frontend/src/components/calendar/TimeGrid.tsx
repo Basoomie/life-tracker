@@ -8,7 +8,7 @@ import { SortableList } from '../shared/SortableList'
 import { computeDayLayout, nowLinePx, TOTAL_PX, PX_PER_HOUR } from '../../lib/calendar-layout'
 import type { GridBlock, DayLayout } from '../../lib/calendar-layout'
 import type { OccurrenceNode } from '../../lib/occurrence-tree'
-import type { OccurrenceWithState, Bucket } from '@tracker/shared'
+import type { OccurrenceWithState, Bucket, ItemStreakSummary } from '@tracker/shared'
 import type { SessionState } from '../now/TimerControl'
 
 type Props = {
@@ -32,6 +32,9 @@ type Props = {
   onArchive: (occ: OccurrenceWithState) => void
   onManageSessions: (occ: OccurrenceWithState) => void
   onReordered: (orderedItemIds: string[]) => void
+  // v2 §3.2.5 — streaks appear on the item DETAIL row only, never on the day grid:
+  // a grid cell is a day, and a streak is a property of an item across days.
+  streaks: Map<string, ItemStreakSummary>
 }
 
 // Hour labels on the time axis (every 2 hours for readability)
@@ -80,6 +83,7 @@ export function TimeGrid({
   onArchive,
   onManageSessions,
   onReordered,
+  streaks,
 }: Props) {
   const layout: DayLayout = computeDayLayout(occs, buckets, dayStart)
   const hourLabels = buildHourLabels(dayStart)
@@ -122,6 +126,7 @@ export function TimeGrid({
         occ={occ}
         buckets={buckets}
         isToday={isToday}
+        streak={streaks.get(occ.itemId)}
         session={sessions.get(occId)}
         onComplete={() => onComplete(occ)}
         onUncomplete={() => onUncomplete(occ)}

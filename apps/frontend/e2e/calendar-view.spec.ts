@@ -10,6 +10,15 @@ import { test, expect, type Page, type Locator } from '@playwright/test'
 import type { OccurrenceWithState } from '@tracker/shared'
 import type { Bucket } from '@tracker/shared'
 
+// v2 §3.2.5 — the Calendar view fetches ambient streak badges for its detail row
+// (never for the grid). Stubbed empty for every test here so none of them depend on
+// a live stats backend. Registered first, so a test that mocks it itself still wins.
+test.beforeEach(async ({ page }) => {
+  await page.route(/\/api\/stats\/streaks$/, (route) =>
+    route.fulfill({ json: { type: 'streak_summary', userId: 'u1', asOfDay: '2025-06-16', items: [] } })
+  )
+})
+
 // ── Fixture builders ───────────────────────────────────────────────────────
 
 type MakeOccOverrides = {
