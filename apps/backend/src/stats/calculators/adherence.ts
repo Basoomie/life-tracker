@@ -23,15 +23,16 @@ function safeDivide(n: number, d: number): number {
 function computeLeafCounts(observations: DayObservation[]) {
   let dueCount = 0, completedCount = 0, excusedCount = 0,
       skippedCount = 0, autoCloseCount = 0, missingCount = 0,
-      slotsDue = 0, slotsCompleted = 0
+      slotsDue = 0, slotsCompleted = 0, slotsExcused = 0
 
   for (const obs of observations) {
     dueCount++
-    // §5.5 — slot counts describe what the days contained; the rate is over DAYS,
-    // so these travel alongside it rather than into it. For a single-slot item they
-    // are identical to dueCount/completedCount.
+    // §5.5 — slot counts describe what the days contained. Summed before the
+    // 'missing' guard below, because a day with no materialized occurrence still had
+    // a slot due — that is precisely what makes it a data gap rather than a non-event.
     slotsDue += obs.slotsDue
     slotsCompleted += obs.slotsCompleted
+    slotsExcused += obs.slotsExcused
     if (obs.disposition === 'missing') { missingCount++; continue }
     if (obs.completionPercent >= 100)  completedCount++
     if (obs.disposition === 'excused')    excusedCount++
@@ -41,7 +42,7 @@ function computeLeafCounts(observations: DayObservation[]) {
 
   return {
     dueCount, completedCount, excusedCount, skippedCount, autoCloseCount, missingCount,
-    slotsDue, slotsCompleted,
+    slotsDue, slotsCompleted, slotsExcused,
   }
 }
 
@@ -57,10 +58,17 @@ export function computeLeafAdherence(
 ): LeafAdherenceFinding {
   const counts = computeLeafCounts(observations)
   const { dueCount, completedCount, excusedCount } = counts
+  const { slotsDue, slotsCompleted, slotsExcused } = counts
 
   const rawAdherence = safeDivide(completedCount, dueCount)
   const adherenceExclExcused = safeDivide(completedCount, dueCount - excusedCount)
   const excuseRate = safeDivide(excusedCount, dueCount - completedCount)
+
+  // §5.5 — the same pair over slots. Deliberately mirrors the day-level convention:
+  // excused stays in the raw denominator, and the excluding-excused variant is the
+  // lens — one idiom rather than two.
+  const slotAdherence = safeDivide(slotsCompleted, slotsDue)
+  const slotAdherenceExclExcused = safeDivide(slotsCompleted, slotsDue - slotsExcused)
 
   return {
     type: 'leaf_adherence',
@@ -71,6 +79,8 @@ export function computeLeafAdherence(
     rawAdherence,
     adherenceExclExcused,
     excuseRate,
+    slotAdherence,
+    slotAdherenceExclExcused,
   }
 }
 
@@ -130,6 +140,10 @@ export function computeParentAdherence(
       rawAdherence: safeDivide(cComp, cDue),
       adherenceExclExcused: safeDivide(cComp, cDue - cExc),
       excuseRate: safeDivide(cExc, cDue - cComp),
+      // §5.5 — a child may carry several slots; same pair as the leaf case.
+      slotAdherence: safeDivide(counts.slotsCompleted, counts.slotsDue),
+      slotAdherenceExclExcused:
+        safeDivide(counts.slotsCompleted, counts.slotsDue - counts.slotsExcused),
     })
   }
 

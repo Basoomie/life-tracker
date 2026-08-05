@@ -26,6 +26,11 @@ const MON = '2025-01-06'
 const TUE = '2025-01-07'
 const WINDOW: DateWindow = { startDay: MON, endDay: TUE }
 
+function addDays(d: string, n: number): string {
+  const [y, m, day] = d.split('-').map(Number)
+  return new Date(Date.UTC(y, m - 1, day + n)).toISOString().slice(0, 10)
+}
+
 let seq = 0
 async function makeUser() {
   return repos.insertUser(getTestPool(), { email: `fold-${seq++}-${Date.now()}@test.com` })
@@ -149,6 +154,81 @@ describe('§3.1 + §5.5 a day\'s value is the mean of its slots', () => {
     expect(finding.rawCounts.slotsCompleted).toBe(1)
   })
 
+  it('§5.5 slot adherence is the fraction of scheduled blocks done, not of days', async () => {
+    const u = await makeUser()
+    const { item, slotA, slotB } = await twoSlotDailyItem(u.id)
+    const occA = await materialize(item, slotA, MON, u.id)
+    await materialize(item, slotB, MON, u.id)
+    await complete(occA, u.id)
+
+    const window = { startDay: MON, endDay: MON }
+    const obs = await buildLeafDayObservations(getTestPool(), u.id, item, window)
+    const finding = computeLeafAdherence(item.id, u.id, window, obs)
+
+    // The day-level rate is 0 — a leaf day is a hit only when fully done (§3.1).
+    expect(finding.rawAdherence).toBe(0)
+    // The slot-level rate says what that cannot: half the commitment was kept.
+    expect(finding.slotAdherence).toBe(0.5)
+  })
+
+  it('§3.1 + §5.5 an excused slot stays in the raw slot denominator and leaves the excl-excused one', async () => {
+    const u = await makeUser()
+    const { item, slotA, slotB } = await twoSlotDailyItem(u.id)
+    const occA = await materialize(item, slotA, MON, u.id)
+    const occB = await materialize(item, slotB, MON, u.id)
+    await complete(occA, u.id)
+    await excuse(occB, u.id)
+
+    const window = { startDay: MON, endDay: MON }
+    const obs = await buildLeafDayObservations(getTestPool(), u.id, item, window)
+    const finding = computeLeafAdherence(item.id, u.id, window, obs)
+
+    expect(finding.rawCounts.slotsExcused).toBe(1)
+    // Raw keeps the excused slot in the denominator, mirroring rawAdherence (§3.1)…
+    expect(finding.slotAdherence).toBe(0.5)
+    // …and the lens drops it, mirroring adherenceExclExcused.
+    expect(finding.slotAdherenceExclExcused).toBe(1)
+  })
+
+  it('§5.5 + §5.4 with uneven slot counts, slot adherence is the slot-weighted mean — not the mean of days', async () => {
+    const pool = getTestPool()
+    const u = await makeUser()
+    // Slot counts per weekday of 3/1/2/1/2: one schedule on Mon/Wed/Fri, one on Mon
+    // only, one every weekday. Doing ONLY the every-weekday block makes the two
+    // averages disagree, because the good days are the light ones.
+    const item = await createItem(pool, {
+      userId: u.id, name: 'Uneven', recurrenceRule: { type: 'days_of_week', days: [1, 3, 5] },
+    })
+    const [mwf] = await repos.findSchedulesByItem(pool, item.id, u.id)
+    const monOnly = await addSchedule(pool, item, u.id, { recurrenceRule: { type: 'days_of_week', days: [1] } }, MON)
+    const daily = await addSchedule(pool, item, u.id, { recurrenceRule: { type: 'days_of_week', days: [1, 2, 3, 4, 5] } }, MON)
+    if (!monOnly.ok || !daily.ok) throw new Error('setup failed')
+
+    const week = { startDay: MON, endDay: addDays(MON, 4) }   // Mon–Fri
+    for (let i = 0; i < 5; i++) {
+      const day = addDays(MON, i)
+      const occ = await materialize(item, daily.value, day, u.id)
+      await complete(occ, u.id)          // only the every-weekday block, every day
+    }
+    // Materialize the others so they count as due-but-not-done rather than data gaps.
+    for (const day of [MON, addDays(MON, 2), addDays(MON, 4)]) await materialize(item, mwf, day, u.id)
+    await materialize(item, monOnly.value, MON, u.id)
+
+    const obs = await buildLeafDayObservations(pool, u.id, item, week)
+    const finding = computeLeafAdherence(item.id, u.id, week, obs)
+
+    expect(finding.rawCounts.slotsDue).toBe(9)
+    expect(finding.rawCounts.slotsCompleted).toBe(5)
+    expect(finding.slotAdherence).toBeCloseTo(5 / 9, 6)          // 56%
+
+    // The unweighted mean of the daily percentages is higher (67%): it gives the
+    // one-slot days the same weight as the three-slot one. The two are equal only
+    // when every day carries the same number of slots.
+    const meanOfDays = obs.reduce((s, o) => s + o.completionPercent, 0) / obs.length
+    expect(meanOfDays).toBeCloseTo(200 / 3, 6)
+    expect(finding.slotAdherence * 100).toBeLessThan(meanOfDays)
+  })
+
   it('§5.5 a single-slot item reports slot counts identical to its day counts', async () => {
     const pool = getTestPool()
     const u = await makeUser()
@@ -165,6 +245,9 @@ describe('§3.1 + §5.5 a day\'s value is the mean of its slots', () => {
 
     expect(finding.rawCounts.slotsDue).toBe(finding.rawCounts.dueCount)
     expect(finding.rawCounts.slotsCompleted).toBe(finding.rawCounts.completedCount)
+    expect(finding.rawCounts.slotsExcused).toBe(finding.rawCounts.excusedCount)
+    expect(finding.slotAdherence).toBe(finding.rawAdherence)
+    expect(finding.slotAdherenceExclExcused).toBe(finding.adherenceExclExcused)
   })
 })
 

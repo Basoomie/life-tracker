@@ -50,12 +50,24 @@ export function releaseAdherence(f: AdherenceFinding, itemName: string): Release
     const excuseNote = f.rawCounts.excusedCount > 0
       ? `, excused ${f.rawCounts.excusedCount} of ${f.rawCounts.dueCount - f.rawCounts.completedCount} misses`
       : ''
+
+    // §5.5 — an item with several schedules is due more than once on some days, and
+    // the day-level rate counts a day only when it was FULLY done. Without this note
+    // the prompt would say "0% adherence, 0 of 5 completed" to describe someone who
+    // did 8 of 12 blocks, and the model would narrate that as never doing it at all.
+    // Never gate a fact: this is descriptive, so it always ships when it applies.
+    const slotNote = f.rawCounts.slotsDue !== f.rawCounts.dueCount
+      ? `; ${f.rawCounts.slotsCompleted} of ${f.rawCounts.slotsDue} scheduled blocks done (${pct(f.slotAdherence)} of blocks), since this item is scheduled more than once on some days`
+      : ''
+
     return {
       kind: 'layer1',
       factId: `adherence:${f.itemId}`,
       itemId: f.itemId,
       label: `${itemName} — adherence`,
-      summary: `${itemName}: ${pct(f.rawAdherence)} raw adherence (${f.rawCounts.completedCount} of ${f.rawCounts.dueCount} completed${excuseNote})`,
+      summary: `${itemName}: ${pct(f.rawAdherence)} raw adherence (${f.rawCounts.completedCount} of ${f.rawCounts.dueCount} completed${excuseNote})${slotNote}`,
+      // Stays the DAY-level rate: feed-forward compares this value across reviews
+      // (feed-forward.ts), so redefining it would manufacture a jump at the boundary.
       metricValue: f.rawAdherence,
       rawCounts: f.rawCounts,
     }

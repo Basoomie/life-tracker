@@ -28,9 +28,16 @@ export type DayObservation = {
   // §5.5 — what the day actually contained. A day is one observation whatever its
   // slot count (v2 §9.1.1.a), but Layer 1 is descriptive and must not hide the
   // difference between "1 of 2 slots" and "0 of 2": completionPercent alone would.
-  // Always 1/0-or-1 for a single-slot day, so nothing changes for one-slot items.
+  // Always 1 / 0-or-1 for a single-slot day, so nothing changes for one-slot items.
+  //
+  // These count the WHOLE day, excused slots included — unlike completionPercent,
+  // which drops them (§8.1). The two conventions are both deliberate and live at
+  // different levels: the day's percentage excludes excused, while the rates built
+  // from these counts keep them in the raw denominator and offer an excluding-excused
+  // lens, exactly as §3.1's day-level pair already does.
   slotsDue: number
   slotsCompleted: number
+  slotsExcused: number
 }
 
 // Per-child breakdown used by the parent observation builder.

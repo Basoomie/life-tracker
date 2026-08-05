@@ -31,15 +31,27 @@ export type LeafAdherenceFinding = {
     autoCloseCount: number
     missingCount: number        // due days with no materialized occurrence (data gap)
     // §5.5 — what those days actually contained. An item with several schedules can
-    // be due more than once a day; the rate above is over DAYS, so these keep Layer 1
+    // be due more than once a day; the rates above are over DAYS, so these keep Layer 1
     // honest about the difference between "1 of 2 slots" and "0 of 2". Equal to
-    // dueCount / completedCount for a single-schedule item.
+    // dueCount / completedCount / excusedCount for a single-schedule item.
     slotsDue: number
     slotsCompleted: number
+    slotsExcused: number
   }
   rawAdherence: number            // default headline (§3.1: including excused)
   adherenceExclExcused: number    // secondary lens
   excuseRate: number              // contextualizes lower adherence
+
+  // §5.5 — the same pair over SLOTS rather than days. A day-level rate counts a day
+  // as a hit only when it is fully done (§3.1's binary leaf rule), so for an item
+  // with several schedules a half-done day reads identically to an untouched one.
+  // These say what the day-level rate cannot: how much of the commitment was kept.
+  //
+  // Identical to rawAdherence / adherenceExclExcused for a single-schedule item.
+  // Note they are the SLOT-weighted mean of the daily fractions, not the unweighted
+  // one — the two differ whenever days carry different numbers of slots.
+  slotAdherence: number             // slotsCompleted / slotsDue (excused included)
+  slotAdherenceExclExcused: number  // slotsCompleted / (slotsDue - slotsExcused)
 }
 
 // Child adherence — same shape as leaf, used within ParentAdherenceFinding.

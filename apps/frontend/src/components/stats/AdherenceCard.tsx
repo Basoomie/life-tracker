@@ -40,9 +40,10 @@ export function AdherenceCard({ finding, childNames = {} }: Props) {
         {isParent && <> — excuse rate {formatPercent(finding.excuseRate)}</>}
       </div>
 
-      {showSlots && (
+      {showSlots && !isParent && (
         <div className="adherence-card__secondary" data-testid="adherence-slots">
-          {slots.slotsCompleted} of {slots.slotsDue} scheduled blocks done
+          {formatPercent(finding.slotAdherence)} of scheduled blocks
+          — {slots.slotsCompleted} of {slots.slotsDue} done
           across {slots.dueCount} day{slots.dueCount === 1 ? '' : 's'}
         </div>
       )}

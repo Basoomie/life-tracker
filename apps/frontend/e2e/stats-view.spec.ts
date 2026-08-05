@@ -40,8 +40,11 @@ function makeItem(o: Partial<Item> & { id: string; name: string }): Item {
 function makeLeafAdherence(itemId: string, o: Partial<LeafAdherenceFinding> = {}): LeafAdherenceFinding {
   return {
     type: 'leaf_adherence', userId: 'u1', itemId, window: WINDOW,
-    rawCounts: { dueCount: 20, completedCount: 16, excusedCount: 2, skippedCount: 2, autoCloseCount: 0, missingCount: 0 },
+    // §5.5 — a single-schedule item: slot counts equal day counts, so the card's
+    // per-block line stays hidden (showSlots compares the two).
+    rawCounts: { dueCount: 20, completedCount: 16, excusedCount: 2, skippedCount: 2, autoCloseCount: 0, missingCount: 0, slotsDue: 20, slotsCompleted: 16, slotsExcused: 2 },
     rawAdherence: 0.8, adherenceExclExcused: 0.89, excuseRate: 0.5,
+    slotAdherence: 0.8, slotAdherenceExclExcused: 0.89,
     ...o,
   }
 }
@@ -49,8 +52,9 @@ function makeLeafAdherence(itemId: string, o: Partial<LeafAdherenceFinding> = {}
 function makeChildAdherence(itemId: string, o: Partial<ChildAdherenceFinding> = {}): ChildAdherenceFinding {
   return {
     type: 'child_adherence', userId: 'u1', itemId, window: WINDOW,
-    rawCounts: { dueCount: 20, completedCount: 10, excusedCount: 0, skippedCount: 10, autoCloseCount: 0, missingCount: 0 },
+    rawCounts: { dueCount: 20, completedCount: 10, excusedCount: 0, skippedCount: 10, autoCloseCount: 0, missingCount: 0, slotsDue: 20, slotsCompleted: 10, slotsExcused: 0 },
     rawAdherence: 0.5, adherenceExclExcused: 0.5, excuseRate: 0,
+    slotAdherence: 0.5, slotAdherenceExclExcused: 0.5,
     ...o,
   }
 }
@@ -413,8 +417,9 @@ test.describe('v2 §9.5.1 Stats views', () => {
   test('§3.1 raw-including-excused adherence is the headline; excuse rate is shown alongside it', async ({ page }) => {
     const item = makeItem({ id: 'daily-item', name: 'Workout' })
     const adherence = makeLeafAdherence('daily-item', {
-      rawCounts: { dueCount: 13, completedCount: 7, excusedCount: 5, skippedCount: 1, autoCloseCount: 0, missingCount: 0 },
+      rawCounts: { dueCount: 13, completedCount: 7, excusedCount: 5, skippedCount: 1, autoCloseCount: 0, missingCount: 0, slotsDue: 13, slotsCompleted: 7, slotsExcused: 5 },
       rawAdherence: 7 / 13, adherenceExclExcused: 7 / 8, excuseRate: 5 / 6,
+      slotAdherence: 7 / 13, slotAdherenceExclExcused: 7 / 8,
     })
     const fixture = fullItemFixture('daily-item', { adherence })
     await setupStatsMocks(page, { items: [item], perItem: { 'daily-item': fixture } })
@@ -424,6 +429,32 @@ test.describe('v2 §9.5.1 Stats views', () => {
     await expect(page.getByTestId('adherence-headline')).toHaveText('54%')
     await expect(page.getByTestId('adherence-secondary')).toContainText('88%')
     await expect(page.getByTestId('adherence-secondary')).toContainText('excused 5 of 6 misses')
+    // §5.5 — a single-schedule item has nothing to disambiguate, so no block line.
+    await expect(page.getByTestId('adherence-slots')).not.toBeVisible()
+  })
+
+  test('§5.5 a multi-schedule item shows the per-block rate, so a part-done day does not read as nothing done', async ({ page }) => {
+    const item = makeItem({ id: 'multi-item', name: 'Task A' })
+    // 5 due days, none FULLY done (§3.1's binary leaf rule) → the headline is 0%.
+    // But 5 of 10 blocks were done, which is what the block line exists to say.
+    const adherence = makeLeafAdherence('multi-item', {
+      rawCounts: {
+        dueCount: 5, completedCount: 0, excusedCount: 0, skippedCount: 5,
+        autoCloseCount: 0, missingCount: 0,
+        slotsDue: 10, slotsCompleted: 5, slotsExcused: 0,
+      },
+      rawAdherence: 0, adherenceExclExcused: 0, excuseRate: 0,
+      slotAdherence: 0.5, slotAdherenceExclExcused: 0.5,
+    })
+    const fixture = fullItemFixture('multi-item', { adherence })
+    await setupStatsMocks(page, { items: [item], perItem: { 'multi-item': fixture } })
+    await gotoStats(page)
+    await page.getByTestId('global-stats-row-multi-item').click()
+
+    await expect(page.getByTestId('adherence-headline')).toHaveText('0%')
+    await expect(page.getByTestId('adherence-slots')).toBeVisible()
+    await expect(page.getByTestId('adherence-slots')).toContainText('50%')
+    await expect(page.getByTestId('adherence-slots')).toContainText('5 of 10 done')
   })
 
   test('§9.5.1/§10 the global view never fabricates a meaningless aggregate (e.g. average context stability across items)', async ({ page }) => {

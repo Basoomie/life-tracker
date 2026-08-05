@@ -42,8 +42,9 @@ describe('§3.1 releaseAdherence', () => {
   it('releases a leaf finding with raw adherence as the headline metric and excuse context in the summary', () => {
     const f: LeafAdherenceFinding = {
       type: 'leaf_adherence', userId: USER_ID, itemId: ITEM_ID, window: WINDOW,
-      rawCounts: { dueCount: 10, completedCount: 6, excusedCount: 2, skippedCount: 2, autoCloseCount: 0, missingCount: 0, slotsDue: 10, slotsCompleted: 6 },
+      rawCounts: { dueCount: 10, completedCount: 6, excusedCount: 2, skippedCount: 2, autoCloseCount: 0, missingCount: 0, slotsDue: 10, slotsCompleted: 6, slotsExcused: 2 },
       rawAdherence: 0.6, adherenceExclExcused: 0.75, excuseRate: 0.5,
+      slotAdherence: 0.6, slotAdherenceExclExcused: 0.75,
     }
     const released = release.releaseAdherence(f, 'Workout')
     expect(released.kind).toBe('layer1')
@@ -53,6 +54,42 @@ describe('§3.1 releaseAdherence', () => {
     expect(released.rawCounts.dueCount).toBe(10)
   })
 
+  it('§5.5 a released adherence fact names the blocks done, so a part-done item cannot read as never done', () => {
+    // The failure this guards: an item scheduled twice a day, half its blocks done,
+    // has a DAY-level rate of 0 (§3.1 — a leaf day is a hit only when fully done).
+    // Released without the slot note, the prompt would say "0% adherence, 0 of 5
+    // completed" and the model would narrate that as never doing it at all.
+    const f: LeafAdherenceFinding = {
+      type: 'leaf_adherence', userId: USER_ID, itemId: ITEM_ID, window: WINDOW,
+      rawCounts: {
+        dueCount: 5, completedCount: 0, excusedCount: 0, skippedCount: 5,
+        autoCloseCount: 0, missingCount: 0,
+        slotsDue: 10, slotsCompleted: 5, slotsExcused: 0,
+      },
+      rawAdherence: 0, adherenceExclExcused: 0, excuseRate: 0,
+      slotAdherence: 0.5, slotAdherenceExclExcused: 0.5,
+    }
+    const released = release.releaseAdherence(f, 'Task A')
+    expect(released.summary).toContain('5 of 10 scheduled blocks done')
+    expect(released.summary).toContain('50% of blocks')
+    // metricValue stays the day-level rate — feed-forward compares it across reviews.
+    expect(released.metricValue).toBe(0)
+  })
+
+  it('§5.5 a single-schedule item releases no slot note — nothing to disambiguate', () => {
+    const f: LeafAdherenceFinding = {
+      type: 'leaf_adherence', userId: USER_ID, itemId: ITEM_ID, window: WINDOW,
+      rawCounts: {
+        dueCount: 10, completedCount: 6, excusedCount: 0, skippedCount: 4,
+        autoCloseCount: 0, missingCount: 0,
+        slotsDue: 10, slotsCompleted: 6, slotsExcused: 0,
+      },
+      rawAdherence: 0.6, adherenceExclExcused: 0.6, excuseRate: 0,
+      slotAdherence: 0.6, slotAdherenceExclExcused: 0.6,
+    }
+    expect(release.releaseAdherence(f, 'Workout').summary).not.toContain('blocks')
+  })
+
   it('releases a parent finding with the per-child breakdown always present (§3.1)', () => {
     const f: ParentAdherenceFinding = {
       type: 'parent_adherence', userId: USER_ID, itemId: ITEM_ID, window: WINDOW,
@@ -60,11 +97,13 @@ describe('§3.1 releaseAdherence', () => {
       meanDerivedPercent: 84, meanDerivedExclExcused: 84, excuseRate: 0,
       children: [
         { type: 'child_adherence', userId: USER_ID, itemId: 'child1', window: WINDOW,
-          rawCounts: { dueCount: 10, completedCount: 10, excusedCount: 0, skippedCount: 0, autoCloseCount: 0, missingCount: 0, slotsDue: 10, slotsCompleted: 10 },
-          rawAdherence: 1, adherenceExclExcused: 1, excuseRate: 0 },
+          rawCounts: { dueCount: 10, completedCount: 10, excusedCount: 0, skippedCount: 0, autoCloseCount: 0, missingCount: 0, slotsDue: 10, slotsCompleted: 10, slotsExcused: 0 },
+          rawAdherence: 1, adherenceExclExcused: 1, excuseRate: 0,
+          slotAdherence: 1, slotAdherenceExclExcused: 1 },
         { type: 'child_adherence', userId: USER_ID, itemId: 'child2', window: WINDOW,
-          rawCounts: { dueCount: 10, completedCount: 2, excusedCount: 0, skippedCount: 8, autoCloseCount: 0, missingCount: 0, slotsDue: 10, slotsCompleted: 2 },
-          rawAdherence: 0.2, adherenceExclExcused: 0.2, excuseRate: 0 },
+          rawCounts: { dueCount: 10, completedCount: 2, excusedCount: 0, skippedCount: 8, autoCloseCount: 0, missingCount: 0, slotsDue: 10, slotsCompleted: 2, slotsExcused: 0 },
+          rawAdherence: 0.2, adherenceExclExcused: 0.2, excuseRate: 0,
+          slotAdherence: 0.2, slotAdherenceExclExcused: 0.2 },
       ],
     }
     const released = release.releaseAdherence(f, 'Night Routine')
