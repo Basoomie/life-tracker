@@ -64,6 +64,9 @@ function makeDayObs(
       declaredPercent: null,
       isBackfilled: false,
       backfillLagDays: 0,
+      // §5.5 — single-slot days, which is what these synthetic patterns describe.
+      slotsDue: 1,
+      slotsCompleted: p === 'completed' ? 1 : 0,
     })
   }
   return result

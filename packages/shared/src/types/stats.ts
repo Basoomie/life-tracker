@@ -30,6 +30,12 @@ export type LeafAdherenceFinding = {
     skippedCount: number
     autoCloseCount: number
     missingCount: number        // due days with no materialized occurrence (data gap)
+    // §5.5 — what those days actually contained. An item with several schedules can
+    // be due more than once a day; the rate above is over DAYS, so these keep Layer 1
+    // honest about the difference between "1 of 2 slots" and "0 of 2". Equal to
+    // dueCount / completedCount for a single-schedule item.
+    slotsDue: number
+    slotsCompleted: number
   }
   rawAdherence: number            // default headline (§3.1: including excused)
   adherenceExclExcused: number    // secondary lens

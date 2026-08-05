@@ -19,6 +19,12 @@ export function AdherenceCard({ finding, childNames = {} }: Props) {
   const misses = !isParent ? finding.rawCounts.dueCount - finding.rawCounts.completedCount : null
   const excusedCount = finding.rawCounts.excusedCount
 
+  // §5.5 — an item with several schedules is due more than once on some days. The
+  // rate above is over DAYS and treats a part-done day as a miss, so the slot counts
+  // are shown whenever they differ: "1 of 2 blocks" must not read as nothing done.
+  const slots = !isParent ? finding.rawCounts : null
+  const showSlots = slots !== null && slots.slotsDue !== slots.dueCount
+
   return (
     <div className="adherence-card" data-testid="adherence-card">
       <div className="adherence-card__headline">
@@ -33,6 +39,13 @@ export function AdherenceCard({ finding, childNames = {} }: Props) {
         )}
         {isParent && <> — excuse rate {formatPercent(finding.excuseRate)}</>}
       </div>
+
+      {showSlots && (
+        <div className="adherence-card__secondary" data-testid="adherence-slots">
+          {slots.slotsCompleted} of {slots.slotsDue} scheduled blocks done
+          across {slots.dueCount} day{slots.dueCount === 1 ? '' : 's'}
+        </div>
+      )}
 
       {isParent && (
         <div className="adherence-card__children" data-testid="adherence-children">

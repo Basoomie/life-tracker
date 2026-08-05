@@ -127,6 +127,44 @@ describe('§3.1 + §5.5 a day\'s value is the mean of its slots', () => {
 
     // Two days in the window, four slots — the denominator is days.
     expect(finding.rawCounts.dueCount).toBe(2)
+    // …and the raw slot counts say what those days actually contained (§5.5).
+    expect(finding.rawCounts.slotsDue).toBe(4)
+  })
+
+  it('§5.5 raw slot counts distinguish "1 of 2 done" from "0 of 2", which the rate cannot', async () => {
+    const u = await makeUser()
+    const { item, slotA, slotB } = await twoSlotDailyItem(u.id)
+    const occA = await materialize(item, slotA, MON, u.id)
+    await materialize(item, slotB, MON, u.id)
+    await complete(occA, u.id)
+
+    const window = { startDay: MON, endDay: MON }
+    const obs = await buildLeafDayObservations(getTestPool(), u.id, item, window)
+    const finding = computeLeafAdherence(item.id, u.id, window, obs)
+
+    // The day-level rate reads 0: a leaf day is a hit only when fully done (§3.1).
+    expect(finding.rawAdherence).toBe(0)
+    // The raw counts are what keep Layer 1 honest about the half that WAS done.
+    expect(finding.rawCounts.slotsDue).toBe(2)
+    expect(finding.rawCounts.slotsCompleted).toBe(1)
+  })
+
+  it('§5.5 a single-slot item reports slot counts identical to its day counts', async () => {
+    const pool = getTestPool()
+    const u = await makeUser()
+    const item = await createItem(pool, {
+      userId: u.id, name: 'Once daily', recurrenceRule: { type: 'daily' },
+    })
+    const [only] = await repos.findSchedulesByItem(pool, item.id, u.id)
+    const occ = await materialize(item, only, MON, u.id)
+    await complete(occ, u.id)
+
+    const window = { startDay: MON, endDay: MON }
+    const obs = await buildLeafDayObservations(pool, u.id, item, window)
+    const finding = computeLeafAdherence(item.id, u.id, window, obs)
+
+    expect(finding.rawCounts.slotsDue).toBe(finding.rawCounts.dueCount)
+    expect(finding.rawCounts.slotsCompleted).toBe(finding.rawCounts.completedCount)
   })
 })
 

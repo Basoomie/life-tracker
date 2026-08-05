@@ -22,10 +22,16 @@ function safeDivide(n: number, d: number): number {
 
 function computeLeafCounts(observations: DayObservation[]) {
   let dueCount = 0, completedCount = 0, excusedCount = 0,
-      skippedCount = 0, autoCloseCount = 0, missingCount = 0
+      skippedCount = 0, autoCloseCount = 0, missingCount = 0,
+      slotsDue = 0, slotsCompleted = 0
 
   for (const obs of observations) {
     dueCount++
+    // §5.5 — slot counts describe what the days contained; the rate is over DAYS,
+    // so these travel alongside it rather than into it. For a single-slot item they
+    // are identical to dueCount/completedCount.
+    slotsDue += obs.slotsDue
+    slotsCompleted += obs.slotsCompleted
     if (obs.disposition === 'missing') { missingCount++; continue }
     if (obs.completionPercent >= 100)  completedCount++
     if (obs.disposition === 'excused')    excusedCount++
@@ -33,7 +39,10 @@ function computeLeafCounts(observations: DayObservation[]) {
     if (obs.disposition === 'auto_closed') autoCloseCount++
   }
 
-  return { dueCount, completedCount, excusedCount, skippedCount, autoCloseCount, missingCount }
+  return {
+    dueCount, completedCount, excusedCount, skippedCount, autoCloseCount, missingCount,
+    slotsDue, slotsCompleted,
+  }
 }
 
 /**
@@ -46,8 +55,8 @@ export function computeLeafAdherence(
   window: DateWindow,
   observations: DayObservation[]
 ): LeafAdherenceFinding {
-  const { dueCount, completedCount, excusedCount, skippedCount, autoCloseCount, missingCount } =
-    computeLeafCounts(observations)
+  const counts = computeLeafCounts(observations)
+  const { dueCount, completedCount, excusedCount } = counts
 
   const rawAdherence = safeDivide(completedCount, dueCount)
   const adherenceExclExcused = safeDivide(completedCount, dueCount - excusedCount)
@@ -58,7 +67,7 @@ export function computeLeafAdherence(
     userId,
     itemId,
     window,
-    rawCounts: { dueCount, completedCount, excusedCount, skippedCount, autoCloseCount, missingCount },
+    rawCounts: counts,
     rawAdherence,
     adherenceExclExcused,
     excuseRate,
@@ -111,15 +120,13 @@ export function computeParentAdherence(
   const children: ChildAdherenceFinding[] = []
   for (const [childItemId, childObs] of childObservations) {
     const counts = computeLeafCounts(childObs)
-    const { dueCount: cDue, completedCount: cComp, excusedCount: cExc,
-            skippedCount: cSkip, autoCloseCount: cAC, missingCount: cMiss } = counts
+    const { dueCount: cDue, completedCount: cComp, excusedCount: cExc } = counts
     children.push({
       type: 'child_adherence',
       userId,
       itemId: childItemId,
       window,
-      rawCounts: { dueCount: cDue, completedCount: cComp, excusedCount: cExc,
-                   skippedCount: cSkip, autoCloseCount: cAC, missingCount: cMiss },
+      rawCounts: counts,
       rawAdherence: safeDivide(cComp, cDue),
       adherenceExclExcused: safeDivide(cComp, cDue - cExc),
       excuseRate: safeDivide(cExc, cDue - cComp),

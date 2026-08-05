@@ -73,7 +73,10 @@ function buildLeafDayObs(
   events: TrackerEvent[]
 ): DayObservation {
   if (!occ) {
-    return { day, completionPercent: 0, disposition: 'missing', declaredPercent: null, isBackfilled: false, backfillLagDays: 0 }
+    return {
+      day, completionPercent: 0, disposition: 'missing', declaredPercent: null,
+      isBackfilled: false, backfillLagDays: 0, slotsDue: 1, slotsCompleted: 0,
+    }
   }
   const state = deriveLeafCompletion(events)
   const disposition = deriveDisposition(occ, events)
@@ -85,6 +88,8 @@ function buildLeafDayObs(
     declaredPercent: null,
     isBackfilled,
     backfillLagDays,
+    slotsDue: 1,
+    slotsCompleted: state.completionPercent >= 100 ? 1 : 0,
   }
 }
 
@@ -141,6 +146,10 @@ function foldDay(day: string, slots: DayObservation[]): DayObservation {
     declaredPercent: null,
     isBackfilled: counted.some((s) => s.isBackfilled),
     backfillLagDays: Math.max(0, ...counted.map((s) => s.backfillLagDays)),
+    // Raw counts describe the whole day, excused slots included — they are the record
+    // of what was there, not an input to the rate.
+    slotsDue: slots.reduce((n, s) => n + s.slotsDue, 0),
+    slotsCompleted: slots.reduce((n, s) => n + s.slotsCompleted, 0),
   }
 }
 
@@ -487,13 +496,17 @@ export async function buildParentDayObservations(
       // A child that is itself a parent has exactly one slot (§5.5).
       const occ = (occMap.get(`${child.id}:${day}`) ?? [])[0]
       const events = occ ? (eventsMap.get(occ.id) ?? []) : []
+      const nodePercent = computeNodePercent(buildNode(child.id, day, events, ctx))
       slotObs.push({
         day,
-        completionPercent: computeNodePercent(buildNode(child.id, day, events, ctx)),
+        completionPercent: nodePercent,
         disposition: deriveDisposition(occ, events),
         declaredPercent: findDeclaredPercent(events),
         isBackfilled: false,
         backfillLagDays: 0,
+        // A sub-parent is one slot (§5.5); "completed" for it means fully derived.
+        slotsDue: 1,
+        slotsCompleted: nodePercent >= 100 ? 1 : 0,
       })
     }
     childObs.set(child.id, foldSlotsIntoDays(slotObs))
@@ -517,6 +530,9 @@ export async function buildParentDayObservations(
       declaredPercent,
       isBackfilled: false,   // parent completion isn't backfilled in the same way
       backfillLagDays: 0,
+      // §5.5 — a parent carries exactly one slot, so its day is always one slot.
+      slotsDue: 1,
+      slotsCompleted: derivedPercent >= 100 ? 1 : 0,
     }
   })
 

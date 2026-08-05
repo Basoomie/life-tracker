@@ -42,7 +42,7 @@ describe('§3.1 releaseAdherence', () => {
   it('releases a leaf finding with raw adherence as the headline metric and excuse context in the summary', () => {
     const f: LeafAdherenceFinding = {
       type: 'leaf_adherence', userId: USER_ID, itemId: ITEM_ID, window: WINDOW,
-      rawCounts: { dueCount: 10, completedCount: 6, excusedCount: 2, skippedCount: 2, autoCloseCount: 0, missingCount: 0 },
+      rawCounts: { dueCount: 10, completedCount: 6, excusedCount: 2, skippedCount: 2, autoCloseCount: 0, missingCount: 0, slotsDue: 10, slotsCompleted: 6 },
       rawAdherence: 0.6, adherenceExclExcused: 0.75, excuseRate: 0.5,
     }
     const released = release.releaseAdherence(f, 'Workout')
@@ -60,10 +60,10 @@ describe('§3.1 releaseAdherence', () => {
       meanDerivedPercent: 84, meanDerivedExclExcused: 84, excuseRate: 0,
       children: [
         { type: 'child_adherence', userId: USER_ID, itemId: 'child1', window: WINDOW,
-          rawCounts: { dueCount: 10, completedCount: 10, excusedCount: 0, skippedCount: 0, autoCloseCount: 0, missingCount: 0 },
+          rawCounts: { dueCount: 10, completedCount: 10, excusedCount: 0, skippedCount: 0, autoCloseCount: 0, missingCount: 0, slotsDue: 10, slotsCompleted: 10 },
           rawAdherence: 1, adherenceExclExcused: 1, excuseRate: 0 },
         { type: 'child_adherence', userId: USER_ID, itemId: 'child2', window: WINDOW,
-          rawCounts: { dueCount: 10, completedCount: 2, excusedCount: 0, skippedCount: 8, autoCloseCount: 0, missingCount: 0 },
+          rawCounts: { dueCount: 10, completedCount: 2, excusedCount: 0, skippedCount: 8, autoCloseCount: 0, missingCount: 0, slotsDue: 10, slotsCompleted: 2 },
           rawAdherence: 0.2, adherenceExclExcused: 0.2, excuseRate: 0 },
       ],
     }

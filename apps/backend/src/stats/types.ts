@@ -25,6 +25,12 @@ export type DayObservation = {
   declaredPercent: number | null  // non-null for parent days with manual override
   isBackfilled: boolean
   backfillLagDays: number         // calendar days from appliesToDay to recordedAt; 0 if not backfilled
+  // §5.5 — what the day actually contained. A day is one observation whatever its
+  // slot count (v2 §9.1.1.a), but Layer 1 is descriptive and must not hide the
+  // difference between "1 of 2 slots" and "0 of 2": completionPercent alone would.
+  // Always 1/0-or-1 for a single-slot day, so nothing changes for one-slot items.
+  slotsDue: number
+  slotsCompleted: number
 }
 
 // Per-child breakdown used by the parent observation builder.
