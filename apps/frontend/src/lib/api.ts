@@ -8,8 +8,11 @@ import type {
   Reason,
   Item,
   ItemPrerequisite,
+  ItemSchedule,
   ItemWithSchedules,
   ItemDetail,
+  CreateScheduleBody,
+  UpdateScheduleBody,
   Occurrence,
   DayStartEntry,
   User,
@@ -93,10 +96,12 @@ export const api = {
       apiFetch<OccurrenceWithState[]>(`/occurrences/overdue?before=${before}`),
     complete: (id: string) =>
       apiFetch<OccurrenceWithState>(`/occurrences/${id}/complete`, { method: 'POST' }),
-    completeByItemDay: (itemId: string, appliesToDay: string) =>
+    // §5.5 — scheduleId is required for an unmaterialized occurrence: (item, day) no
+    // longer identifies one, so the server would have to guess which slot was clicked.
+    completeByItemDay: (itemId: string, appliesToDay: string, scheduleId: string) =>
       apiFetch<OccurrenceWithState>('/occurrences/complete-by-item-day', {
         method: 'POST',
-        body: JSON.stringify({ itemId, appliesToDay }),
+        body: JSON.stringify({ itemId, appliesToDay, scheduleId }),
       }),
     uncomplete: (id: string) =>
       apiFetch<OccurrenceWithState>(`/occurrences/${id}/uncomplete`, { method: 'POST' }),
@@ -166,6 +171,20 @@ export const api = {
       apiFetch<Item[]>(`/items/${parentId}/reorder-children`, {
         method: 'PATCH', body: JSON.stringify({ childItemIds }),
       }),
+
+    // §5.5 — the item's first slot is created with the item; these manage the rest.
+    schedules: {
+      add: (itemId: string, body: CreateScheduleBody) =>
+        apiFetch<ItemSchedule>(`/items/${itemId}/schedules`, {
+          method: 'POST', body: JSON.stringify(body),
+        }),
+      update: (itemId: string, scheduleId: string, body: UpdateScheduleBody) =>
+        apiFetch<ItemSchedule>(`/items/${itemId}/schedules/${scheduleId}`, {
+          method: 'PATCH', body: JSON.stringify(body),
+        }),
+      remove: (itemId: string, scheduleId: string) =>
+        apiFetch<ItemSchedule>(`/items/${itemId}/schedules/${scheduleId}`, { method: 'DELETE' }),
+    },
   },
 
   adHoc: {

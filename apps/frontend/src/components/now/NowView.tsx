@@ -15,6 +15,7 @@ import { ConfirmModal } from '../shared/ConfirmModal'
 import { OccurrenceCard } from '../shared/OccurrenceCard'
 import { SortableList } from '../shared/SortableList'
 import { buildOccurrenceTree, type OccurrenceNode } from '../../lib/occurrence-tree'
+import { occurrenceKey } from '../../lib/occurrence-key'
 import { api } from '../../lib/api'
 import { saveSessions, loadSessions } from '../../lib/sessions'
 import type { OccurrenceWithState } from '@tracker/shared'
@@ -123,10 +124,16 @@ export function NowView({ onEditItem }: Props) {
   const handleComplete = useCallback(async (occ: OccurrenceWithState) => {
     const updated = occ.id
       ? await api.occurrences.complete(occ.id)
-      : await api.occurrences.completeByItemDay(occ.itemId, occ.appliesToDay)
+      : await api.occurrences.completeByItemDay(occ.itemId, occ.appliesToDay, occ.scheduleId)
     setOccurrences((prev) => prev.map((o) => {
       if (o.id !== null && o.id === updated.id) return updated
-      if (o.id === null && o.itemId === updated.itemId && o.appliesToDay === updated.appliesToDay) return updated
+      // §5.5 — full identity, or completing one slot would patch the item's others.
+      if (
+        o.id === null &&
+        o.itemId === updated.itemId &&
+        o.scheduleId === updated.scheduleId &&
+        o.appliesToDay === updated.appliesToDay
+      ) return updated
       return o
     }))
     // A running/paused timer has no UI once the row is marked complete (the
@@ -350,7 +357,7 @@ export function NowView({ onEditItem }: Props) {
   function renderNode(occ: OccurrenceWithState) {
     const node = nodeByKey.get(occ.id ?? occ.itemId)
     if (node && (node.children.length > 0 || occ.hasChildren)) {
-      return <OccurrenceCard key={occ.id ?? occ.itemId} node={node} depth={0} renderLeaf={(o) => renderRow(o)} onReordered={handleReordered} />
+      return <OccurrenceCard key={occurrenceKey(occ)} node={node} depth={0} renderLeaf={(o) => renderRow(o)} onReordered={handleReordered} />
     }
     return renderRow(occ)
   }

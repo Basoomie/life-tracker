@@ -127,6 +127,46 @@ function makeItem(overrides: ItemOverrides): ItemWithSchedules {
   } as ItemWithSchedules
 }
 
+// §5.5 — saving a full edit syncs the item's slots through the schedule routes as
+// well as PATCHing the item, so every full-edit test needs those routes answered.
+// Returns a getter for the schedule bodies sent, for tests that assert on them.
+async function routeScheduleSync(page: Page, item: ItemWithSchedules) {
+  const bodies: Record<string, unknown>[] = []
+  await page.route(`/api/items/${item.id}/schedules`, async (route) => {
+    bodies.push(JSON.parse(route.request().postData() ?? '{}'))
+    await route.fulfill({ json: item.schedules[0] })
+  })
+  await page.route(new RegExp(`/api/items/${item.id}/schedules/[^/]+$`), async (route) => {
+    if (route.request().method() !== 'DELETE') {
+      bodies.push(JSON.parse(route.request().postData() ?? '{}'))
+    }
+    await route.fulfill({ json: item.schedules[0] })
+  })
+  return () => bodies
+}
+
+// Open the full-edit form via the edit button on an occurrence row.
+async function openFullEditForItem(page: Page, item: ItemWithSchedules) {
+  const occ = makeOcc({ id: `occ-${item.id}`, itemId: item.id, name: item.name })
+  await page.route('/me', (r) => r.fulfill({ json: { id: 'u1', email: 'test@tracker.local', createdAt: new Date().toISOString() } }))
+  await page.route(/\/api\/occurrences\?start=.*&end=.*/, (r) => r.fulfill({ json: [occ] }))
+  await page.route('/api/buckets',           (r) => r.fulfill({ json: BUCKETS }))
+  await page.route('/api/categories',        (r) => r.fulfill({ json: CATEGORIES }))
+  await page.route('/api/reasons',           (r) => r.fulfill({ json: [] }))
+  await page.route('/api/preferences',       (r) => r.fulfill({ json: {} }))
+  await page.route('/api/items',             (r) => r.fulfill({ json: [item] }))
+  await page.route(`/api/items/${item.id}`,  (r) =>
+    r.fulfill({ json: { ...item, children: [], prerequisites: [] } })
+  )
+  await routeScheduleSync(page, item)
+  await page.goto('/')
+  // Click the edit button on the occurrence row
+  await page.getByTestId(`occ-row-${occ.id}`).getByTestId('occ-edit-btn').click()
+  await expect(page.getByTestId('item-form-modal')).toBeVisible()
+  // Wait for async data load to complete before tests interact with form fields
+  await expect(page.getByTestId('if-name')).toBeVisible()
+}
+
 const BUCKETS: Bucket[] = [
   {
     id: 'b-morn', userId: 'u1', name: 'Morning',
@@ -393,27 +433,6 @@ test.describe('§4c-ii — Quick-add doorway', () => {
 // ─────────────────────────────────────────────────────────────────────────────
 test.describe('§4c-ii — Full-edit progressive disclosure', () => {
 
-  // Helper: open the full-edit form via the edit button on an occurrence row
-  async function openFullEditForItem(page: Page, item: Item) {
-    const occ = makeOcc({ id: `occ-${item.id}`, itemId: item.id, name: item.name })
-    await page.route('/me', (r) => r.fulfill({ json: { id: 'u1', email: 'test@tracker.local', createdAt: new Date().toISOString() } }))
-    await page.route(/\/api\/occurrences\?start=.*&end=.*/, (r) => r.fulfill({ json: [occ] }))
-    await page.route('/api/buckets',           (r) => r.fulfill({ json: BUCKETS }))
-    await page.route('/api/categories',        (r) => r.fulfill({ json: CATEGORIES }))
-    await page.route('/api/reasons',           (r) => r.fulfill({ json: [] }))
-    await page.route('/api/preferences',       (r) => r.fulfill({ json: {} }))
-    await page.route('/api/items',             (r) => r.fulfill({ json: [item] }))
-    await page.route(`/api/items/${item.id}`,  (r) =>
-      r.fulfill({ json: { ...item, children: [], prerequisites: [] } })
-    )
-    await page.goto('/')
-    // Click the edit button on the occurrence row
-    await page.getByTestId(`occ-row-${occ.id}`).getByTestId('occ-edit-btn').click()
-    await expect(page.getByTestId('item-form-modal')).toBeVisible()
-    // Wait for async data load to complete before tests interact with form fields
-    await expect(page.getByTestId('if-name')).toBeVisible()
-  }
-
   test('§5.1 / §4c-ii full-edit progressive disclosure: one-time hides recurrence and quota', async ({ page }) => {
     await page.clock.setFixedTime(new Date('2026-07-07T08:00:00'))
     await openFullEditForItem(page, ITEM_TASK)
@@ -507,15 +526,9 @@ test.describe('§4c-ii — Full-edit progressive disclosure', () => {
     const habitItem = makeItem({ id: 'item-habit-2', name: 'New Habit', recurrenceRule: { type: 'daily' } })
     await openFullEditForItem(page, habitItem)
 
-    let capturedBody: Record<string, unknown> | null = null
-    await page.route(`/api/items/${habitItem.id}`, async (route) => {
-      if (route.request().method() === 'PATCH') {
-        capturedBody = JSON.parse(route.request().postData() ?? '{}') as Record<string, unknown>
-        await route.fulfill({ json: habitItem })
-      } else {
-        await route.fulfill({ json: { ...habitItem, children: [], prerequisites: [] } })
-      }
-    })
+    // §5.5 — the rule belongs to the item's SCHEDULE, so an edit sends it to the
+    // schedule route, not to PATCH /items/:id.
+    const scheduleBodies = await routeScheduleSync(page, habitItem)
 
     // Form pre-populated as recurring with daily rule
     await expect(page.getByTestId('if-type-recurring')).toHaveClass(/qa-radio--active/)
@@ -525,7 +538,9 @@ test.describe('§4c-ii — Full-edit progressive disclosure', () => {
     await page.getByTestId('if-submit').click()
     await expect(page.getByTestId('item-form-modal')).not.toBeVisible()
 
-    expect((capturedBody!['recurrenceRule'] as { type: string })?.type).toBe('daily')
+    const sent = scheduleBodies()
+    expect(sent).toHaveLength(1)
+    expect((sent[0]['recurrenceRule'] as { type: string })?.type).toBe('daily')
   })
 
   test('§5.1 / §4c-ii recurrence rule round-trips correctly through API body (days_of_week MWF)', async ({ page }) => {
@@ -537,15 +552,8 @@ test.describe('§4c-ii — Full-edit progressive disclosure', () => {
     })
     await openFullEditForItem(page, mwfItem)
 
-    let capturedBody: Record<string, unknown> | null = null
-    await page.route(`/api/items/${mwfItem.id}`, async (route) => {
-      if (route.request().method() === 'PATCH') {
-        capturedBody = JSON.parse(route.request().postData() ?? '{}') as Record<string, unknown>
-        await route.fulfill({ json: mwfItem })
-      } else {
-        await route.fulfill({ json: { ...mwfItem, children: [], prerequisites: [] } })
-      }
-    })
+    // §5.5 — the rule is sent to the schedule route (see the daily case above).
+    const scheduleBodies = await routeScheduleSync(page, mwfItem)
 
     // Pre-populated: days_of_week selected, Mon/Wed/Fri checked
     await expect(page.getByTestId('if-rec-days_of_week')).toHaveClass(/qa-radio--active/)
@@ -557,7 +565,7 @@ test.describe('§4c-ii — Full-edit progressive disclosure', () => {
     await page.getByTestId('if-submit').click()
     await expect(page.getByTestId('item-form-modal')).not.toBeVisible()
 
-    const rule = capturedBody!['recurrenceRule'] as { type: string; days: number[] }
+    const rule = scheduleBodies()[0]['recurrenceRule'] as { type: string; days: number[] }
     expect(rule.type).toBe('days_of_week')
     expect(rule.days.sort()).toEqual([1, 3, 5])
   })
@@ -728,6 +736,8 @@ test.describe('§4.2 / §4c-ii — Prerequisites in full-edit', () => {
         await route.fulfill({ json: { ...ITEM_TASK, children: [], prerequisites: [] } })
       }
     })
+    // §5.5 — saving also syncs the item's slots through the schedule routes.
+    await routeScheduleSync(page, ITEM_TASK)
 
     await page.goto('/')
     await page.getByTestId('occ-row-occ-t2').getByTestId('occ-edit-btn').click()
@@ -773,6 +783,8 @@ test.describe('§4c-ii — Full-edit: parent nesting, disposition, edit mode', (
         await route.fulfill({ json: { ...item, children: [], prerequisites: [] } })
       }
     })
+    // §5.5 — saving also syncs the item's slots through the schedule routes.
+    await routeScheduleSync(page, item)
     await page.goto('/')
     await page.getByTestId(`occ-row-occ-${item.id}`).getByTestId('occ-edit-btn').click()
     await expect(page.getByTestId('item-form-modal')).toBeVisible()
@@ -952,4 +964,172 @@ test.describe('§8.1 amendment — create-mode disposition-policy default', () =
     expect(capturedBody!['dispositionPolicy']).toBe('require_manual')
   })
 
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// §5.5 — Multiple schedules per item
+// ─────────────────────────────────────────────────────────────────────────────
+// One task, several times of day. The single-slot case must look exactly as it
+// always has; the extra slots appear only when asked for.
+test.describe('§5.5 — multiple schedules per item', () => {
+
+  async function openCreateForm(page: Page) {
+    await setupBase(page)
+    await page.goto('/')
+    await page.getByTestId('new-item-btn').click()
+    await expect(page.getByTestId('item-form-modal')).toBeVisible()
+    await expect(page.getByTestId('if-name')).toBeVisible()
+  }
+
+  test('§5.5 a one-time task cannot carry several times — the add control is absent', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2026-07-07T08:00:00'))
+    await openCreateForm(page)
+
+    // Default is one-time; a task that happens once has exactly one "when".
+    await expect(page.getByTestId('if-type-onetime')).toHaveClass(/qa-radio--active/)
+    await expect(page.getByTestId('if-add-schedule')).not.toBeVisible()
+  })
+
+  test('§5.5 a recurring item offers "+ Add another time" and reveals a second slot', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2026-07-07T08:00:00'))
+    await openCreateForm(page)
+    await page.getByTestId('if-type-recurring').click()
+
+    // One slot to start with — the common case is unchanged.
+    await expect(page.getByTestId('if-slot-0')).toBeVisible()
+    await expect(page.getByTestId('if-slot-1')).not.toBeVisible()
+
+    await page.getByTestId('if-add-schedule').click()
+    await expect(page.getByTestId('if-slot-1')).toBeVisible()
+    // The second slot has its own independent rule and timing controls.
+    await expect(page.getByTestId('if-slot-1-rec-days_of_week')).toBeVisible()
+    await expect(page.getByTestId('if-slot-1-timing-range')).toBeVisible()
+  })
+
+  test('§5.5 a removed slot disappears from the form', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2026-07-07T08:00:00'))
+    await openCreateForm(page)
+    await page.getByTestId('if-type-recurring').click()
+
+    await page.getByTestId('if-add-schedule').click()
+    await expect(page.getByTestId('if-slot-1')).toBeVisible()
+
+    await page.getByTestId('if-remove-schedule-1').click()
+    await expect(page.getByTestId('if-slot-1')).not.toBeVisible()
+    // The first slot is not removable — an item's last slot has to stay (§5.5).
+    await expect(page.getByTestId('if-remove-schedule-0')).not.toBeVisible()
+  })
+
+  test('§5.5 creating a two-slot item posts the first slot with the item and the second to /schedules', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2026-07-07T08:00:00'))
+    await openCreateForm(page)
+
+    const created = makeItem({ id: 'multi', name: 'Task A', recurrenceRule: { type: 'daily' } })
+    let itemBody: Record<string, unknown> | null = null
+    const scheduleBodies: Record<string, unknown>[] = []
+
+    await page.route('/api/items', async (route) => {
+      if (route.request().method() === 'POST') {
+        itemBody = JSON.parse(route.request().postData() ?? '{}')
+        await route.fulfill({ status: 201, json: created })
+      } else {
+        await route.fulfill({ json: [] })
+      }
+    })
+    await page.route('/api/items/multi/schedules', async (route) => {
+      scheduleBodies.push(JSON.parse(route.request().postData() ?? '{}'))
+      await route.fulfill({ status: 201, json: created.schedules[0] })
+    })
+
+    await page.getByTestId('if-name').fill('Task A')
+    await page.getByTestId('if-type-recurring').click()
+
+    // Slot 0: Tue/Thu/Fri 08:30–09:30
+    await page.getByTestId('if-rec-days_of_week').click()
+    for (const d of ['tue', 'thu', 'fri']) await page.getByTestId(`if-day-${d}`).click()
+    await page.getByTestId('if-timing-range').click()
+    await page.getByTestId('if-start-time').fill('08:30')
+    await page.getByTestId('if-end-time').fill('09:30')
+
+    // Slot 1: every day at 13:00
+    await page.getByTestId('if-add-schedule').click()
+    await page.getByTestId('if-slot-1-label').fill('Afternoon')
+    await page.getByTestId('if-slot-1-timing-point').click()
+    await page.getByTestId('if-slot-1-start-time').fill('13:00')
+
+    await page.getByTestId('if-submit').click()
+    await expect(page.getByTestId('item-form-modal')).not.toBeVisible()
+
+    // The item carries its FIRST slot's fields; the second went to /schedules.
+    const rule = itemBody!['recurrenceRule'] as { type: string; days: number[] }
+    expect(rule.type).toBe('days_of_week')
+    expect(rule.days.sort()).toEqual([2, 4, 5])
+    expect(itemBody!['timingStartTime']).toBe('08:30')
+
+    expect(scheduleBodies).toHaveLength(1)
+    expect(scheduleBodies[0]['label']).toBe('Afternoon')
+    expect(scheduleBodies[0]['timingStartTime']).toBe('13:00')
+    expect((scheduleBodies[0]['recurrenceRule'] as { type: string }).type).toBe('daily')
+  })
+
+  test('§5.5 editing a two-slot item pre-populates both slots and PATCHes each', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2026-07-07T08:00:00'))
+
+    const twoSlot = makeItem({
+      id: 'two-slot', name: 'Task A', recurrenceRule: { type: 'days_of_week', days: [2, 4, 5] },
+      timingPrecision: 'range', timingStartTime: '08:30:00', timingEndTime: '09:30:00',
+    })
+    twoSlot.schedules.push({
+      ...twoSlot.schedules[0],
+      id: 'two-slot-s1',
+      label: 'Afternoon',
+      recurrenceRule: { type: 'daily' },
+      timingPrecision: 'point',
+      timingStartTime: '13:00:00',
+      timingEndTime: null,
+      sortOrder: 1,
+    })
+
+    await openFullEditForItem(page, twoSlot)
+
+    // Both slots pre-populate, each with its own rule and timing.
+    await expect(page.getByTestId('if-rec-days_of_week')).toHaveClass(/qa-radio--active/)
+    await expect(page.getByTestId('if-start-time')).toHaveValue('08:30')
+    await expect(page.getByTestId('if-slot-1-label')).toHaveValue('Afternoon')
+    await expect(page.getByTestId('if-slot-1-rec-daily')).toHaveClass(/qa-radio--active/)
+    await expect(page.getByTestId('if-slot-1-start-time')).toHaveValue('13:00')
+
+    // §5.5 — both slots are PATCHed through the schedule routes on save.
+    const scheduleBodies = await routeScheduleSync(page, twoSlot)
+    await page.getByTestId('if-submit').click()
+    await expect(page.getByTestId('item-form-modal')).not.toBeVisible()
+    expect(scheduleBodies()).toHaveLength(2)
+  })
+
+  test('§5.5 an item with sub-items cannot add a second time, and says why', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2026-07-07T08:00:00'))
+
+    const parent = makeItem({ id: 'parent-x', name: 'Night Routine', recurrenceRule: { type: 'daily' } })
+    const child = makeItem({ id: 'child-x', name: 'Skincare', recurrenceRule: { type: 'daily' } })
+
+    const occ = makeOcc({ id: 'occ-parent-x', itemId: parent.id, name: parent.name })
+    await page.route('/me', (r) => r.fulfill({ json: { id: 'u1', email: 'test@tracker.local', createdAt: new Date().toISOString() } }))
+    await page.route(/\/api\/occurrences\?start=.*&end=.*/, (r) => r.fulfill({ json: [occ] }))
+    await page.route('/api/buckets',     (r) => r.fulfill({ json: BUCKETS }))
+    await page.route('/api/categories',  (r) => r.fulfill({ json: CATEGORIES }))
+    await page.route('/api/reasons',     (r) => r.fulfill({ json: [] }))
+    await page.route('/api/preferences', (r) => r.fulfill({ json: {} }))
+    await page.route('/api/items',       (r) => r.fulfill({ json: [parent, child] }))
+    await page.route(`/api/items/${parent.id}`, (r) =>
+      r.fulfill({ json: { ...parent, children: [child], prerequisites: [] } })
+    )
+
+    await page.goto('/')
+    await page.getByTestId(`occ-row-${occ.id}`).getByTestId('occ-edit-btn').click()
+    await expect(page.getByTestId('item-form-modal')).toBeVisible()
+    await expect(page.getByTestId('if-name')).toBeVisible()
+
+    await expect(page.getByTestId('if-add-schedule')).not.toBeVisible()
+    await expect(page.getByTestId('if-add-schedule-blocked')).toBeVisible()
+  })
 })

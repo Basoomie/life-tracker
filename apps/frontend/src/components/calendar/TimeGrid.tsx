@@ -8,6 +8,7 @@ import { SortableList } from '../shared/SortableList'
 import { computeDayLayout, nowLinePx, TOTAL_PX, PX_PER_HOUR } from '../../lib/calendar-layout'
 import type { GridBlock, DayLayout } from '../../lib/calendar-layout'
 import type { OccurrenceNode } from '../../lib/occurrence-tree'
+import { occurrenceKey } from '../../lib/occurrence-key'
 import type { OccurrenceWithState, Bucket, ItemStreakSummary } from '@tracker/shared'
 import type { SessionState } from '../now/TimerControl'
 
@@ -153,7 +154,7 @@ export function TimeGrid({
     if (node && (node.children.length > 0 || occ.hasChildren)) {
       return (
         <OccurrenceCard
-          key={occ.id ?? occ.itemId}
+          key={occurrenceKey(occ)}
           node={node}
           depth={0}
           renderLeaf={(o) => renderRow(o)}

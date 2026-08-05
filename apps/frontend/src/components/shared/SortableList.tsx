@@ -22,6 +22,7 @@ import {
 import { CSS } from '@dnd-kit/utilities'
 import type { OccurrenceWithState } from '@tracker/shared'
 import { api } from '../../lib/api'
+import { occurrenceKey, sortableKey, orderedItemIds } from '../../lib/occurrence-key'
 
 type Props = {
   items: OccurrenceWithState[]   // already sorted by sortOrder; root items only
@@ -35,9 +36,11 @@ export function SortableList({ items, renderItem, onReordered }: Props) {
   // OccurrenceCard's orderOverride.
   const [orderOverride, setOrderOverride] = useState<string[] | null>(null)
 
+  // §5.5 — keyed by (item, schedule): a two-slot item is two rows here, so an
+  // item-id override would collapse them into one.
   const displayItems = orderOverride
     ? orderOverride
-        .map((id) => items.find((o) => o.itemId === id))
+        .map((key) => items.find((o) => sortableKey(o) === key))
         .filter((o): o is OccurrenceWithState => o !== undefined)
     : items
 
@@ -50,21 +53,25 @@ export function SortableList({ items, renderItem, onReordered }: Props) {
     const { active, over } = event
     if (!over || active.id === over.id) return
 
-    const oldIndex = displayItems.findIndex((o) => o.itemId === active.id)
-    const newIndex = displayItems.findIndex((o) => o.itemId === over.id)
+    const oldIndex = displayItems.findIndex((o) => sortableKey(o) === active.id)
+    const newIndex = displayItems.findIndex((o) => sortableKey(o) === over.id)
     if (oldIndex === -1 || newIndex === -1) return
 
     const reordered = arrayMove(displayItems, oldIndex, newIndex)
-    const newOrderIds = reordered.map((o) => o.itemId)
-    setOrderOverride(newOrderIds)
+    setOrderOverride(reordered.map(sortableKey))
 
-    const movedItemId = active.id as string
-    const droppedAtIndex = reordered.findIndex((o) => o.itemId === movedItemId)
-    const afterItemId = droppedAtIndex === 0 ? null : reordered[droppedAtIndex - 1].itemId
+    // The endpoint reorders the ITEM (Item.sortOrder), so the dragged row and its
+    // landing neighbour both resolve to item ids. A neighbour that is another slot of
+    // the same item is skipped: "after myself" is not a move.
+    const moved = reordered[reordered.findIndex((o) => sortableKey(o) === active.id)]
+    let afterItemId: string | null = null
+    for (let i = reordered.findIndex((o) => sortableKey(o) === active.id) - 1; i >= 0; i--) {
+      if (reordered[i].itemId !== moved.itemId) { afterItemId = reordered[i].itemId; break }
+    }
 
     try {
-      await api.items.reorderRoot(movedItemId, afterItemId)
-      onReordered(newOrderIds)
+      await api.items.reorderRoot(moved.itemId, afterItemId)
+      onReordered(orderedItemIds(reordered))
       setOrderOverride(null)
     } catch {
       setOrderOverride(null)
@@ -73,9 +80,14 @@ export function SortableList({ items, renderItem, onReordered }: Props) {
 
   return (
     <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-      <SortableContext items={displayItems.map((o) => o.itemId)} strategy={verticalListSortingStrategy}>
+      <SortableContext items={displayItems.map(sortableKey)} strategy={verticalListSortingStrategy}>
         {displayItems.map((occ) => (
-          <SortableRow key={occ.itemId} itemId={occ.itemId} name={occ.snapshot.name}>
+          <SortableRow
+            key={occurrenceKey(occ)}
+            sortId={sortableKey(occ)}
+            itemId={occ.itemId}
+            name={occ.snapshot.name}
+          >
             {renderItem(occ)}
           </SortableRow>
         ))}
@@ -84,13 +96,13 @@ export function SortableList({ items, renderItem, onReordered }: Props) {
   )
 }
 
-type RowProps = { itemId: string; name: string; children: ReactNode }
+type RowProps = { sortId: string; itemId: string; name: string; children: ReactNode }
 
 // Reuses OccurrenceCard's drag-handle styling — the classes aren't scoped to
 // being inside a card, just a generic "draggable row with a handle" shape.
-function SortableRow({ itemId, name, children }: RowProps) {
+function SortableRow({ sortId, itemId, name, children }: RowProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
-    useSortable({ id: itemId })
+    useSortable({ id: sortId })
 
   const style = {
     transform: CSS.Transform.toString(transform),

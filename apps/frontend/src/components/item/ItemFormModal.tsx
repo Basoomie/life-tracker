@@ -17,6 +17,14 @@ import type {
 import { api } from '../../lib/api'
 import { CategoryPicker } from '../shared/CategoryPicker'
 import { todayStr } from '../../lib/date-range'
+import {
+  ScheduleFields,
+  emptySlot,
+  slotFromSchedule,
+  buildRecurrenceRule,
+  slotTimingBody,
+  type SlotDraft,
+} from './ScheduleFields'
 
 type Props = {
   itemId: string | null   // null = create mode
@@ -24,30 +32,6 @@ type Props = {
   buckets: Bucket[]
   onSaved: (item: Item) => void
   onClose: () => void
-}
-
-type RecurrenceType = 'daily' | 'days_of_week' | 'interval_day' | 'interval_week' | 'monthly'
-
-const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
-
-function buildRecurrenceRule(
-  recType: RecurrenceType,
-  recDays: number[],
-  recEvery: number,
-): RecurrenceRule {
-  if (recType === 'daily')        return { type: 'daily' }
-  if (recType === 'days_of_week') return { type: 'days_of_week', days: [...recDays].sort((a, b) => a - b) }
-  if (recType === 'interval_day') return { type: 'interval', unit: 'day', every: recEvery }
-  if (recType === 'interval_week') return { type: 'interval', unit: 'week', every: recEvery }
-  return { type: 'monthly' }
-}
-
-function recTypeFromRule(rule: RecurrenceRule): RecurrenceType {
-  if (rule.type === 'daily')        return 'daily'
-  if (rule.type === 'days_of_week') return 'days_of_week'
-  if (rule.type === 'monthly')      return 'monthly'
-  if (rule.type === 'interval')     return rule.unit === 'day' ? 'interval_day' : 'interval_week'
-  return 'daily'
 }
 
 export function ItemFormModal({ itemId, categories, buckets, onSaved, onClose }: Props) {
@@ -61,23 +45,22 @@ export function ItemFormModal({ itemId, categories, buckets, onSaved, onClose }:
   // Type
   const [isRecurring, setIsRecurring] = useState(false)
 
-  // Recurrence rule
-  const [recType, setRecType] = useState<RecurrenceType>('daily')
-  const [recDays, setRecDays] = useState<number[]>([])       // for days_of_week
-  const [recEvery, setRecEvery] = useState(2)                // for interval
-  const [anchorDay, setAnchorDay] = useState(todayStr)        // §5.1 — recurrence start day
+  // §5.5 — the item's schedules (slots). Always at least one: an item with no slot
+  // has no "when". Slot 0 is the item's first slot, created with the item itself;
+  // the rest are managed through the schedule routes.
+  const [slots, setSlots] = useState<SlotDraft[]>(
+    () => [emptySlot(todayStr(), buckets[0]?.id ?? null)]
+  )
+  // Saved slots the user removed in this session; archived on submit (§5.5).
+  const [removedScheduleIds, setRemovedScheduleIds] = useState<string[]>([])
+  // §5.5 — a parent carries at most one slot, so "+ Add another time" is unavailable
+  // for an item that has children.
+  const [hasChildren, setHasChildren] = useState(false)
 
-  // Quota
+  // Quota (item-level, across all slots — §5.2)
   const [quotaEnabled, setQuotaEnabled] = useState(false)
   const [quotaCount, setQuotaCount] = useState(3)
   const [quotaPeriod, setQuotaPeriod] = useState<'week' | 'month'>('week')
-
-  // Timing
-  const [timingPrecision, setTimingPrecision] = useState<TimingPrecision>('none')
-  const [timingBucketId, setTimingBucketId] = useState<string | null>(buckets[0]?.id ?? null)
-  const [timingStartTime, setTimingStartTime] = useState('')
-  const [timingEndTime, setTimingEndTime] = useState('')
-  const [plannedDurationMin, setPlannedDurationMin] = useState('')
 
   // One-time day
   const [day, setDay] = useState(todayStr)
@@ -120,33 +103,22 @@ export function ItemFormModal({ itemId, categories, buckets, onSaved, onClose }:
         setCategoryId(data.categoryId)
         setValence(data.valence ?? '')
         setPriority(data.priority ?? '')
-        // §5.5 — recurrence and timing live on the item's schedule. This form edits a
-        // single slot; the repeatable multi-slot editor arrives with the schedule
-        // routes, and until then every item created here has exactly one.
-        const schedule = data.schedules[0]
-        setIsRecurring(!!schedule?.recurrenceRule)
-        if (schedule?.recurrenceRule) {
-          setRecType(recTypeFromRule(schedule.recurrenceRule))
-          if (schedule.recurrenceRule.type === 'days_of_week') {
-            setRecDays(schedule.recurrenceRule.days)
-          }
-          if (schedule.recurrenceRule.type === 'interval') {
-            setRecEvery(schedule.recurrenceRule.every)
-          }
-          // Matches scheduleAnchorDate()'s intentional UTC fallback (packages/shared/src/domain/recurrence.ts)
-          // — the documented pre-amendment default for slots with no explicit anchorDay.
-          setAnchorDay(schedule.anchorDay ?? new Date(data.createdAt).toISOString().slice(0, 10))
-        }
+        // §5.5 — recurrence and timing live on the item's schedules; the form edits
+        // them as a list. "Recurring" is an item-level choice: any slot with a rule.
+        // Matches scheduleAnchorDate()'s UTC fallback for slots with no explicit anchor.
+        const fallbackAnchor = new Date(data.createdAt).toISOString().slice(0, 10)
+        setIsRecurring(isRecurringItem(data.schedules))
+        setSlots(
+          data.schedules.length > 0
+            ? data.schedules.map((s) => slotFromSchedule(s, fallbackAnchor))
+            : [emptySlot(fallbackAnchor, buckets[0]?.id ?? null)]
+        )
+        setHasChildren(data.children.length > 0)
         if (data.quotaTarget) {
           setQuotaEnabled(true)
           setQuotaCount(data.quotaTarget.count)
           setQuotaPeriod(data.quotaTarget.period)
         }
-        setTimingPrecision(schedule?.timingPrecision ?? 'none')
-        setTimingBucketId(schedule?.timingBucketId ?? null)
-        setTimingStartTime(schedule?.timingStartTime ?? '')
-        setTimingEndTime(schedule?.timingEndTime ?? '')
-        setPlannedDurationMin(schedule?.plannedDurationMin?.toString() ?? '')
         setParentId(data.parentId)
         setDispositionPolicy(data.dispositionPolicy)
         const prereqIds = data.prerequisites.map((p: ItemPrerequisite) => p.prerequisiteId)
@@ -187,6 +159,30 @@ export function ItemFormModal({ itemId, categories, buckets, onSaved, onClose }:
     }
   }
 
+  // ── §5.5 Slot editing ──────────────────────────────────────────────────────
+
+  function patchSlot(index: number, patch: Partial<SlotDraft>) {
+    setSlots((prev) => prev.map((s, i) => (i === index ? { ...s, ...patch } : s)))
+  }
+
+  function addSlot() {
+    setSlots((prev) => [...prev, emptySlot(todayStr(), buckets[0]?.id ?? null)])
+  }
+
+  function removeSlot(index: number) {
+    setSlots((prev) => {
+      const slot = prev[index]
+      // A saved slot is archived on submit, not deleted now — removal is forward-only
+      // and its past occurrences must survive (§5.5).
+      if (slot.scheduleId) setRemovedScheduleIds((ids) => [...ids, slot.scheduleId!])
+      return prev.filter((_, i) => i !== index)
+    })
+  }
+
+  // §5.5 — only recurring items can carry several slots (a one-time task happens
+  // once), and a parent carries at most one so its children stay unambiguous.
+  const canAddSlot = isRecurring && !hasChildren
+
   function togglePrereq(id: string) {
     setSelectedPrereqIds((prev) =>
       prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
@@ -203,47 +199,61 @@ export function ItemFormModal({ itemId, categories, buckets, onSaved, onClose }:
     setPrereqError(null)
 
     try {
-      const recurrenceRule: RecurrenceRule | null = isRecurring
-        ? buildRecurrenceRule(recType, recDays, recEvery)
-        : null
-
       const quotaTarget: QuotaTarget | null =
         isRecurring && quotaEnabled ? { count: quotaCount, period: quotaPeriod } : null
 
-      // §6.8 — range implies duration; don't ask twice
-      const dur = parseInt(plannedDurationMin, 10)
-      const resolvedDuration: number | null =
-        timingPrecision === 'range' ? null : (isNaN(dur) || dur <= 0 ? null : dur)
-
-      const baseBody = {
+      // Everything that describes the habit rather than one of its slots (§5.5).
+      const itemFields = {
         name: name.trim(),
         description: description.trim() || null,
         categoryId: categoryId || null,
         valence: (valence as Valence) || null,
         priority: (priority as Priority) || null,
-        recurrenceRule,
-        anchorDay: isRecurring ? anchorDay : undefined,
         quotaTarget,
-        timingPrecision,
-        timingBucketId: timingPrecision === 'bucket' ? (timingBucketId || null) : null,
-        timingStartTime: (timingPrecision === 'point' || timingPrecision === 'range')
-          ? (timingStartTime || null) : null,
-        timingEndTime: timingPrecision === 'range' ? (timingEndTime || null) : null,
-        plannedDurationMin: resolvedDuration,
         parentId: parentId || null,
         dispositionPolicy,
       }
 
+      const ruleFor = (slot: SlotDraft): RecurrenceRule | null =>
+        isRecurring ? buildRecurrenceRule(slot) : null
+
       let savedItem: Item
       if (isEdit) {
-        savedItem = await api.items.update(itemId!, baseBody as UpdateItemBody)
+        // §5.5 — item fields only. Slot fields go through the schedule routes below,
+        // uniformly for one slot or several, so there is one code path either way.
+        savedItem = await api.items.update(itemId!, itemFields as UpdateItemBody)
       } else {
+        // The item and its FIRST slot are created together; the rest are added after.
         const createBody: CreateItemBody = {
-          ...baseBody,
+          ...itemFields,
+          recurrenceRule: ruleFor(slots[0]),
+          anchorDay: isRecurring ? slots[0].anchorDay : undefined,
+          ...slotTimingBody(slots[0]),
           creationSource: 'planned',
           ...(!isRecurring && { day }),
         }
         savedItem = await api.items.create(createBody)
+      }
+
+      // ── §5.5 Sync schedules ────────────────────────────────────────────────
+      // Same diff-and-apply shape as the prerequisite sync below.
+      const itemIdForSlots = savedItem.id
+      for (const scheduleId of removedScheduleIds) {
+        await api.items.schedules.remove(itemIdForSlots, scheduleId)
+      }
+      for (const [index, slot] of slots.entries()) {
+        const body = {
+          label: slot.label.trim() || null,
+          recurrenceRule: ruleFor(slot),
+          anchorDay: isRecurring ? slot.anchorDay : null,
+          ...slotTimingBody(slot),
+        }
+        if (slot.scheduleId) {
+          await api.items.schedules.update(itemIdForSlots, slot.scheduleId, body)
+        } else if (isEdit || index > 0) {
+          // On create, slot 0 was already written by POST /items above.
+          await api.items.schedules.add(itemIdForSlots, body)
+        }
       }
 
       // ── Sync prerequisites ─────────────────────────────────────────────────
@@ -449,238 +459,103 @@ export function ItemFormModal({ itemId, categories, buckets, onSaved, onClose }:
                 </div>
               )}
 
-              {/* Recurring: rule builder + quota */}
-              {isRecurring && (
-                <div className="form-subsection" data-testid="if-recurrence-section">
-                  <div className="form-section__label">Schedule (§5.1)</div>
-
-                  <div className="field" style={{ maxWidth: 200 }}>
-                    <label className="field__label" htmlFor="if-anchor-day">Starts on</label>
-                    <input
-                      id="if-anchor-day"
-                      className="field__input"
-                      type="date"
-                      value={anchorDay}
-                      onChange={(e) => setAnchorDay(e.target.value)}
-                      data-testid="if-anchor-day"
-                    />
-                  </div>
-
-                  <div className="qa-radio-group qa-radio-group--wrap">
-                    {([
-                      ['daily',         'Every day'],
-                      ['days_of_week',  'Specific days'],
-                      ['interval_day',  'Every N days'],
-                      ['interval_week', 'Every N weeks'],
-                      ['monthly',       'Monthly'],
-                    ] as [RecurrenceType, string][]).map(([val, label]) => (
-                      <label
-                        key={val}
-                        data-testid={`if-rec-${val}`}
-                        className={`qa-radio${recType === val ? ' qa-radio--active' : ''}`}
-                      >
-                        <input
-                          type="radio"
-                          name="if-rec-type"
-                          value={val}
-                          checked={recType === val}
-                          onChange={() => setRecType(val)}
-                          className="sr-only"
-                        />
-                        {label}
-                      </label>
-                    ))}
-                  </div>
-
-                  {/* Days-of-week picker */}
-                  {recType === 'days_of_week' && (
-                    <div className="day-picker" data-testid="if-days-of-week">
-                      {DAY_LABELS.map((d, i) => (
-                        <label
-                          key={i}
-                          data-testid={`if-day-${d.toLowerCase()}`}
-                          className={`day-chip${recDays.includes(i) ? ' day-chip--active' : ''}`}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={recDays.includes(i)}
-                            onChange={() =>
-                              setRecDays((prev) =>
-                                prev.includes(i)
-                                  ? prev.filter((x) => x !== i)
-                                  : [...prev, i]
-                              )
-                            }
-                            className="sr-only"
-                          />
-                          {d}
-                        </label>
-                      ))}
-                    </div>
-                  )}
-
-                  {/* Interval N picker */}
-                  {(recType === 'interval_day' || recType === 'interval_week') && (
-                    <div className="field" style={{ maxWidth: 180 }}>
-                      <label className="field__label" htmlFor="if-rec-every">
-                        Every N {recType === 'interval_day' ? 'days' : 'weeks'}
-                      </label>
-                      <input
-                        id="if-rec-every"
-                        className="field__input"
-                        type="number"
-                        min="2"
-                        value={recEvery}
-                        onChange={(e) =>
-                          setRecEvery(Math.max(2, parseInt(e.target.value, 10) || 2))
-                        }
-                        data-testid="if-rec-every"
-                      />
-                    </div>
-                  )}
-
-                  {/* Quota target (§5.2) — only meaningful for recurring */}
-                  <div style={{ marginTop: 'var(--space-3)' }} data-testid="if-quota-section">
-                    <label className="form-checkbox-label">
-                      <input
-                        type="checkbox"
-                        checked={quotaEnabled}
-                        onChange={(e) => setQuotaEnabled(e.target.checked)}
-                        data-testid="if-quota-enabled"
-                      />
-                      <span>Quota target (optional — §5.2)</span>
-                    </label>
-                    {quotaEnabled && (
-                      <div className="form-row" style={{ marginTop: 'var(--space-2)' }} data-testid="if-quota-fields">
-                        <div className="field" style={{ flex: '0 0 90px' }}>
-                          <label className="field__label" htmlFor="if-quota-count">Times</label>
-                          <input
-                            id="if-quota-count"
-                            className="field__input"
-                            type="number"
-                            min="1"
-                            value={quotaCount}
-                            onChange={(e) =>
-                              setQuotaCount(Math.max(1, parseInt(e.target.value, 10) || 1))
-                            }
-                            data-testid="if-quota-count"
-                          />
-                        </div>
-                        <div className="field">
-                          <label className="field__label" htmlFor="if-quota-period">Per</label>
-                          <select
-                            id="if-quota-period"
-                            className="field__select"
-                            value={quotaPeriod}
-                            onChange={(e) => setQuotaPeriod(e.target.value as 'week' | 'month')}
-                            data-testid="if-quota-period"
-                          >
-                            <option value="week">Week</option>
-                            <option value="month">Month</option>
-                          </select>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* ── Timing precision (§6.5) ──────────────────────────── */}
-            <div className="form-section">
-              <div className="form-section__label">Timing (§6.5)</div>
-              <div className="qa-radio-group qa-radio-group--wrap" data-testid="if-timing-group">
-                {([
-                  ['none',   'None'],
-                  ['bucket', 'Bucket'],
-                  ['point',  'Clock time'],
-                  ['range',  'Range'],
-                ] as [TimingPrecision, string][]).map(([val, label]) => (
-                  <label
-                    key={val}
-                    data-testid={`if-timing-${val}`}
-                    className={`qa-radio${timingPrecision === val ? ' qa-radio--active' : ''}`}
-                  >
-                    <input
-                      type="radio"
-                      name="if-timing"
-                      value={val}
-                      checked={timingPrecision === val}
-                      onChange={() => setTimingPrecision(val)}
-                      className="sr-only"
-                    />
-                    {label}
-                  </label>
-                ))}
-              </div>
-
-              {timingPrecision === 'bucket' && (
-                <div className="field form-subsection">
-                  <label className="field__label" htmlFor="if-bucket">Bucket (§6.6)</label>
-                  <select
-                    id="if-bucket"
-                    className="field__select"
-                    value={timingBucketId ?? ''}
-                    onChange={(e) => setTimingBucketId(e.target.value || null)}
-                    data-testid="if-bucket"
-                  >
-                    <option value="">— none —</option>
-                    {buckets.map((b) => (
-                      <option key={b.id} value={b.id}>{b.name}</option>
-                    ))}
-                  </select>
-                </div>
-              )}
-
-              {(timingPrecision === 'point' || timingPrecision === 'range') && (
-                <div className="form-row form-subsection">
-                  <div className="field">
-                    <label className="field__label" htmlFor="if-start-time">Start time</label>
-                    <input
-                      id="if-start-time"
-                      className="field__input"
-                      type="time"
-                      value={timingStartTime}
-                      onChange={(e) => setTimingStartTime(e.target.value)}
-                      data-testid="if-start-time"
-                    />
-                  </div>
-                  {timingPrecision === 'range' && (
-                    <div className="field">
-                      <label className="field__label" htmlFor="if-end-time">End time</label>
-                      <input
-                        id="if-end-time"
-                        className="field__input"
-                        type="time"
-                        value={timingEndTime}
-                        onChange={(e) => setTimingEndTime(e.target.value)}
-                        data-testid="if-end-time"
-                      />
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* §6.8 — planned duration: hidden for range (it's implied by the range) */}
-              {timingPrecision !== 'range' && (
+              {/* §5.5 — the item's schedules (slots). One is the common case and looks
+                  exactly as it always has; "+ Add another time" reveals the rest. */}
+              {slots.map((slot, i) => (
                 <div
-                  className="field form-subsection"
-                  style={{ maxWidth: 220 }}
-                  data-testid="if-duration-section"
+                  key={slot.key}
+                  className={i > 0 ? 'form-subsection form-slot' : 'form-subsection'}
+                  data-testid={`if-slot-${i}`}
                 >
-                  <label className="field__label" htmlFor="if-duration">
-                    Planned duration (min, optional)
-                  </label>
-                  <input
-                    id="if-duration"
-                    className="field__input"
-                    type="number"
-                    min="1"
-                    placeholder="e.g. 30"
-                    value={plannedDurationMin}
-                    onChange={(e) => setPlannedDurationMin(e.target.value)}
-                    data-testid="if-duration"
+                  {i > 0 && (
+                    <div className="form-slot__header">
+                      <span className="form-section__label">Time {i + 1}</span>
+                      <button
+                        type="button"
+                        className="form-slot__remove"
+                        onClick={() => removeSlot(i)}
+                        data-testid={`if-remove-schedule-${i}`}
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  )}
+                  <ScheduleFields
+                    slot={slot}
+                    idPrefix={i === 0 ? 'if-' : `if-slot-${i}-`}
+                    showRecurrence={isRecurring}
+                    showLabel={i > 0}
+                    buckets={buckets}
+                    onChange={(patch) => patchSlot(i, patch)}
                   />
+                </div>
+              ))}
+
+              {canAddSlot && (
+                <button
+                  type="button"
+                  className="form-add-slot"
+                  onClick={addSlot}
+                  data-testid="if-add-schedule"
+                >
+                  + Add another time
+                </button>
+              )}
+
+              {/* §5.5 — a parent carries at most one slot, so its children always have
+                  an unambiguous slot to belong to. Explained rather than silently absent. */}
+              {isRecurring && hasChildren && (
+                <p className="form-note" data-testid="if-add-schedule-blocked">
+                  This item has sub-items, so it can only have one time (§5.5) — a parent
+                  with two times a day leaves no defined answer for which one a sub-item
+                  belongs to.
+                </p>
+              )}
+
+              {/* Quota target (§5.2) — an item-level target ACROSS all its slots,
+                  which is why it sits outside the per-slot fields. */}
+              {isRecurring && (
+                <div style={{ marginTop: 'var(--space-3)' }} data-testid="if-quota-section">
+                  <label className="form-checkbox-label">
+                    <input
+                      type="checkbox"
+                      checked={quotaEnabled}
+                      onChange={(e) => setQuotaEnabled(e.target.checked)}
+                      data-testid="if-quota-enabled"
+                    />
+                    <span>Quota target (optional — §5.2)</span>
+                  </label>
+                  {quotaEnabled && (
+                    <div className="form-row" style={{ marginTop: 'var(--space-2)' }} data-testid="if-quota-fields">
+                      <div className="field" style={{ flex: '0 0 90px' }}>
+                        <label className="field__label" htmlFor="if-quota-count">Times</label>
+                        <input
+                          id="if-quota-count"
+                          className="field__input"
+                          type="number"
+                          min="1"
+                          value={quotaCount}
+                          onChange={(e) =>
+                            setQuotaCount(Math.max(1, parseInt(e.target.value, 10) || 1))
+                          }
+                          data-testid="if-quota-count"
+                        />
+                      </div>
+                      <div className="field">
+                        <label className="field__label" htmlFor="if-quota-period">Per</label>
+                        <select
+                          id="if-quota-period"
+                          className="field__select"
+                          value={quotaPeriod}
+                          onChange={(e) => setQuotaPeriod(e.target.value as 'week' | 'month')}
+                          data-testid="if-quota-period"
+                        >
+                          <option value="week">Week</option>
+                          <option value="month">Month</option>
+                        </select>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

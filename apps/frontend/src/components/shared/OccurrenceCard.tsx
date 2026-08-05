@@ -11,6 +11,7 @@ import {
 import { CSS } from '@dnd-kit/utilities'
 import type { OccurrenceNode } from '../../lib/occurrence-tree'
 import { api } from '../../lib/api'
+import { occurrenceKey, sortableKey, orderedItemIds } from '../../lib/occurrence-key'
 
 type Props = {
   node: OccurrenceNode
@@ -46,9 +47,11 @@ export function OccurrenceCard({ node, depth, renderLeaf, onReordered, defaultEx
   const { occ, children } = node
   const itemId = occ.itemId
 
+  // §5.5 — keyed by (item, schedule): a child due in two slots today is two rows
+  // here, so an item-id override would collapse them into one.
   const displayChildren = orderOverride
     ? orderOverride
-        .map((id) => children.find((c) => c.occ.itemId === id))
+        .map((key) => children.find((c) => sortableKey(c.occ) === key))
         .filter((c): c is OccurrenceNode => c !== undefined)
     : children
 
@@ -69,12 +72,16 @@ export function OccurrenceCard({ node, depth, renderLeaf, onReordered, defaultEx
     const { active, over } = event
     if (!over || active.id === over.id) return
 
-    const oldIndex = displayChildren.findIndex((c) => c.occ.itemId === active.id)
-    const newIndex = displayChildren.findIndex((c) => c.occ.itemId === over.id)
+    const oldIndex = displayChildren.findIndex((c) => sortableKey(c.occ) === active.id)
+    const newIndex = displayChildren.findIndex((c) => sortableKey(c.occ) === over.id)
     if (oldIndex === -1 || newIndex === -1) return
 
-    const newOrderIds = arrayMove(displayChildren, oldIndex, newIndex).map((c) => c.occ.itemId)
-    setOrderOverride(newOrderIds)
+    const reordered = arrayMove(displayChildren, oldIndex, newIndex)
+    setOrderOverride(reordered.map((c) => sortableKey(c.occ)))
+
+    // reorder-children speaks in item ids and validates the posted list is exactly
+    // the current children — so a multi-slot child contributes its id once.
+    const newOrderIds = orderedItemIds(reordered.map((c) => c.occ))
 
     try {
       await api.items.reorderChildren(itemId, newOrderIds)
@@ -117,13 +124,13 @@ export function OccurrenceCard({ node, depth, renderLeaf, onReordered, defaultEx
       {expanded && (
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
           <SortableContext
-            items={displayChildren.map((c) => c.occ.itemId)}
+            items={displayChildren.map((c) => sortableKey(c.occ))}
             strategy={verticalListSortingStrategy}
           >
             <div className="occ-card__children" data-testid={`occ-card-children-${itemId}`}>
               {displayChildren.map((child) => (
                 <DraggableChild
-                  key={child.occ.itemId}
+                  key={occurrenceKey(child.occ)}
                   child={child}
                   depth={depth}
                   renderLeaf={renderLeaf}
@@ -147,7 +154,7 @@ type DraggableChildProps = {
 
 function DraggableChild({ child, depth, renderLeaf, onReordered }: DraggableChildProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
-    useSortable({ id: child.occ.itemId })
+    useSortable({ id: sortableKey(child.occ) })
 
   const style = {
     transform: CSS.Transform.toString(transform),

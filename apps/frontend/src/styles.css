@@ -2049,6 +2049,47 @@ input, select, textarea {
   gap: var(--space-3);
 }
 
+/* §5.5 — one of an item's schedules (slots) in the full-edit form. The first slot
+   renders bare, so a single-slot item looks exactly as it always has; slots added
+   after it get a header with a Remove control. */
+.form-slot {
+  margin-top: var(--space-3);
+}
+
+.form-slot__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+
+.form-slot__remove {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: var(--text-xs);
+  color: var(--color-danger-fg, var(--color-text-secondary));
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.form-add-slot {
+  margin-top: var(--space-3);
+  background: none;
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+}
+
+.form-add-slot:hover {
+  color: var(--color-text-primary);
+  border-color: var(--color-border-strong, var(--color-border));
+}
+
 .form-note {
   font-size: var(--text-xs);
   color: var(--color-text-secondary);

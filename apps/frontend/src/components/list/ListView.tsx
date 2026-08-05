@@ -15,6 +15,7 @@ import { sortByTiming, groupByPriority, splitTimed } from '../../lib/list-sort'
 import { applyFilters, makeDefaultFilters, serializeFilters, deserializeFilters } from '../../lib/filters'
 import { getRangeDates, getDaysInRange, formatDayLabel, todayStr } from '../../lib/date-range'
 import { buildOccurrenceTree, type OccurrenceNode } from '../../lib/occurrence-tree'
+import { occurrenceKey } from '../../lib/occurrence-key'
 import { api } from '../../lib/api'
 import { bucketTimestamp } from '@tracker/shared'
 import type { RangeKey } from '../../lib/date-range'
@@ -198,7 +199,7 @@ export function ListView({ onEditItem }: Props) {
   function renderNode(occ: OccurrenceWithState) {
     const node = nodeByKey.get(occ.id ?? occ.itemId)
     if (node && (node.children.length > 0 || occ.hasChildren)) {
-      return <OccurrenceCard key={occ.id ?? occ.itemId} node={node} depth={0} renderLeaf={(o) => renderRow(o)} onReordered={handleReordered} />
+      return <OccurrenceCard key={occurrenceKey(occ)} node={node} depth={0} renderLeaf={(o) => renderRow(o)} onReordered={handleReordered} />
     }
     return renderRow(occ)
   }

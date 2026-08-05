@@ -41,10 +41,17 @@ export function useOccurrenceActions(
   const handleComplete = useCallback(async (occ: OccurrenceWithState) => {
     const updated = occ.id
       ? await api.occurrences.complete(occ.id)
-      : await api.occurrences.completeByItemDay(occ.itemId, occ.appliesToDay)
+      : await api.occurrences.completeByItemDay(occ.itemId, occ.appliesToDay, occ.scheduleId)
     setOccurrences((prev) => prev.map((o) => {
       if (o.id !== null && o.id === updated.id) return updated
-      if (o.id === null && o.itemId === updated.itemId && o.appliesToDay === updated.appliesToDay) return updated
+      // §5.5 — the just-materialized row is matched on its full identity. Without
+      // scheduleId, completing the 13:00 block would also mark the 8:30 one done.
+      if (
+        o.id === null &&
+        o.itemId === updated.itemId &&
+        o.scheduleId === updated.scheduleId &&
+        o.appliesToDay === updated.appliesToDay
+      ) return updated
       return o
     }))
     // A running/paused timer has no UI once the row is marked complete (the

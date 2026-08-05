@@ -20,6 +20,11 @@ export function buildOccurrenceTree(
   occs: OccurrenceWithState[],
   buckets: Bucket[]
 ): OccurrenceNode[] {
+  // §5.5 — one entry per item is safe here ONLY because an item with children
+  // carries at most one schedule, so a parent never has two occurrences on a day.
+  // This map is used solely to ask "is this occurrence's parent present today?".
+  // Children are grouped below from the full array, so a CHILD due in several slots
+  // correctly contributes one row per slot.
   const byItemId = new Map(occs.map((o) => [o.itemId, o]))
   const childrenByParentItemId = new Map<string, OccurrenceWithState[]>()
 
