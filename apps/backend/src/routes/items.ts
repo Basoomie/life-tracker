@@ -11,8 +11,9 @@ import {
   topUpMaterializationForItem,
 } from '../domain/materialization'
 import { createItemWithSchedule, soleSchedule } from '../domain/items'
+import { addSchedule, editSchedule, removeSchedule, canBeParent } from '../domain/schedules'
 import { addPrerequisite, removePrerequisite } from '../domain/prerequisites'
-import { notFound, badRequest } from './helpers'
+import { notFound, badRequest, conflict } from './helpers'
 import { logicalToday } from '../domain/day'
 import type {
   CreateItemBody,
@@ -23,6 +24,8 @@ import type {
   ReorderRootBody,
   ItemWithSchedules,
   ItemDetail,
+  CreateScheduleBody,
+  UpdateScheduleBody,
 } from '@tracker/shared'
 
 // §5.5 — which keys of the flat item body belong to the item and which to its
@@ -77,6 +80,16 @@ export async function itemRoutes(app: FastifyInstance) {
   app.post('/items', async (req, reply) => {
     const body = req.body as CreateItemBody
     const userId = req.userId
+
+    // §5.5 — a multi-slot item cannot become a parent (the mirror of "a parent
+    // carries at most one slot"): there would be no defined slot for this child.
+    if (body.parentId && !(await canBeParent(pool, body.parentId, userId))) {
+      return conflict(
+        reply,
+        'parent_multi_schedule',
+        'That item has more than one schedule and so cannot be a parent (§5.5): a parent with two slots on one day leaves "which slot does this child belong to?" undefined.'
+      )
+    }
 
     // New children/root items append after existing siblings rather than
     // colliding at 0 (which would jump them to the front once manual order exists).
@@ -164,6 +177,15 @@ export async function itemRoutes(app: FastifyInstance) {
     // NULLed out; the split below therefore copies keys only when present.
     const body = req.body as UpdateItemBody
 
+    // §5.5 — re-parenting under a multi-slot item is refused, same rule as on create.
+    if (body.parentId && !(await canBeParent(pool, body.parentId, userId))) {
+      return conflict(
+        reply,
+        'parent_multi_schedule',
+        'That item has more than one schedule and so cannot be a parent (§5.5): a parent with two slots on one day leaves "which slot does this child belong to?" undefined.'
+      )
+    }
+
     // §5.5 — this endpoint edits the item AND its single slot, which is what the
     // flat body has always meant. Items with several slots edit each one through
     // /items/:id/schedules/:scheduleId instead; soleSchedule throws rather than
@@ -208,6 +230,62 @@ export async function itemRoutes(app: FastifyInstance) {
     )
 
     return reply.send(updated)
+  })
+
+  // ── §5.5 Schedules (slots) ──────────────────────────────────────────────────
+  // The item's FIRST slot is created with the item (POST /items). These manage the
+  // second and beyond, one slot at a time, so each edit's regeneration can be scoped
+  // to exactly the slot it touched.
+
+  // POST /items/:id/schedules — add a slot
+  app.post('/items/:id/schedules', async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const userId = req.userId
+    const item = await repos.findItemById(pool, id, userId)
+    if (!item || item.archivedAt) return notFound(reply, 'item')
+
+    const result = await addSchedule(
+      pool, item, userId, req.body as CreateScheduleBody, await logicalToday(pool, userId)
+    )
+    if (!result.ok) return conflict(reply, result.code, result.error)
+    return reply.status(201).send(result.value)
+  })
+
+  // PATCH /items/:id/schedules/:scheduleId — edit one slot (forward-only, §5.3)
+  app.patch('/items/:id/schedules/:scheduleId', async (req, reply) => {
+    const { id, scheduleId } = req.params as { id: string; scheduleId: string }
+    const userId = req.userId
+    const item = await repos.findItemById(pool, id, userId)
+    if (!item || item.archivedAt) return notFound(reply, 'item')
+
+    const result = await editSchedule(
+      pool, item, scheduleId, userId, req.body as UpdateScheduleBody,
+      await logicalToday(pool, userId)
+    )
+    if (!result.ok) {
+      return result.code === 'not_found'
+        ? notFound(reply, 'schedule')
+        : conflict(reply, result.code, result.error)
+    }
+    return reply.send(result.value)
+  })
+
+  // DELETE /items/:id/schedules/:scheduleId — remove a slot (archives it, §5.5)
+  app.delete('/items/:id/schedules/:scheduleId', async (req, reply) => {
+    const { id, scheduleId } = req.params as { id: string; scheduleId: string }
+    const userId = req.userId
+    const item = await repos.findItemById(pool, id, userId)
+    if (!item || item.archivedAt) return notFound(reply, 'item')
+
+    const result = await removeSchedule(
+      pool, item, scheduleId, userId, await logicalToday(pool, userId)
+    )
+    if (!result.ok) {
+      return result.code === 'not_found'
+        ? notFound(reply, 'schedule')
+        : conflict(reply, result.code, result.error)
+    }
+    return reply.send(result.value.schedule)
   })
 
   // DELETE /items/:id — soft-delete (archive) + event

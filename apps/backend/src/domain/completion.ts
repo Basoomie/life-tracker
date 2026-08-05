@@ -292,17 +292,16 @@ async function buildDueChildNodes(
 
     // §5.5 — a child due in several slots today contributes the MEAN of them, so it
     // weighs the same as any other child instead of counting once per slot.
-    // (An item with children carries at most one slot, so the multi-slot branch is
-    // only ever reached for leaf children — hence isParent: false.)
+    //
+    // Expressed as an aggregating node over its slots rather than a leaf carrying a
+    // pre-computed mean: computeNodePercent binarizes a leaf (>=100 ? 100 : 0), which
+    // would crush a 50% two-slot day to 0. Aggregation is exactly what the parent
+    // branch already does, so this reuses the rule instead of restating it.
+    // (An item with children carries at most one slot, so this is leaf-children only.)
     nodes.push(
       slotNodes.length === 1
         ? slotNodes[0]
-        : {
-            isParent: false,
-            leafPercent: computeDerivedPercent(slotNodes.map(computeNodePercent)),
-            declaredPercent: null,
-            dueChildren: [],
-          }
+        : { isParent: true, leafPercent: 0, declaredPercent: null, dueChildren: slotNodes }
     )
   }
 

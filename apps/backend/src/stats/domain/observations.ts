@@ -329,17 +329,16 @@ function buildDueChildNodes(itemId: string, day: string, ctx: SubtreeContext): C
     if (slotNodes.length === 0) continue   // every slot excused
 
     // §5.5 — a child due in several slots contributes the MEAN of them, so it weighs
-    // the same as any other child instead of counting once per slot. (An item with
-    // children carries at most one slot, so this branch is leaf-only.)
+    // the same as any other child instead of counting once per slot.
+    //
+    // An aggregating node over its slots, not a leaf carrying a pre-computed mean:
+    // computeNodePercent binarizes a leaf, which would crush a 50% two-slot day to 0.
+    // Mirrors domain/completion.ts exactly. (An item with children carries at most one
+    // slot, so this branch is leaf-children only.)
     nodes.push(
       slotNodes.length === 1
         ? slotNodes[0]
-        : {
-            isParent: false,
-            leafPercent: computeDerivedPercent(slotNodes.map(computeNodePercent)),
-            declaredPercent: null,
-            dueChildren: [],
-          }
+        : { isParent: true, leafPercent: 0, declaredPercent: null, dueChildren: slotNodes }
     )
   }
   return nodes

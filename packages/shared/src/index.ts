@@ -10,6 +10,8 @@ export type {
   ItemDetail,
   CreateItemBody,
   UpdateItemBody,
+  CreateScheduleBody,
+  UpdateScheduleBody,
   SetPriorityBody,
   AddPrerequisiteBody,
   DeclarePercentBody,
@@ -70,7 +72,7 @@ export type {
   EvidenceEntry,
 } from './types/entities'
 
-export type { TrackerEvent, EventType } from './types/events'
+export type { TrackerEvent, EventType, ScheduleSnapshot } from './types/events'
 
 export {
   bucketLocalDateTime,

@@ -13,7 +13,9 @@ import type {
   EvidenceProvenance,
   EvidenceQuality,
   Priority,
+  RecurrenceRule,
   SourceIdentifierType,
+  TimingPrecision,
   VerificationFailureReason,
 } from './enums'
 import type { ItemSnapshot } from './entities'
@@ -218,6 +220,52 @@ type TemplateEditedEvent = EventBase & {
 type TemplateSoftDeletedEvent = EventBase & {
   eventType: 'template_soft_deleted'
   payload: Record<string, never>
+}
+
+// §5.5 — a frozen copy of one schedule's fields, carried by every schedule_* event.
+// Without it the log would say "a slot changed" but not what it changed to, and a
+// later reader could not explain why occurrences appeared or vanished on given days.
+export type ScheduleSnapshot = {
+  scheduleId: string
+  label: string | null
+  recurrenceRule: RecurrenceRule | null
+  anchorDay: string | null
+  timingPrecision: TimingPrecision
+  timingBucketId: string | null
+  timingStartTime: string | null
+  timingEndTime: string | null
+  plannedDurationMin: number | null
+  sortOrder: number
+}
+
+// §5.5 — a second (or third…) "when" was added to an existing item.
+type ScheduleAddedEvent = EventBase & {
+  eventType: 'schedule_added'
+  payload: {
+    snapshot: ScheduleSnapshot
+  }
+}
+
+// §5.5 — one slot was edited. Forward-only: past occurrences of this slot keep the
+// snapshot they were materialized with (§5.3). `changes` is what the request asked
+// for; `snapshot` is the resulting state, so neither has to be inferred from the other.
+type ScheduleEditedEvent = EventBase & {
+  eventType: 'schedule_edited'
+  payload: {
+    scheduleId: string
+    changes: Partial<ScheduleSnapshot>
+    snapshot: ScheduleSnapshot
+  }
+}
+
+// §5.5 — a slot was removed (archived, never hard-deleted). Its past occurrences
+// remain; its untouched future ones are cleared.
+type ScheduleRemovedEvent = EventBase & {
+  eventType: 'schedule_removed'
+  payload: {
+    snapshot: ScheduleSnapshot
+    clearedFutureOccurrences: number
+  }
 }
 
 // §7.1 — covers both initial set and subsequent changes; previousPriority is null on first set
@@ -438,6 +486,9 @@ export type TrackerEvent =
   | TemplateCreatedEvent
   | TemplateEditedEvent
   | TemplateSoftDeletedEvent
+  | ScheduleAddedEvent
+  | ScheduleEditedEvent
+  | ScheduleRemovedEvent
   | PriorityChangedEvent
   | ChildrenReorderedEvent
   | RootItemsReorderedEvent

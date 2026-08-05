@@ -94,6 +94,25 @@ export type CreateItemBody = {
 
 export type UpdateItemBody = Omit<Partial<CreateItemBody>, 'creationSource' | 'day'>
 
+// §5.5 — add a slot to an existing item. The item's first slot is created with the
+// item itself (CreateItemBody's flat fields); this is for the second and beyond.
+export type CreateScheduleBody = {
+  label?: string | null
+  recurrenceRule?: RecurrenceRule | null
+  anchorDay?: string | null   // YYYY-MM-DD — §5.1 recurrence start day
+  timingPrecision?: TimingPrecision
+  timingBucketId?: string | null
+  timingStartTime?: string | null
+  timingEndTime?: string | null
+  plannedDurationMin?: number | null
+}
+
+// §5.5 — edit one slot. Forward-only per §5.3: past occurrences of this slot keep
+// the snapshot they were materialized with.
+export type UpdateScheduleBody = Partial<CreateScheduleBody> & {
+  sortOrder?: number
+}
+
 export type SetPriorityBody = {
   priority: Priority | null
 }
