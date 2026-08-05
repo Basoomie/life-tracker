@@ -13,6 +13,7 @@ import * as reasons     from '../db/repos/reasons'
 import * as buckets     from '../db/repos/buckets'
 import * as dayStart    from '../db/repos/day_start'
 import * as items       from '../db/repos/items'
+import * as itemSchedules from '../db/repos/item-schedules'
 
 let seedUserId: string
 
@@ -75,23 +76,30 @@ describe('seed produces the expected buckets', () => {
   })
 })
 
+// §5.5 — recurrence and timing live on the item's schedule; every seeded item has one.
+async function soleScheduleOf(name: string) {
+  const allItems = await items.findItemsByUser(getTestPool(), seedUserId)
+  const item = allItems.find((i) => i.name === name)
+  expect(item).toBeDefined()
+  const schedules = await itemSchedules.findSchedulesByItem(getTestPool(), item!.id, seedUserId)
+  expect(schedules).toHaveLength(1)
+  return { item: item!, schedule: schedules[0] }
+}
+
 describe('seed produces the expected items', () => {
   it('creates Night Routine as a daily item', async () => {
-    const allItems = await items.findItemsByUser(getTestPool(), seedUserId)
-    const routine  = allItems.find((i) => i.name === 'Night Routine')
-    expect(routine).toBeDefined()
-    expect(routine!.recurrenceRule).toEqual({ type: 'daily' })
-    expect(routine!.dispositionPolicy).toBe('auto_close')
-    expect(routine!.parentId).toBeNull()
+    const { item, schedule } = await soleScheduleOf('Night Routine')
+    expect(schedule.recurrenceRule).toEqual({ type: 'daily' })
+    expect(item.dispositionPolicy).toBe('auto_close')
+    expect(item.parentId).toBeNull()
   })
 
   it('§4.1 Tretinoin is a child of Night Routine with MWF recurrence', async () => {
     const allItems = await items.findItemsByUser(getTestPool(), seedUserId)
     const routine  = allItems.find((i) => i.name === 'Night Routine')!
-    const tret     = allItems.find((i) => i.name === 'Tretinoin')
-    expect(tret).toBeDefined()
-    expect(tret!.parentId).toBe(routine.id)
-    expect(tret!.recurrenceRule).toEqual({ type: 'days_of_week', days: [1, 3, 5] })
+    const { item: tret, schedule } = await soleScheduleOf('Tretinoin')
+    expect(tret.parentId).toBe(routine.id)
+    expect(schedule.recurrenceRule).toEqual({ type: 'days_of_week', days: [1, 3, 5] })
   })
 
   it('§5.2 Workout has a 4×/week quota target', async () => {
@@ -102,20 +110,16 @@ describe('seed produces the expected items', () => {
   })
 
   it('§6.5 Day Trading has range timing 04:00–06:30 and planned 150 min', async () => {
-    const allItems = await items.findItemsByUser(getTestPool(), seedUserId)
-    const trading  = allItems.find((i) => i.name === 'Day Trading')
-    expect(trading).toBeDefined()
-    expect(trading!.timingPrecision).toBe('range')
-    expect(trading!.timingStartTime).toContain('04:00')
-    expect(trading!.timingEndTime).toContain('06:30')
-    expect(trading!.plannedDurationMin).toBe(150)
+    const { schedule } = await soleScheduleOf('Day Trading')
+    expect(schedule.timingPrecision).toBe('range')
+    expect(schedule.timingStartTime).toContain('04:00')
+    expect(schedule.timingEndTime).toContain('06:30')
+    expect(schedule.plannedDurationMin).toBe(150)
   })
 
   it('§9.2 Gaming session is a one-time ad-hoc item', async () => {
-    const allItems = await items.findItemsByUser(getTestPool(), seedUserId)
-    const gaming   = allItems.find((i) => i.name === 'Gaming session')
-    expect(gaming).toBeDefined()
-    expect(gaming!.recurrenceRule).toBeNull()
-    expect(gaming!.creationSource).toBe('ad_hoc')
+    const { item, schedule } = await soleScheduleOf('Gaming session')
+    expect(schedule.recurrenceRule).toBeNull()
+    expect(item.creationSource).toBe('ad_hoc')
   })
 })

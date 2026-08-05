@@ -22,7 +22,8 @@ import { setupTestDb, teardownTestDb, getTestPool } from './helpers/test-db'
 import * as userRepos from '../db/repos/users'
 import * as itemRepos from '../db/repos/items'
 import * as sessionRepos from '../db/repos/auth_sessions'
-import { ensureOccurrenceMaterialized } from '../domain/materialization'
+import { ensureOccurrenceForItemDay } from '../domain/materialization'
+import { createItem } from '../domain/items'
 import { insertEvent } from '../db/repos/events'
 import { resetDatabase, migrateUp } from '../db/migrate'
 
@@ -230,14 +231,14 @@ describe('§11 RESTORE ROUND-TRIP TEST — known data survives backup → wipe �
       passwordHash: hash,
     })
 
-    const item = await itemRepos.insertItem(pool, {
+    const item = await createItem(pool, {
       userId:         user.id,
       name:           'Round-trip Test Item',
       recurrenceRule: null,
       creationSource: 'planned',
     })
 
-    const occ = await ensureOccurrenceMaterialized(pool, item, '2026-01-15', user.id)
+    const occ = await ensureOccurrenceForItemDay(pool, item, '2026-01-15', user.id)
 
     const event = await insertEvent(pool, {
       userId:       user.id,

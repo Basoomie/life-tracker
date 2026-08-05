@@ -10,6 +10,7 @@ import { setupTestDb, teardownTestDb, getTestPool } from './helpers/test-db'
 import * as repos from '../db/repos/index'
 import { buildApp } from '../app'
 import type { FastifyInstance } from 'fastify'
+import { createItem } from '../domain/items'
 
 beforeAll(async () => { await setupTestDb() })
 afterAll(async () => { await teardownTestDb() })
@@ -27,10 +28,10 @@ describe('reordering children updates sort_order and findChildItems reflects the
     const u = await makeUser('reorder-basic@test.com')
     const app = await buildTestApp(u.id)
 
-    const parent = await repos.insertItem(getTestPool(), { userId: u.id, name: 'Morning Routine', creationSource: 'planned' })
-    const a = await repos.insertItem(getTestPool(), { userId: u.id, name: 'A', parentId: parent.id, creationSource: 'planned' })
-    const b = await repos.insertItem(getTestPool(), { userId: u.id, name: 'B', parentId: parent.id, creationSource: 'planned' })
-    const c = await repos.insertItem(getTestPool(), { userId: u.id, name: 'C', parentId: parent.id, creationSource: 'planned' })
+    const parent = await createItem(getTestPool(), { userId: u.id, name: 'Morning Routine', creationSource: 'planned' })
+    const a = await createItem(getTestPool(), { userId: u.id, name: 'A', parentId: parent.id, creationSource: 'planned' })
+    const b = await createItem(getTestPool(), { userId: u.id, name: 'B', parentId: parent.id, creationSource: 'planned' })
+    const c = await createItem(getTestPool(), { userId: u.id, name: 'C', parentId: parent.id, creationSource: 'planned' })
 
     // Default order is creation order: A, B, C
     const before = await repos.findChildItems(getTestPool(), parent.id, u.id)
@@ -59,9 +60,9 @@ describe('reorder request with a missing/extra/duplicate child id is rejected wi
   it('rejects a missing child id', async () => {
     const u = await makeUser('reorder-missing@test.com')
     const app = await buildTestApp(u.id)
-    const parent = await repos.insertItem(getTestPool(), { userId: u.id, name: 'Parent', creationSource: 'planned' })
-    const a = await repos.insertItem(getTestPool(), { userId: u.id, name: 'A', parentId: parent.id, creationSource: 'planned' })
-    await repos.insertItem(getTestPool(), { userId: u.id, name: 'B', parentId: parent.id, creationSource: 'planned' })
+    const parent = await createItem(getTestPool(), { userId: u.id, name: 'Parent', creationSource: 'planned' })
+    const a = await createItem(getTestPool(), { userId: u.id, name: 'A', parentId: parent.id, creationSource: 'planned' })
+    await createItem(getTestPool(), { userId: u.id, name: 'B', parentId: parent.id, creationSource: 'planned' })
 
     const res = await app.inject({
       method: 'PATCH',
@@ -75,9 +76,9 @@ describe('reorder request with a missing/extra/duplicate child id is rejected wi
   it('rejects an extra (non-child) id', async () => {
     const u = await makeUser('reorder-extra@test.com')
     const app = await buildTestApp(u.id)
-    const parent = await repos.insertItem(getTestPool(), { userId: u.id, name: 'Parent', creationSource: 'planned' })
-    const a = await repos.insertItem(getTestPool(), { userId: u.id, name: 'A', parentId: parent.id, creationSource: 'planned' })
-    const stranger = await repos.insertItem(getTestPool(), { userId: u.id, name: 'Not a child', creationSource: 'planned' })
+    const parent = await createItem(getTestPool(), { userId: u.id, name: 'Parent', creationSource: 'planned' })
+    const a = await createItem(getTestPool(), { userId: u.id, name: 'A', parentId: parent.id, creationSource: 'planned' })
+    const stranger = await createItem(getTestPool(), { userId: u.id, name: 'Not a child', creationSource: 'planned' })
 
     const res = await app.inject({
       method: 'PATCH',
@@ -91,9 +92,9 @@ describe('reorder request with a missing/extra/duplicate child id is rejected wi
   it('rejects a duplicate id', async () => {
     const u = await makeUser('reorder-dup@test.com')
     const app = await buildTestApp(u.id)
-    const parent = await repos.insertItem(getTestPool(), { userId: u.id, name: 'Parent', creationSource: 'planned' })
-    const a = await repos.insertItem(getTestPool(), { userId: u.id, name: 'A', parentId: parent.id, creationSource: 'planned' })
-    const b = await repos.insertItem(getTestPool(), { userId: u.id, name: 'B', parentId: parent.id, creationSource: 'planned' })
+    const parent = await createItem(getTestPool(), { userId: u.id, name: 'Parent', creationSource: 'planned' })
+    const a = await createItem(getTestPool(), { userId: u.id, name: 'A', parentId: parent.id, creationSource: 'planned' })
+    const b = await createItem(getTestPool(), { userId: u.id, name: 'B', parentId: parent.id, creationSource: 'planned' })
 
     const res = await app.inject({
       method: 'PATCH',
@@ -114,9 +115,9 @@ describe('reordering fires a children_reordered event with previous and new orde
   it('reordering fires a children_reordered event with previous and new order', async () => {
     const u = await makeUser('reorder-event@test.com')
     const app = await buildTestApp(u.id)
-    const parent = await repos.insertItem(getTestPool(), { userId: u.id, name: 'Parent', creationSource: 'planned' })
-    const a = await repos.insertItem(getTestPool(), { userId: u.id, name: 'A', parentId: parent.id, creationSource: 'planned' })
-    const b = await repos.insertItem(getTestPool(), { userId: u.id, name: 'B', parentId: parent.id, creationSource: 'planned' })
+    const parent = await createItem(getTestPool(), { userId: u.id, name: 'Parent', creationSource: 'planned' })
+    const a = await createItem(getTestPool(), { userId: u.id, name: 'A', parentId: parent.id, creationSource: 'planned' })
+    const b = await createItem(getTestPool(), { userId: u.id, name: 'B', parentId: parent.id, creationSource: 'planned' })
 
     const res = await app.inject({
       method: 'PATCH',
@@ -142,10 +143,10 @@ describe("a newly created child appends after existing siblings, not at position
   it("a newly created child appends after existing siblings, not at position 0", async () => {
     const u = await makeUser('reorder-append@test.com')
     const app = await buildTestApp(u.id)
-    const parent = await repos.insertItem(getTestPool(), { userId: u.id, name: 'Parent', creationSource: 'planned' })
+    const parent = await createItem(getTestPool(), { userId: u.id, name: 'Parent', creationSource: 'planned' })
 
     // A and B created through the real route so each gets a proper
-    // incrementing sortOrder (repos.insertItem alone always defaults to 0).
+    // incrementing sortOrder (createItem alone always defaults to 0).
     const resA = await app.inject({ method: 'POST', url: '/api/items', payload: { name: 'A', parentId: parent.id } })
     const resB = await app.inject({ method: 'POST', url: '/api/items', payload: { name: 'B', parentId: parent.id } })
     const a = JSON.parse(resA.body)
@@ -173,9 +174,9 @@ describe('children with no manual order yet fall back to creation-order display'
   it('children with no manual order yet fall back to creation-order display', async () => {
     const u = await makeUser('reorder-default@test.com')
     const app = await buildTestApp(u.id)
-    const parent = await repos.insertItem(getTestPool(), { userId: u.id, name: 'Parent', creationSource: 'planned' })
-    const a = await repos.insertItem(getTestPool(), { userId: u.id, name: 'A', parentId: parent.id, creationSource: 'planned' })
-    const b = await repos.insertItem(getTestPool(), { userId: u.id, name: 'B', parentId: parent.id, creationSource: 'planned' })
+    const parent = await createItem(getTestPool(), { userId: u.id, name: 'Parent', creationSource: 'planned' })
+    const a = await createItem(getTestPool(), { userId: u.id, name: 'A', parentId: parent.id, creationSource: 'planned' })
+    const b = await createItem(getTestPool(), { userId: u.id, name: 'B', parentId: parent.id, creationSource: 'planned' })
 
     // Both tie at the migration default (sortOrder 0) — never reordered
     expect(a.sortOrder).toBe(0)
@@ -199,9 +200,9 @@ describe('reordering a root item via afterItemId updates sort_order for all root
     const u = await makeUser('root-reorder-basic@test.com')
     const app = await buildTestApp(u.id)
 
-    const a = await repos.insertItem(getTestPool(), { userId: u.id, name: 'A', creationSource: 'planned' })
-    const b = await repos.insertItem(getTestPool(), { userId: u.id, name: 'B', creationSource: 'planned' })
-    const c = await repos.insertItem(getTestPool(), { userId: u.id, name: 'C', creationSource: 'planned' })
+    const a = await createItem(getTestPool(), { userId: u.id, name: 'A', creationSource: 'planned' })
+    const b = await createItem(getTestPool(), { userId: u.id, name: 'B', creationSource: 'planned' })
+    const c = await createItem(getTestPool(), { userId: u.id, name: 'C', creationSource: 'planned' })
 
     // Default order is creation order: A, B, C
     const before = await repos.findRootItems(getTestPool(), u.id)
@@ -230,8 +231,8 @@ describe('reordering a root item via afterItemId updates sort_order for all root
     const u = await makeUser('root-reorder-front@test.com')
     const app = await buildTestApp(u.id)
 
-    const a = await repos.insertItem(getTestPool(), { userId: u.id, name: 'A', creationSource: 'planned' })
-    const b = await repos.insertItem(getTestPool(), { userId: u.id, name: 'B', creationSource: 'planned' })
+    const a = await createItem(getTestPool(), { userId: u.id, name: 'A', creationSource: 'planned' })
+    const b = await createItem(getTestPool(), { userId: u.id, name: 'B', creationSource: 'planned' })
 
     const res = await app.inject({
       method: 'PATCH',
@@ -256,11 +257,11 @@ describe('reorder-root only needs a real neighbor, not the full unfiltered sibli
     const u = await makeUser('root-reorder-partial@test.com')
     const app = await buildTestApp(u.id)
 
-    const a = await repos.insertItem(getTestPool(), { userId: u.id, name: 'A', creationSource: 'planned' })
-    const b = await repos.insertItem(getTestPool(), { userId: u.id, name: 'B', creationSource: 'planned' })
-    const c = await repos.insertItem(getTestPool(), { userId: u.id, name: 'C', creationSource: 'planned' })
-    const d = await repos.insertItem(getTestPool(), { userId: u.id, name: 'D', creationSource: 'planned' })
-    const e = await repos.insertItem(getTestPool(), { userId: u.id, name: 'E', creationSource: 'planned' })
+    const a = await createItem(getTestPool(), { userId: u.id, name: 'A', creationSource: 'planned' })
+    const b = await createItem(getTestPool(), { userId: u.id, name: 'B', creationSource: 'planned' })
+    const c = await createItem(getTestPool(), { userId: u.id, name: 'C', creationSource: 'planned' })
+    const d = await createItem(getTestPool(), { userId: u.id, name: 'D', creationSource: 'planned' })
+    const e = await createItem(getTestPool(), { userId: u.id, name: 'E', creationSource: 'planned' })
 
     // Default order: A, B, C, D, E. Move E to right after B.
     const res = await app.inject({
@@ -281,8 +282,8 @@ describe('reorder-root rejects invalid targets with 400', () => {
   it('rejects reordering a child item (not a root item)', async () => {
     const u = await makeUser('root-reorder-notroot@test.com')
     const app = await buildTestApp(u.id)
-    const parent = await repos.insertItem(getTestPool(), { userId: u.id, name: 'Parent', creationSource: 'planned' })
-    const child = await repos.insertItem(getTestPool(), { userId: u.id, name: 'Child', parentId: parent.id, creationSource: 'planned' })
+    const parent = await createItem(getTestPool(), { userId: u.id, name: 'Parent', creationSource: 'planned' })
+    const child = await createItem(getTestPool(), { userId: u.id, name: 'Child', parentId: parent.id, creationSource: 'planned' })
 
     const res = await app.inject({
       method: 'PATCH',
@@ -296,7 +297,7 @@ describe('reorder-root rejects invalid targets with 400', () => {
   it('rejects afterItemId equal to the item itself', async () => {
     const u = await makeUser('root-reorder-self@test.com')
     const app = await buildTestApp(u.id)
-    const a = await repos.insertItem(getTestPool(), { userId: u.id, name: 'A', creationSource: 'planned' })
+    const a = await createItem(getTestPool(), { userId: u.id, name: 'A', creationSource: 'planned' })
 
     const res = await app.inject({
       method: 'PATCH',
@@ -310,9 +311,9 @@ describe('reorder-root rejects invalid targets with 400', () => {
   it('rejects an afterItemId that is a child item, not a root item', async () => {
     const u = await makeUser('root-reorder-badneighbor@test.com')
     const app = await buildTestApp(u.id)
-    const a = await repos.insertItem(getTestPool(), { userId: u.id, name: 'A', creationSource: 'planned' })
-    const parent = await repos.insertItem(getTestPool(), { userId: u.id, name: 'Parent', creationSource: 'planned' })
-    const child = await repos.insertItem(getTestPool(), { userId: u.id, name: 'Child', parentId: parent.id, creationSource: 'planned' })
+    const a = await createItem(getTestPool(), { userId: u.id, name: 'A', creationSource: 'planned' })
+    const parent = await createItem(getTestPool(), { userId: u.id, name: 'Parent', creationSource: 'planned' })
+    const child = await createItem(getTestPool(), { userId: u.id, name: 'Child', parentId: parent.id, creationSource: 'planned' })
 
     const res = await app.inject({
       method: 'PATCH',
@@ -328,8 +329,8 @@ describe('reordering a root item fires a root_items_reordered event with previou
   it('reordering a root item fires a root_items_reordered event with previous and new order', async () => {
     const u = await makeUser('root-reorder-event@test.com')
     const app = await buildTestApp(u.id)
-    const a = await repos.insertItem(getTestPool(), { userId: u.id, name: 'A', creationSource: 'planned' })
-    const b = await repos.insertItem(getTestPool(), { userId: u.id, name: 'B', creationSource: 'planned' })
+    const a = await createItem(getTestPool(), { userId: u.id, name: 'A', creationSource: 'planned' })
+    const b = await createItem(getTestPool(), { userId: u.id, name: 'B', creationSource: 'planned' })
 
     const res = await app.inject({
       method: 'PATCH',

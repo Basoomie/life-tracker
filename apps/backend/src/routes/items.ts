@@ -7,8 +7,10 @@ import * as repos from '../db/repos/index'
 import {
   ensureOccurrenceMaterialized,
   regenerateFutureOccurrences,
+  snapshotFromItem,
   topUpMaterializationForItem,
 } from '../domain/materialization'
+import { createItemWithSchedule, soleSchedule } from '../domain/items'
 import { addPrerequisite, removePrerequisite } from '../domain/prerequisites'
 import { notFound, badRequest } from './helpers'
 import { logicalToday } from '../domain/day'
@@ -19,51 +21,56 @@ import type {
   AddPrerequisiteBody,
   ReorderChildrenBody,
   ReorderRootBody,
-  ItemSnapshot,
+  ItemWithSchedules,
+  ItemDetail,
 } from '@tracker/shared'
 
-// Build the item snapshot inline (same fields as snapshotFromItem in materialization.ts).
-// Used for template_created and template_edited events.
-function buildSnapshot(item: {
-  name: string
-  description: string | null
-  categoryId: string | null
-  valence: import('@tracker/shared').Valence | null
-  priority: import('@tracker/shared').Priority | null
-  recurrenceRule: import('@tracker/shared').RecurrenceRule | null
-  quotaTarget: import('@tracker/shared').QuotaTarget | null
-  timingPrecision: import('@tracker/shared').TimingPrecision
-  timingBucketId: string | null
-  timingStartTime: string | null
-  timingEndTime: string | null
-  plannedDurationMin: number | null
-  dispositionPolicy: import('@tracker/shared').DispositionPolicy
-  parentId: string | null
-}, prerequisiteIds: string[]): ItemSnapshot {
-  return {
-    name: item.name,
-    description: item.description,
-    categoryId: item.categoryId,
-    valence: item.valence,
-    priority: item.priority,
-    recurrenceRule: item.recurrenceRule,
-    quotaTarget: item.quotaTarget,
-    timingPrecision: item.timingPrecision,
-    timingBucketId: item.timingBucketId,
-    timingStartTime: item.timingStartTime,
-    timingEndTime: item.timingEndTime,
-    plannedDurationMin: item.plannedDurationMin,
-    dispositionPolicy: item.dispositionPolicy,
-    parentId: item.parentId,
-    prerequisiteIds,
-  }
-}
+// §5.5 — which keys of the flat item body belong to the item and which to its
+// schedule. Listed explicitly (rather than "everything not in the other list") so
+// that adding a field to either type is a deliberate choice, not an accident of
+// whichever list happens to be the fallback.
+const SCHEDULE_FIELDS = [
+  'recurrenceRule',
+  'anchorDay',
+  'timingPrecision',
+  'timingBucketId',
+  'timingStartTime',
+  'timingEndTime',
+  'plannedDurationMin',
+] as const satisfies readonly (keyof UpdateItemBody)[]
+
+const ITEM_FIELDS = [
+  'name',
+  'description',
+  'categoryId',
+  'valence',
+  'priority',
+  'quotaTarget',
+  'parentId',
+  'dispositionPolicy',
+] as const satisfies readonly (keyof UpdateItemBody)[]
 
 export async function itemRoutes(app: FastifyInstance) {
-  // GET /items — list all active items for the user
+  // GET /items — list all active items for the user, each with its schedules (§5.5).
+  // Schedules travel with the item because without them a client cannot tell when the
+  // item happens or whether it recurs.
   app.get('/items', async (req, reply) => {
-    const items = await repos.findItemsByUser(pool, req.userId)
-    return reply.send(items)
+    const userId = req.userId
+    const [items, schedules] = await Promise.all([
+      repos.findItemsByUser(pool, userId),
+      repos.findSchedulesByUser(pool, userId),
+    ])
+    const byItem = new Map<string, typeof schedules>()
+    for (const s of schedules) {
+      const list = byItem.get(s.itemId)
+      if (list) list.push(s)
+      else byItem.set(s.itemId, [s])
+    }
+    const result: ItemWithSchedules[] = items.map((item) => ({
+      ...item,
+      schedules: byItem.get(item.id) ?? [],
+    }))
+    return reply.send(result)
   })
 
   // POST /items — create item + fire template_created + materialize if one-time
@@ -77,21 +84,15 @@ export async function itemRoutes(app: FastifyInstance) {
       ? await repos.nextChildSortOrder(pool, body.parentId, userId)
       : await repos.nextRootSortOrder(pool, userId)
 
-    const item = await repos.insertItem(pool, {
+    // §5.5 — the item and its first slot are created together.
+    const { item, schedule } = await createItemWithSchedule(pool, {
       userId,
       name: body.name,
       description: body.description ?? null,
       categoryId: body.categoryId ?? null,
       valence: body.valence ?? null,
       priority: body.priority ?? null,
-      recurrenceRule: body.recurrenceRule ?? null,
-      anchorDay: body.anchorDay ?? null,
       quotaTarget: body.quotaTarget ?? null,
-      timingPrecision: body.timingPrecision ?? 'none',
-      timingBucketId: body.timingBucketId ?? null,
-      timingStartTime: body.timingStartTime ?? null,
-      timingEndTime: body.timingEndTime ?? null,
-      plannedDurationMin: body.plannedDurationMin ?? null,
       parentId: body.parentId ?? null,
       sortOrder,
       // §8.1 default: recurring habits default to 'skip' (the spec's stated
@@ -100,10 +101,19 @@ export async function itemRoutes(app: FastifyInstance) {
       // haven't gotten to it yet" than "I'm choosing to skip it."
       dispositionPolicy: body.dispositionPolicy ?? (body.recurrenceRule ? 'skip' : 'require_manual'),
       creationSource: body.creationSource ?? 'planned',
+      recurrenceRule: body.recurrenceRule ?? null,
+      anchorDay: body.anchorDay ?? null,
+      timingPrecision: body.timingPrecision ?? 'none',
+      timingBucketId: body.timingBucketId ?? null,
+      timingStartTime: body.timingStartTime ?? null,
+      timingEndTime: body.timingEndTime ?? null,
+      plannedDurationMin: body.plannedDurationMin ?? null,
     })
 
-    // §10.2 — template_created event with full snapshot (no occurrence for template events)
-    const snapshot = buildSnapshot(item, [])
+    // §10.2 — template_created event with full snapshot (no occurrence for template
+    // events). The snapshot describes the item as created, i.e. with its first slot;
+    // later slots record themselves via schedule_added (§5.5).
+    const snapshot = snapshotFromItem(item, schedule, [])
     await repos.insertEvent(pool, {
       userId,
       eventType: 'template_created',
@@ -117,9 +127,9 @@ export async function itemRoutes(app: FastifyInstance) {
     // Recurring items top up their near-term horizon immediately too (mirrors the
     // regeneration that happens on template edit — §5.3), so today's occurrence
     // (if due) is stored right away instead of waiting for the nightly background job.
-    if (!item.recurrenceRule) {
+    if (!schedule.recurrenceRule) {
       const day = body.day ?? (await logicalToday(pool, userId))
-      await ensureOccurrenceMaterialized(pool, item, day, userId)
+      await ensureOccurrenceMaterialized(pool, item, schedule, day, userId)
     } else {
       await topUpMaterializationForItem(pool, item, userId, await logicalToday(pool, userId))
     }
@@ -134,27 +144,48 @@ export async function itemRoutes(app: FastifyInstance) {
     const item = await repos.findItemById(pool, id, userId)
     if (!item) return notFound(reply, 'item')
 
-    const [children, prerequisites] = await Promise.all([
+    const [children, prerequisites, schedules] = await Promise.all([
       repos.findChildItems(pool, id, userId),
       repos.findPrerequisitesByItem(pool, id, userId),
+      repos.findSchedulesByItem(pool, id, userId),
     ])
 
-    return reply.send({ ...item, children, prerequisites })
+    const detail: ItemDetail = { ...item, schedules, children, prerequisites }
+    return reply.send(detail)
   })
 
   // PATCH /items/:id — template edit (forward-only per §5.3)
   app.patch('/items/:id', async (req, reply) => {
     const { id } = req.params as { id: string }
     const userId = req.userId
-    // Pass the body directly — Fastify only includes keys present in the JSON, so
-    // updateItem's "if key in updates" guard correctly skips omitted fields.
-    // Spreading into a new literal would insert undefined values for every absent key,
-    // causing updateItem to NULL them out.
+    // Pass through the keys Fastify actually received — updateItem/updateSchedule's
+    // "if key in updates" guard correctly skips omitted fields. Spreading into a new
+    // literal would insert undefined values for every absent key, causing them to be
+    // NULLed out; the split below therefore copies keys only when present.
     const body = req.body as UpdateItemBody
 
-    const updated = await repos.updateItem(pool, id, userId, body as import('../db/repos/items').UpdateItemData)
+    // §5.5 — this endpoint edits the item AND its single slot, which is what the
+    // flat body has always meant. Items with several slots edit each one through
+    // /items/:id/schedules/:scheduleId instead; soleSchedule throws rather than
+    // guessing which slot a flat body was aimed at.
+    const scheduleUpdates: import('../db/repos/item-schedules').UpdateScheduleData = {}
+    for (const key of SCHEDULE_FIELDS) {
+      if (key in body) (scheduleUpdates as Record<string, unknown>)[key] = body[key]
+    }
+    const itemUpdates: import('../db/repos/items').UpdateItemData = {}
+    for (const key of ITEM_FIELDS) {
+      if (key in body) (itemUpdates as Record<string, unknown>)[key] = body[key]
+    }
 
+    const updated = await repos.updateItem(pool, id, userId, itemUpdates)
     if (!updated) return notFound(reply, 'item')
+
+    let scheduleId: string | undefined
+    if (Object.keys(scheduleUpdates).length > 0) {
+      const schedule = await soleSchedule(pool, id, userId)
+      await repos.updateSchedule(pool, schedule.id, userId, scheduleUpdates)
+      scheduleId = schedule.id
+    }
 
     // §10.2 — template_edited event records what changed
     await repos.insertEvent(pool, {
@@ -166,8 +197,15 @@ export async function itemRoutes(app: FastifyInstance) {
       payload: { changes: body },
     })
 
-    // §5.3 — regenerate untouched future occurrences with the new snapshot
-    await regenerateFutureOccurrences(pool, updated, userId, await logicalToday(pool, userId))
+    // §5.3 — regenerate untouched future occurrences with the new snapshot.
+    // An item-level change (name, category…) alters every slot's snapshot, so the
+    // regeneration is unscoped unless the edit touched only the schedule.
+    const onlyScheduleChanged =
+      scheduleId !== undefined && Object.keys(itemUpdates).length === 0
+    await regenerateFutureOccurrences(
+      pool, updated, userId, await logicalToday(pool, userId),
+      onlyScheduleChanged ? scheduleId : undefined
+    )
 
     return reply.send(updated)
   })

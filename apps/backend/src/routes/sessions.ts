@@ -6,7 +6,7 @@ import { randomUUID } from 'crypto'
 import type { FastifyInstance } from 'fastify'
 import { pool } from '../db'
 import * as repos from '../db/repos/index'
-import { ensureOccurrenceMaterialized } from '../domain/materialization'
+import { ensureOccurrenceForItemDay } from '../domain/materialization'
 import { computeSessionDurationMin } from '../domain/sessions'
 import { notFound } from './helpers'
 import { logicalToday } from '../domain/day'
@@ -22,7 +22,7 @@ export async function sessionRoutes(app: FastifyInstance) {
     if (!item) return notFound(reply, 'item')
 
     const day = body.day ?? (await logicalToday(pool, userId))
-    const occ = await ensureOccurrenceMaterialized(pool, item, day, userId)
+    const occ = await ensureOccurrenceForItemDay(pool, item, day, userId)
 
     const sessionId = randomUUID()
     await repos.insertEvent(pool, {
@@ -114,7 +114,7 @@ export async function sessionRoutes(app: FastifyInstance) {
     if (!item) return notFound(reply, 'item')
 
     const day = body.day ?? (await logicalToday(pool, userId))
-    const occ = await ensureOccurrenceMaterialized(pool, item, day, userId)
+    const occ = await ensureOccurrenceForItemDay(pool, item, day, userId)
 
     const startedAt = new Date(body.startedAt)
     const endedAt   = new Date(body.endedAt)

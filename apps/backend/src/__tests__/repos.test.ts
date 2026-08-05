@@ -12,12 +12,23 @@ import * as reasons    from '../db/repos/reasons'
 import * as buckets    from '../db/repos/buckets'
 import * as dayStart   from '../db/repos/day_start'
 import * as items      from '../db/repos/items'
+import * as itemSchedules from '../db/repos/item-schedules'
 import * as occurrences from '../db/repos/occurrences'
 import * as events      from '../db/repos/events'
-import type { ItemSnapshot } from '@tracker/shared'
+import { createItem }   from '../domain/items'
+import type { ItemSnapshot, RecurrenceRule } from '@tracker/shared'
 
 beforeAll(async () => { await setupTestDb() })
 afterAll(async () => { await teardownTestDb() })
+
+// §5.5 — an occurrence belongs to a slot, so tests that insert one need the item's
+// schedule id. Every item here has exactly one.
+async function itemWithSchedule(userId: string, name: string) {
+  const pool = getTestPool()
+  const item = await createItem(pool, { userId, name })
+  const [schedule] = await itemSchedules.findSchedulesByItem(pool, item.id, userId)
+  return { item, scheduleId: schedule.id }
+}
 
 // ── Users ─────────────────────────────────────────────────────────────────────
 
@@ -188,9 +199,7 @@ describe('items table round-trips', () => {
       categoryId:        cat.id,
       valence:           'productive',
       priority:          'medium',
-      recurrenceRule:    { type: 'daily' },
       quotaTarget:       null,
-      timingPrecision:   'none',
       dispositionPolicy: 'auto_close',
       creationSource:    'planned',
     })
@@ -200,9 +209,33 @@ describe('items table round-trips', () => {
     expect(item.categoryId).toBe(cat.id)
     expect(item.valence).toBe('productive')
     expect(item.priority).toBe('medium')
-    expect(item.recurrenceRule).toEqual({ type: 'daily' })
     expect(item.dispositionPolicy).toBe('auto_close')
     expect(item.archivedAt).toBeNull()
+  })
+
+  it('§5.5 an item and its initial schedule are created together', async () => {
+    const pool = getTestPool()
+    const u    = await users.insertUser(pool, { email: 'item-schedule@example.com' })
+
+    const item = await createItem(pool, {
+      userId:          u.id,
+      name:            'Day Trading',
+      recurrenceRule:  { type: 'days_of_week', days: [1, 2, 3, 4, 5] },
+      timingPrecision: 'range',
+      timingStartTime: '04:00',
+      timingEndTime:   '06:30',
+      plannedDurationMin: 150,
+    })
+
+    const schedules = await itemSchedules.findSchedulesByItem(pool, item.id, u.id)
+    expect(schedules).toHaveLength(1)
+    expect(schedules[0].recurrenceRule).toEqual({ type: 'days_of_week', days: [1, 2, 3, 4, 5] })
+    expect(schedules[0].timingPrecision).toBe('range')
+    expect(schedules[0].timingStartTime).toBe('04:00:00')
+    expect(schedules[0].timingEndTime).toBe('06:30:00')
+    expect(schedules[0].plannedDurationMin).toBe(150)
+    expect(schedules[0].sortOrder).toBe(0)
+    expect(schedules[0].archivedAt).toBeNull()
   })
 
   it('user_id scoping: findItemsByUser excludes other users items', async () => {
@@ -217,29 +250,23 @@ describe('items table round-trips', () => {
     expect(u1Items.map((i) => i.name)).not.toContain('U2 item')
   })
 
+  // §5.5 — the rule lives on item_schedules now, so this exercises that table.
   it('§5.1 recurrence_rule JSONB round-trips all supported shapes', async () => {
     const pool = getTestPool()
     const u    = await users.insertUser(pool, { email: 'rrule-test@example.com' })
 
-    const daysOfWeek = await items.insertItem(pool, {
-      userId: u.id, name: 'MWF', recurrenceRule: { type: 'days_of_week', days: [1, 3, 5] },
-    })
-    expect(daysOfWeek.recurrenceRule).toEqual({ type: 'days_of_week', days: [1, 3, 5] })
+    const ruleOf = async (name: string, recurrenceRule: RecurrenceRule | null) => {
+      const item = await createItem(pool, { userId: u.id, name, recurrenceRule })
+      const [schedule] = await itemSchedules.findSchedulesByItem(pool, item.id, u.id)
+      return schedule.recurrenceRule
+    }
 
-    const interval = await items.insertItem(pool, {
-      userId: u.id, name: 'Biweekly', recurrenceRule: { type: 'interval', unit: 'week', every: 2 },
-    })
-    expect(interval.recurrenceRule).toEqual({ type: 'interval', unit: 'week', every: 2 })
-
-    const monthly = await items.insertItem(pool, {
-      userId: u.id, name: 'Monthly', recurrenceRule: { type: 'monthly' },
-    })
-    expect(monthly.recurrenceRule).toEqual({ type: 'monthly' })
-
-    const oneTime = await items.insertItem(pool, {
-      userId: u.id, name: 'One-time', recurrenceRule: null,
-    })
-    expect(oneTime.recurrenceRule).toBeNull()
+    expect(await ruleOf('MWF', { type: 'days_of_week', days: [1, 3, 5] }))
+      .toEqual({ type: 'days_of_week', days: [1, 3, 5] })
+    expect(await ruleOf('Biweekly', { type: 'interval', unit: 'week', every: 2 }))
+      .toEqual({ type: 'interval', unit: 'week', every: 2 })
+    expect(await ruleOf('Monthly', { type: 'monthly' })).toEqual({ type: 'monthly' })
+    expect(await ruleOf('One-time', null)).toBeNull()
   })
 
   it('§4.2 prerequisite round-trips (insert and read)', async () => {
@@ -276,7 +303,7 @@ describe('occurrences table round-trips', () => {
   it('inserts and reads back an occurrence with correct snapshot types', async () => {
     const pool  = getTestPool()
     const u     = await users.insertUser(pool, { email: 'occ-test@example.com' })
-    const item  = await items.insertItem(pool, { userId: u.id, name: 'Routine' })
+    const { item, scheduleId } = await itemWithSchedule(u.id, 'Routine')
 
     const snapshot: ItemSnapshot = {
       name: 'Routine', description: null, categoryId: null, valence: null,
@@ -287,20 +314,21 @@ describe('occurrences table round-trips', () => {
     }
 
     const occ = await occurrences.insertOccurrence(pool, {
-      userId: u.id, itemId: item.id, appliesToDay: '2024-01-15', snapshot,
+      userId: u.id, itemId: item.id, scheduleId, appliesToDay: '2024-01-15', snapshot,
     })
 
     expect(occ.userId).toBe(u.id)
     expect(occ.itemId).toBe(item.id)
+    expect(occ.scheduleId).toBe(scheduleId)
     expect(occ.appliesToDay).toBe('2024-01-15')
     expect(occ.snapshot).toEqual(snapshot)
     expect(occ.materializedAt).toBeInstanceOf(Date)
   })
 
-  it('UNIQUE constraint: inserting duplicate item+day throws', async () => {
+  it('§5.5 UNIQUE constraint: inserting a duplicate item+day+schedule throws', async () => {
     const pool  = getTestPool()
     const u     = await users.insertUser(pool, { email: 'occ-unique@example.com' })
-    const item  = await items.insertItem(pool, { userId: u.id, name: 'Unique test' })
+    const { item, scheduleId } = await itemWithSchedule(u.id, 'Unique test')
     const snap: ItemSnapshot = {
       name: 'Unique test', description: null, categoryId: null, valence: null,
       priority: null, recurrenceRule: null, quotaTarget: null, timingPrecision: 'none',
@@ -308,29 +336,55 @@ describe('occurrences table round-trips', () => {
       plannedDurationMin: null, dispositionPolicy: 'skip', parentId: null, prerequisiteIds: [],
     }
     await occurrences.insertOccurrence(pool, {
-      userId: u.id, itemId: item.id, appliesToDay: '2024-01-20', snapshot: snap,
+      userId: u.id, itemId: item.id, scheduleId, appliesToDay: '2024-01-20', snapshot: snap,
     })
     await expect(
       occurrences.insertOccurrence(pool, {
-        userId: u.id, itemId: item.id, appliesToDay: '2024-01-20', snapshot: snap,
+        userId: u.id, itemId: item.id, scheduleId, appliesToDay: '2024-01-20', snapshot: snap,
       })
     ).rejects.toThrow()
+  })
+
+  it('§5.5 the same item+day is allowed once per schedule', async () => {
+    const pool  = getTestPool()
+    const u     = await users.insertUser(pool, { email: 'occ-two-slots@example.com' })
+    const { item, scheduleId } = await itemWithSchedule(u.id, 'Two slots')
+    const second = await itemSchedules.insertSchedule(pool, {
+      userId: u.id, itemId: item.id, recurrenceRule: { type: 'daily' }, sortOrder: 1,
+    })
+    const snap: ItemSnapshot = {
+      name: 'Two slots', description: null, categoryId: null, valence: null,
+      priority: null, recurrenceRule: { type: 'daily' }, quotaTarget: null,
+      timingPrecision: 'none', timingBucketId: null, timingStartTime: null,
+      timingEndTime: null, plannedDurationMin: null, dispositionPolicy: 'skip',
+      parentId: null, prerequisiteIds: [],
+    }
+    const a = await occurrences.insertOccurrence(pool, {
+      userId: u.id, itemId: item.id, scheduleId, appliesToDay: '2024-01-21', snapshot: snap,
+    })
+    const b = await occurrences.insertOccurrence(pool, {
+      userId: u.id, itemId: item.id, scheduleId: second.id, appliesToDay: '2024-01-21', snapshot: snap,
+    })
+    expect(a.id).not.toBe(b.id)
+
+    const both = await occurrences.findOccurrencesByItemAndDay(pool, item.id, '2024-01-21', u.id)
+    expect(both).toHaveLength(2)
   })
 
   it('user_id scoping: findOccurrencesByDay only returns the requesting user\'s rows', async () => {
     const pool  = getTestPool()
     const u1    = await users.insertUser(pool, { email: 'occ-scope-u1@example.com' })
     const u2    = await users.insertUser(pool, { email: 'occ-scope-u2@example.com' })
-    const i1    = await items.insertItem(pool, { userId: u1.id, name: 'U1 item' })
-    const i2    = await items.insertItem(pool, { userId: u2.id, name: 'U2 item' })
+    const { item: i1, scheduleId: s1 } = await itemWithSchedule(u1.id, 'U1 item')
+    const { item: i2, scheduleId: s2 } = await itemWithSchedule(u2.id, 'U2 item')
     const makeSnap = (name: string): ItemSnapshot => ({
       name, description: null, categoryId: null, valence: null, priority: null,
       recurrenceRule: null, quotaTarget: null, timingPrecision: 'none', timingBucketId: null,
       timingStartTime: null, timingEndTime: null, plannedDurationMin: null,
       dispositionPolicy: 'skip', parentId: null, prerequisiteIds: [],
     })
-    await occurrences.insertOccurrence(pool, { userId: u1.id, itemId: i1.id, appliesToDay: '2024-02-01', snapshot: makeSnap('U1 item') })
-    await occurrences.insertOccurrence(pool, { userId: u2.id, itemId: i2.id, appliesToDay: '2024-02-01', snapshot: makeSnap('U2 item') })
+    await occurrences.insertOccurrence(pool, { userId: u1.id, itemId: i1.id, scheduleId: s1, appliesToDay: '2024-02-01', snapshot: makeSnap('U1 item') })
+    await occurrences.insertOccurrence(pool, { userId: u2.id, itemId: i2.id, scheduleId: s2, appliesToDay: '2024-02-01', snapshot: makeSnap('U2 item') })
 
     const u1Occs = await occurrences.findOccurrencesByDay(pool, u1.id, '2024-02-01')
     expect(u1Occs.every((o) => o.userId === u1.id)).toBe(true)

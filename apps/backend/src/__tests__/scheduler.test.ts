@@ -7,10 +7,11 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { setupTestDb, teardownTestDb, getTestPool } from './helpers/test-db'
 import * as repos from '../db/repos/index'
 import { findSoleUser } from '../db/repos/users'
-import { ensureOccurrenceMaterialized } from '../domain/materialization'
+import { ensureOccurrenceForItemDay } from '../domain/materialization'
 import { planDailyTick, previousDay, runDailyTick } from '../scheduler'
 import { resolveLogicalToday } from '../domain/day'
 import type { Item, Occurrence } from '@tracker/shared'
+import { createItem } from '../domain/items'
 
 beforeAll(async () => { await setupTestDb() })
 afterAll(async () => { await teardownTestDb() })
@@ -22,7 +23,7 @@ async function makeUser(email: string) {
 }
 
 async function makeHabit(userId: string, name: string) {
-  return repos.insertItem(getTestPool(), {
+  return createItem(getTestPool(), {
     userId,
     name,
     recurrenceRule: { type: 'daily' },
@@ -32,7 +33,7 @@ async function makeHabit(userId: string, name: string) {
 }
 
 async function materialize(item: Item, day: string, userId: string): Promise<Occurrence> {
-  return ensureOccurrenceMaterialized(getTestPool(), item, day, userId)
+  return ensureOccurrenceForItemDay(getTestPool(), item, day, userId)
 }
 
 // ── Pure gating logic ────────────────────────────────────────────────────────

@@ -5,7 +5,9 @@
 // Ad-hoc capture (§9.2) is already tested in now-view.spec.ts — not duplicated here.
 
 import { test, expect, type Page } from '@playwright/test'
-import type { OccurrenceWithState, Item, Bucket, Category } from '@tracker/shared'
+import type {
+  OccurrenceWithState, Item, ItemSchedule, ItemWithSchedules, Bucket, Category,
+} from '@tracker/shared'
 
 // ── Fixture builders ──────────────────────────────────────────────────────────
 
@@ -63,28 +65,66 @@ function makeOcc(overrides: {
   } as OccurrenceWithState
 }
 
-function makeItem(overrides: Partial<Item> & { id: string; name: string }): Item {
+// §5.5 — an item travels with its schedules. Callers still pass the slot's fields
+// flat (recurrenceRule, timing*, …) because that is how the create API and the form
+// think about a new item; this assembles the one-slot shape the API actually returns.
+type ItemOverrides = Partial<Item> & {
+  id: string
+  name: string
+  recurrenceRule?: ItemSchedule['recurrenceRule']
+  anchorDay?: string | null
+  timingPrecision?: ItemSchedule['timingPrecision']
+  timingBucketId?: string | null
+  timingStartTime?: string | null
+  timingEndTime?: string | null
+  plannedDurationMin?: number | null
+}
+
+function makeItem(overrides: ItemOverrides): ItemWithSchedules {
+  const {
+    recurrenceRule = null,
+    anchorDay = null,
+    timingPrecision = 'none',
+    timingBucketId = null,
+    timingStartTime = null,
+    timingEndTime = null,
+    plannedDurationMin = null,
+    ...itemFields
+  } = overrides
+
   return {
     userId: 'u1',
     description: null,
     categoryId: null,
     valence: null,
     priority: null,
-    recurrenceRule: null,
-    anchorDay: null,
     quotaTarget: null,
-    timingPrecision: 'none',
-    timingBucketId: null,
-    timingStartTime: null,
-    timingEndTime: null,
-    plannedDurationMin: null,
     parentId: null,
+    sortOrder: 0,
     dispositionPolicy: 'skip',
     creationSource: 'planned',
     archivedAt: null,
     createdAt: new Date() as unknown as Date,
-    ...overrides,
-  }
+    ...itemFields,
+    schedules: [
+      {
+        id: `${overrides.id}-s0`,
+        userId: 'u1',
+        itemId: overrides.id,
+        label: null,
+        recurrenceRule,
+        anchorDay,
+        timingPrecision,
+        timingBucketId,
+        timingStartTime,
+        timingEndTime,
+        plannedDurationMin,
+        sortOrder: 0,
+        archivedAt: null,
+        createdAt: new Date() as unknown as Date,
+      },
+    ],
+  } as ItemWithSchedules
 }
 
 const BUCKETS: Bucket[] = [

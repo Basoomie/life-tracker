@@ -10,10 +10,11 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { setupTestDb, teardownTestDb, getTestPool } from '../helpers/test-db'
 import * as repos from '../../db/repos/index'
-import { ensureOccurrenceMaterialized } from '../../domain/materialization'
+import { ensureOccurrenceForItemDay } from '../../domain/materialization'
 import { getItemProcrastination } from '../../stats/index'
 import type { Item } from '@tracker/shared'
 import type { DateWindow } from '@tracker/shared'
+import { createItem } from '../../domain/items'
 
 beforeAll(async () => { await setupTestDb() })
 afterAll(async () => { await teardownTestDb() })
@@ -33,20 +34,20 @@ async function makeUser(suffix: string) {
 }
 
 async function makeTask(userId: string, name = 'Task') {
-  return repos.insertItem(getTestPool(), {
+  return createItem(getTestPool(), {
     userId, name, recurrenceRule: null, creationSource: 'planned',
   })
 }
 
 async function makeDailyHabit(userId: string, name = 'Habit') {
-  return repos.insertItem(getTestPool(), {
+  return createItem(getTestPool(), {
     userId, name, recurrenceRule: { type: 'daily' }, creationSource: 'planned',
   })
 }
 
 // Insert a rescheduled event for an item on originalDay, moving to newDay
 async function reschedule(item: Item, originalDay: string, newDay: string, userId: string) {
-  const occ = await ensureOccurrenceMaterialized(getTestPool(), item, originalDay, userId)
+  const occ = await ensureOccurrenceForItemDay(getTestPool(), item, originalDay, userId)
   await repos.insertEvent(getTestPool(), {
     userId, eventType: 'rescheduled',
     occurrenceId: occ.id, itemId: item.id, appliesToDay: originalDay,
@@ -58,7 +59,7 @@ async function reschedule(item: Item, originalDay: string, newDay: string, userI
 async function retroactiveComplete(
   item: Item, day: string, userId: string, recordedAt: Date
 ) {
-  const occ = await ensureOccurrenceMaterialized(getTestPool(), item, day, userId)
+  const occ = await ensureOccurrenceForItemDay(getTestPool(), item, day, userId)
   await repos.insertEvent(getTestPool(), {
     userId, eventType: 'retroactive_completion',
     occurrenceId: occ.id, itemId: item.id, appliesToDay: day,
@@ -99,7 +100,7 @@ describe('§3.4 rescheduleCount is total reschedule events for the item in the w
     // In window
     await reschedule(h, JAN_02, JAN_03, u.id)
     // Outside window (before startDay)
-    const before = await ensureOccurrenceMaterialized(getTestPool(), h, '2024-12-31', u.id)
+    const before = await ensureOccurrenceForItemDay(getTestPool(), h, '2024-12-31', u.id)
     await repos.insertEvent(getTestPool(), {
       userId: u.id, eventType: 'rescheduled',
       occurrenceId: before.id, itemId: h.id, appliesToDay: '2024-12-31',
@@ -194,7 +195,7 @@ describe('§3.4 backfill stats measure retroactive completion lag', () => {
     await retroactiveComplete(h, JAN_03, u.id, jan4)
 
     // Outside window: Dec 31 → Jan 1 (applies_to_day 2024-12-31 outside WEEK)
-    const dec31item = await ensureOccurrenceMaterialized(
+    const dec31item = await ensureOccurrenceForItemDay(
       getTestPool(), h, '2024-12-31', u.id
     )
     await repos.insertEvent(getTestPool(), {

@@ -2,7 +2,8 @@
 // Edit mode: same form pre-populated; changes are forward-only (§5.3).
 
 import { useState, useEffect, useRef } from 'react'
-import type { Category, Bucket, Item, ItemPrerequisite } from '@tracker/shared'
+import type { Category, Bucket, Item, ItemPrerequisite, ItemWithSchedules } from '@tracker/shared'
+import { isRecurringItem } from '@tracker/shared'
 import type {
   RecurrenceRule,
   QuotaTarget,
@@ -82,7 +83,7 @@ export function ItemFormModal({ itemId, categories, buckets, onSaved, onClose }:
   const [day, setDay] = useState(todayStr)
 
   // Relationships
-  const [allItems, setAllItems] = useState<Item[]>([])
+  const [allItems, setAllItems] = useState<ItemWithSchedules[]>([])
   const [selectedPrereqIds, setSelectedPrereqIds] = useState<string[]>([])
   const [initialPrereqIds, setInitialPrereqIds] = useState<string[]>([])
   const [parentId, setParentId] = useState<string | null>(null)
@@ -119,29 +120,33 @@ export function ItemFormModal({ itemId, categories, buckets, onSaved, onClose }:
         setCategoryId(data.categoryId)
         setValence(data.valence ?? '')
         setPriority(data.priority ?? '')
-        setIsRecurring(!!data.recurrenceRule)
-        if (data.recurrenceRule) {
-          setRecType(recTypeFromRule(data.recurrenceRule))
-          if (data.recurrenceRule.type === 'days_of_week') {
-            setRecDays(data.recurrenceRule.days)
+        // §5.5 — recurrence and timing live on the item's schedule. This form edits a
+        // single slot; the repeatable multi-slot editor arrives with the schedule
+        // routes, and until then every item created here has exactly one.
+        const schedule = data.schedules[0]
+        setIsRecurring(!!schedule?.recurrenceRule)
+        if (schedule?.recurrenceRule) {
+          setRecType(recTypeFromRule(schedule.recurrenceRule))
+          if (schedule.recurrenceRule.type === 'days_of_week') {
+            setRecDays(schedule.recurrenceRule.days)
           }
-          if (data.recurrenceRule.type === 'interval') {
-            setRecEvery(data.recurrenceRule.every)
+          if (schedule.recurrenceRule.type === 'interval') {
+            setRecEvery(schedule.recurrenceRule.every)
           }
-          // Matches itemAnchorDate()'s intentional UTC fallback (packages/shared/src/domain/recurrence.ts)
-          // — the documented pre-amendment default for items with no explicit anchorDay.
-          setAnchorDay(data.anchorDay ?? new Date(data.createdAt).toISOString().slice(0, 10))
+          // Matches scheduleAnchorDate()'s intentional UTC fallback (packages/shared/src/domain/recurrence.ts)
+          // — the documented pre-amendment default for slots with no explicit anchorDay.
+          setAnchorDay(schedule.anchorDay ?? new Date(data.createdAt).toISOString().slice(0, 10))
         }
         if (data.quotaTarget) {
           setQuotaEnabled(true)
           setQuotaCount(data.quotaTarget.count)
           setQuotaPeriod(data.quotaTarget.period)
         }
-        setTimingPrecision(data.timingPrecision)
-        setTimingBucketId(data.timingBucketId)
-        setTimingStartTime(data.timingStartTime ?? '')
-        setTimingEndTime(data.timingEndTime ?? '')
-        setPlannedDurationMin(data.plannedDurationMin?.toString() ?? '')
+        setTimingPrecision(schedule?.timingPrecision ?? 'none')
+        setTimingBucketId(schedule?.timingBucketId ?? null)
+        setTimingStartTime(schedule?.timingStartTime ?? '')
+        setTimingEndTime(schedule?.timingEndTime ?? '')
+        setPlannedDurationMin(schedule?.plannedDurationMin?.toString() ?? '')
         setParentId(data.parentId)
         setDispositionPolicy(data.dispositionPolicy)
         const prereqIds = data.prerequisites.map((p: ItemPrerequisite) => p.prerequisiteId)
@@ -159,9 +164,11 @@ export function ItemFormModal({ itemId, categories, buckets, onSaved, onClose }:
 
   // ── Derived lists ──────────────────────────────────────────────────────────
 
-  // Prerequisites: non-habit tasks only (§4.2); exclude self and archived
+  // Prerequisites: non-habit tasks only (§4.2); exclude self and archived.
+  // §5.5 — "is a habit" means any slot recurs; isRecurringItem is the shared rule the
+  // server enforces, so the picker can't offer something the API would reject.
   const prereqCandidates = allItems.filter(
-    (it) => !it.recurrenceRule && it.id !== itemId && !it.archivedAt
+    (it) => !isRecurringItem(it.schedules) && it.id !== itemId && !it.archivedAt
   )
 
   // Parents: any non-archived item except self

@@ -8,17 +8,23 @@
 //   - Blocked-past-due takes normal disposition (§8) — not auto-excused.
 
 import type { Pool } from 'pg'
-import type { Item, ItemPrerequisite, TrackerEvent } from '@tracker/shared'
+import type { Item, ItemSchedule, ItemPrerequisite, TrackerEvent } from '@tracker/shared'
 import * as repos from '../db/repos/index'
 
 // ── Guard helpers ─────────────────────────────────────────────────────────────
 
 /**
- * §4.2 — Habits (items with recurrenceRule) cannot participate in prerequisites.
- * Returns an error string if the item is a habit; null if it's a task.
+ * §4.2 / §5.5 — Habits cannot participate in prerequisites.
+ *
+ * "Is a habit" now means "any of its slots recurs" — an item with a one-time slot and
+ * a recurring one is still a habit for this rule, and the strict reading is the safe
+ * one here: it keeps a recurring thing out of a chain it could block forever.
  */
-export function validateNotHabit(item: Item, role: 'item' | 'prerequisite'): string | null {
-  if (item.recurrenceRule !== null) {
+export function validateNotHabit(
+  schedules: ItemSchedule[],
+  role: 'item' | 'prerequisite'
+): string | null {
+  if (schedules.some((s) => s.recurrenceRule !== null)) {
     return `A recurring habit cannot be used as a ${role} in a prerequisite relationship (§4.2)`
   }
   return null
@@ -81,10 +87,15 @@ export async function addPrerequisite(
   prerequisite: Item,
   userId: string
 ): Promise<AddPrerequisiteResult> {
-  const itemErr  = validateNotHabit(item, 'item')
+  const [itemSchedules, prereqSchedules] = await Promise.all([
+    repos.findSchedulesByItem(pool, item.id, userId),
+    repos.findSchedulesByItem(pool, prerequisite.id, userId),
+  ])
+
+  const itemErr  = validateNotHabit(itemSchedules, 'item')
   if (itemErr) return { ok: false, error: itemErr }
 
-  const prereqErr = validateNotHabit(prerequisite, 'prerequisite')
+  const prereqErr = validateNotHabit(prereqSchedules, 'prerequisite')
   if (prereqErr) return { ok: false, error: prereqErr }
 
   const cycle = await wouldFormCycle(pool, item.id, prerequisite.id, userId)

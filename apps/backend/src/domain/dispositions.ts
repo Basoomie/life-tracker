@@ -199,10 +199,20 @@ export async function carryForward(
   userId: string,
   opts: { reasonId?: string | null; comment?: string | null } = {}
 ): Promise<{ newOccurrence: Occurrence; rescheduleEvent: TrackerEvent }> {
-  // Materialize a new occurrence on the target day with the same item
-  const newOccurrence = await repos.insertOccurrence(pool, {
+  // Materialize a new occurrence on the target day for the same item AND the same
+  // slot (§5.5) — carrying the 13:00 block forward must land as the 13:00 block, not
+  // silently merge into the 8:30 one.
+  //
+  // If that slot already has an occurrence on the target day, the new row would
+  // violate the (item, day, schedule) uniqueness; reuse the existing one so the
+  // reschedule is still recorded rather than failing outright.
+  const existingOnTarget = await repos.findOccurrenceByItemDayAndSchedule(
+    pool, occurrence.itemId, targetDay, occurrence.scheduleId, userId
+  )
+  const newOccurrence = existingOnTarget ?? await repos.insertOccurrence(pool, {
     userId,
     itemId: occurrence.itemId,
+    scheduleId: occurrence.scheduleId,
     appliesToDay: targetDay,
     snapshot: occurrence.snapshot,
   })

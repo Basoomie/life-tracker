@@ -16,8 +16,15 @@
 //   runBackgroundJob               — entry point combining topup (a) + seam for disposition (b)
 
 import type { Pool } from 'pg'
-import type { Item, Occurrence, ItemSnapshot, ComputedOccurrence, RecurrenceRule } from '@tracker/shared'
-import { getDueDays, itemAnchorDate } from '@tracker/shared'
+import type {
+  Item,
+  ItemSchedule,
+  Occurrence,
+  ItemSnapshot,
+  ComputedOccurrence,
+  RecurrenceRule,
+} from '@tracker/shared'
+import { getDueDays, scheduleAnchorDate } from '@tracker/shared'
 import * as repos from '../db/repos/index'
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -35,21 +42,30 @@ function addDays(dateStr: string, n: number): string {
   )
 }
 
-// Build an ItemSnapshot from the current item state + its resolved prerequisite ids.
-function snapshotFromItem(item: Item, prerequisiteIds: string[]): ItemSnapshot {
+// Build an ItemSnapshot from the current item + the schedule this occurrence belongs
+// to + its resolved prerequisite ids.
+//
+// §5.5 — the snapshot's shape is unchanged by the schedules split; the recurrence and
+// timing fields simply now come from the slot rather than the item.  That is what
+// keeps every frozen historical row valid without a data migration.
+export function snapshotFromItem(
+  item: Item,
+  schedule: ItemSchedule,
+  prerequisiteIds: string[]
+): ItemSnapshot {
   return {
     name:              item.name,
     description:       item.description,
     categoryId:        item.categoryId,
     valence:           item.valence,
     priority:          item.priority,
-    recurrenceRule:    item.recurrenceRule,
+    recurrenceRule:    schedule.recurrenceRule,
     quotaTarget:       item.quotaTarget,
-    timingPrecision:   item.timingPrecision,
-    timingBucketId:    item.timingBucketId,
-    timingStartTime:   item.timingStartTime,
-    timingEndTime:     item.timingEndTime,
-    plannedDurationMin: item.plannedDurationMin,
+    timingPrecision:   schedule.timingPrecision,
+    timingBucketId:    schedule.timingBucketId,
+    timingStartTime:   schedule.timingStartTime,
+    timingEndTime:     schedule.timingEndTime,
+    plannedDurationMin: schedule.plannedDurationMin,
     dispositionPolicy: item.dispositionPolicy,
     parentId:          item.parentId,
     prerequisiteIds,
@@ -76,38 +92,85 @@ export function horizonDays(rule: RecurrenceRule): number {
 // ── Core materialization ──────────────────────────────────────────────────────
 
 /**
- * §5.4 — Materialize a single occurrence for (item, day) if no row exists yet.
- * No-op (safe to call multiple times) if already stored.
+ * §5.4 / §5.5 — Materialize a single occurrence for (item, schedule, day) if no row
+ * exists yet.  No-op (safe to call multiple times) if already stored.
  * Returns the occurrence, whether newly written or pre-existing.
  */
 export async function ensureOccurrenceMaterialized(
   pool: Pool,
   item: Item,
+  schedule: ItemSchedule,
   day: string,   // YYYY-MM-DD
   userId: string
 ): Promise<Occurrence> {
-  const existing = await repos.findOccurrenceByItemAndDay(pool, item.id, day, userId)
+  const existing = await repos.findOccurrenceByItemDayAndSchedule(
+    pool, item.id, day, schedule.id, userId
+  )
   if (existing) return existing
 
   const prereqs = await repos.findPrerequisitesByItem(pool, item.id, userId)
-  const snapshot = snapshotFromItem(item, prereqs.map((p) => p.prerequisiteId))
-  return repos.insertOccurrence(pool, { userId, itemId: item.id, appliesToDay: day, snapshot })
+  const snapshot = snapshotFromItem(item, schedule, prereqs.map((p) => p.prerequisiteId))
+  return repos.insertOccurrence(pool, {
+    userId,
+    itemId: item.id,
+    scheduleId: schedule.id,
+    appliesToDay: day,
+    snapshot,
+  })
 }
 
-// Materialize all due days for a single item within its proportional horizon.
+/**
+ * §5.4 / §5.5 — Materialize the near-term horizon for one slot.
+ * The horizon is proportional to *that slot's* rule, so an item that is daily in one
+ * slot and monthly in another keeps the right number of rows for each.
+ */
+export async function topUpMaterializationForSchedule(
+  pool: Pool,
+  item: Item,
+  schedule: ItemSchedule,
+  userId: string,
+  today: string
+): Promise<void> {
+  if (!schedule.recurrenceRule) return  // one-time slots materialize at creation (step 3)
+
+  const endDay  = addDays(today, horizonDays(schedule.recurrenceRule))
+  const dueDays = getDueDays(
+    schedule.recurrenceRule, today, endDay, scheduleAnchorDate(schedule, item)
+  )
+
+  for (const day of dueDays) {
+    await ensureOccurrenceMaterialized(pool, item, schedule, day, userId)
+  }
+}
+
+/**
+ * §5.4 — Materialize (item, day) for an item that has exactly one slot.
+ *
+ * The single-schedule convenience over ensureOccurrenceMaterialized, for callers that
+ * genuinely cannot be multi-slot: a one-time task's only occurrence, and test setup.
+ * Throws (via soleSchedule) rather than guessing if the item has several slots.
+ */
+export async function ensureOccurrenceForItemDay(
+  pool: Pool,
+  item: Item,
+  day: string,   // YYYY-MM-DD
+  userId: string
+): Promise<Occurrence> {
+  const { soleSchedule } = await import('./items')
+  const schedule = await soleSchedule(pool, item.id, userId)
+  return ensureOccurrenceMaterialized(pool, item, schedule, day, userId)
+}
+
+// Materialize all due days for every one of an item's active slots.
 export async function topUpMaterializationForItem(
   pool: Pool,
   item: Item,
   userId: string,
   today: string
 ): Promise<void> {
-  if (!item.recurrenceRule) return  // one-time tasks materialize at creation (step 3)
-
-  const endDay  = addDays(today, horizonDays(item.recurrenceRule))
-  const dueDays = getDueDays(item.recurrenceRule, today, endDay, itemAnchorDate(item))
-
-  for (const day of dueDays) {
-    await ensureOccurrenceMaterialized(pool, item, day, userId)
+  const schedules = await repos.findSchedulesByItem(pool, item.id, userId)
+  for (const schedule of schedules) {
+    await topUpMaterializationForSchedule(pool, item, schedule, userId, today)
   }
 }
 
@@ -129,10 +192,14 @@ export async function topUpMaterialization(
 }
 
 /**
- * §5.3 — After a template edit, regenerate the near-term horizon for the item.
+ * §5.3 / §5.5 — After a template or schedule edit, regenerate the near-term horizon.
  * Occurrences that are past (before `today`) or already have events attached are
  * frozen and left untouched.  Untouched future occurrences are deleted and
- * re-materialized using the updated item snapshot.
+ * re-materialized using the updated snapshot.
+ *
+ * `scheduleId` scopes the regeneration to one slot: editing the 13:00 block must not
+ * disturb the 8:30 one.  Omit it for an item-level edit (rename, re-category), which
+ * changes the snapshot of every slot.
  *
  * Returns the count of rows that were wiped and regenerated.
  */
@@ -140,23 +207,39 @@ export async function regenerateFutureOccurrences(
   pool: Pool,
   item: Item,
   userId: string,
-  today: string   // YYYY-MM-DD — 'past' = before today
+  today: string,          // YYYY-MM-DD — 'past' = before today
+  scheduleId?: string     // §5.5 — omit to cover all of the item's slots
 ): Promise<number> {
-  const deleted = await repos.deleteUntouchedFutureOccurrences(pool, item.id, userId, today)
-  await topUpMaterializationForItem(pool, item, userId, today)
+  const deleted = await repos.deleteUntouchedFutureOccurrences(
+    pool, item.id, userId, today, scheduleId
+  )
+
+  if (scheduleId === undefined) {
+    await topUpMaterializationForItem(pool, item, userId, today)
+    return deleted
+  }
+
+  // A removed (archived) slot has nothing to re-materialize — the delete above is the
+  // whole job.  findSchedulesByItem returns active slots only, so it simply won't
+  // appear here.
+  const schedules = await repos.findSchedulesByItem(pool, item.id, userId)
+  const target = schedules.find((s) => s.id === scheduleId)
+  if (target) {
+    await topUpMaterializationForSchedule(pool, item, target, userId, today)
+  }
   return deleted
 }
 
 /**
- * §5.4 — Merged read API.
+ * §5.4 / §5.5 — Merged read API.
  * Returns all occurrences for a user in [startDay, endDay] as a uniform
  * ComputedOccurrence array.  Materialized rows carry their id and materializedAt;
  * computed-on-the-fly occurrences have id=null and materializedAt=null.
  * Callers cannot tell (and need not care) which is which.
  *
- * For recurring items, due days are computed from the rule; stored rows are
- * matched by (itemId, day) and used when present.  One-time tasks appear only
- * when they have a stored occurrence in the range.
+ * Due days are computed per *schedule*; stored rows are matched by the full identity
+ * (itemId, day, scheduleId), so an item with two slots on one day yields two entries.
+ * One-time slots appear only when they have a stored occurrence in the range.
  */
 export async function getOccurrencesInRange(
   pool: Pool,
@@ -164,61 +247,82 @@ export async function getOccurrencesInRange(
   startDay: string,
   endDay: string
 ): Promise<ComputedOccurrence[]> {
-  const [items, stored] = await Promise.all([
+  const [items, allSchedules, stored] = await Promise.all([
     repos.findItemsByUser(pool, userId),
+    repos.findSchedulesByUser(pool, userId),
     repos.findOccurrencesByRange(pool, userId, startDay, endDay),
   ])
 
-  // Index stored occurrences by 'itemId:day' for O(1) lookup and deduplication.
+  // Index stored occurrences by full identity for O(1) lookup and deduplication.
   const storedIndex = new Map<string, Occurrence>()
   for (const occ of stored) {
-    storedIndex.set(`${occ.itemId}:${occ.appliesToDay}`, occ)
+    storedIndex.set(`${occ.itemId}:${occ.appliesToDay}:${occ.scheduleId}`, occ)
   }
+
+  const schedulesByItem = new Map<string, ItemSchedule[]>()
+  for (const s of allSchedules) {
+    const list = schedulesByItem.get(s.itemId)
+    if (list) list.push(s)
+    else schedulesByItem.set(s.itemId, [s])
+  }
+
+  // Slot order within a day, used by the final sort (below) so two blocks of the same
+  // item come back in the order the user arranged them rather than by id.
+  const scheduleSortOrder = new Map(allSchedules.map((s) => [s.id, s.sortOrder]))
 
   const results: ComputedOccurrence[] = []
 
   for (const item of items) {
-    if (!item.recurrenceRule) {
-      // One-time task: only shows up if a stored occurrence exists in the range.
-      // (Materialized at creation time via the API layer — step 3.)
-      continue
-    }
+    const schedules = schedulesByItem.get(item.id) ?? []
+    if (schedules.length === 0) continue
 
     const prereqs   = await repos.findPrerequisitesByItem(pool, item.id, userId)
     const prereqIds = prereqs.map((p) => p.prerequisiteId)
-    const anchor    = itemAnchorDate(item)
-    const dueDays   = getDueDays(item.recurrenceRule, startDay, endDay, anchor)
 
-    for (const day of dueDays) {
-      const key     = `${item.id}:${day}`
-      const stored2 = storedIndex.get(key)
+    for (const schedule of schedules) {
+      if (!schedule.recurrenceRule) {
+        // One-time slot: only shows up if a stored occurrence exists in the range.
+        // (Materialized at creation time via the API layer — step 3.)
+        continue
+      }
 
-      if (stored2) {
-        results.push({
-          id:             stored2.id,
-          userId:         stored2.userId,
-          itemId:         stored2.itemId,
-          appliesToDay:   stored2.appliesToDay,
-          snapshot:       stored2.snapshot,
-          materializedAt: stored2.materializedAt,
-        })
-        storedIndex.delete(key)  // mark consumed so we don't double-include it below
-      } else {
-        // Computed on the fly — no row written.
-        results.push({
-          id:             null,
-          userId,
-          itemId:         item.id,
-          appliesToDay:   day,
-          snapshot:       snapshotFromItem(item, prereqIds),
-          materializedAt: null,
-        })
+      const anchor  = scheduleAnchorDate(schedule, item)
+      const dueDays = getDueDays(schedule.recurrenceRule, startDay, endDay, anchor)
+
+      for (const day of dueDays) {
+        const key     = `${item.id}:${day}:${schedule.id}`
+        const stored2 = storedIndex.get(key)
+
+        if (stored2) {
+          results.push({
+            id:             stored2.id,
+            userId:         stored2.userId,
+            itemId:         stored2.itemId,
+            scheduleId:     stored2.scheduleId,
+            appliesToDay:   stored2.appliesToDay,
+            snapshot:       stored2.snapshot,
+            materializedAt: stored2.materializedAt,
+          })
+          storedIndex.delete(key)  // mark consumed so we don't double-include it below
+        } else {
+          // Computed on the fly — no row written.
+          results.push({
+            id:             null,
+            userId,
+            itemId:         item.id,
+            scheduleId:     schedule.id,
+            appliesToDay:   day,
+            snapshot:       snapshotFromItem(item, schedule, prereqIds),
+            materializedAt: null,
+          })
+        }
       }
     }
   }
 
-  // Remaining stored entries: one-time tasks and orphaned recurring occurrences
-  // (e.g. from items whose recurrence was changed).
+  // Remaining stored entries: one-time tasks, occurrences from archived (removed)
+  // slots, and orphaned recurring occurrences (e.g. from items whose recurrence was
+  // changed).  §5.5: a removed slot's past rows must stay visible.
   // Skip occurrences for archived items — they should not appear in active views.
   const activeItemIds = new Set(items.map((item) => item.id))
   for (const occ of storedIndex.values()) {
@@ -227,17 +331,22 @@ export async function getOccurrencesInRange(
       id:             occ.id,
       userId:         occ.userId,
       itemId:         occ.itemId,
+      scheduleId:     occ.scheduleId,
       appliesToDay:   occ.appliesToDay,
       snapshot:       occ.snapshot,
       materializedAt: occ.materializedAt,
     })
   }
 
-  results.sort((a, b) =>
-    a.appliesToDay !== b.appliesToDay
-      ? a.appliesToDay.localeCompare(b.appliesToDay)
-      : a.itemId.localeCompare(b.itemId)
-  )
+  results.sort((a, b) => {
+    if (a.appliesToDay !== b.appliesToDay) return a.appliesToDay.localeCompare(b.appliesToDay)
+    if (a.itemId !== b.itemId) return a.itemId.localeCompare(b.itemId)
+    // Same item, same day → two slots.  Order by the user's slot order; fall back to
+    // id so the sort stays total for rows whose schedule is archived (absent above).
+    const sa = scheduleSortOrder.get(a.scheduleId) ?? Number.MAX_SAFE_INTEGER
+    const sb = scheduleSortOrder.get(b.scheduleId) ?? Number.MAX_SAFE_INTEGER
+    return sa !== sb ? sa - sb : a.scheduleId.localeCompare(b.scheduleId)
+  })
 
   return results
 }

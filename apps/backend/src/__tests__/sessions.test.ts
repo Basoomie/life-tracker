@@ -7,8 +7,9 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { computeLoggedMinutes, computeSubtreeLoggedMinutes, computeSessionDurationMin } from '../domain/sessions'
 import { setupTestDb, teardownTestDb, getTestPool } from './helpers/test-db'
 import * as repos from '../db/repos/index'
-import { ensureOccurrenceMaterialized } from '../domain/materialization'
+import { ensureOccurrenceForItemDay } from '../domain/materialization'
 import type { TrackerEvent } from '@tracker/shared'
+import { createItem } from '../domain/items'
 
 // Minimal event fixture — only the fields computeLoggedMinutes reads matter.
 function ev(eventType: TrackerEvent['eventType'], payload: Record<string, unknown>): TrackerEvent {
@@ -170,10 +171,10 @@ describe('§9.1 — computeSubtreeLoggedMinutes rolls up a whole containment sub
 
   it('an item with no children and no sessions returns zero', async () => {
     const u = await makeUser('sessions-domain-empty@test.com')
-    const item = await repos.insertItem(getTestPool(), {
+    const item = await createItem(getTestPool(), {
       userId: u.id, name: 'Solo', recurrenceRule: { type: 'daily' }, creationSource: 'planned',
     })
-    await ensureOccurrenceMaterialized(getTestPool(), item, TODAY, u.id)
+    await ensureOccurrenceForItemDay(getTestPool(), item, TODAY, u.id)
 
     const total = await computeSubtreeLoggedMinutes(getTestPool(), item.id, TODAY, u.id)
     expect(total).toBe(0)
@@ -181,18 +182,18 @@ describe('§9.1 — computeSubtreeLoggedMinutes rolls up a whole containment sub
 
   it('a grandchild\'s logged time rolls all the way up to the grandparent', async () => {
     const u = await makeUser('sessions-domain-grandchild@test.com')
-    const grandparent = await repos.insertItem(getTestPool(), {
+    const grandparent = await createItem(getTestPool(), {
       userId: u.id, name: 'Grandparent', recurrenceRule: { type: 'daily' }, creationSource: 'planned',
     })
-    const parent = await repos.insertItem(getTestPool(), {
+    const parent = await createItem(getTestPool(), {
       userId: u.id, name: 'Parent', recurrenceRule: { type: 'daily' }, parentId: grandparent.id, creationSource: 'planned',
     })
-    const child = await repos.insertItem(getTestPool(), {
+    const child = await createItem(getTestPool(), {
       userId: u.id, name: 'Child', recurrenceRule: { type: 'daily' }, parentId: parent.id, creationSource: 'planned',
     })
-    await ensureOccurrenceMaterialized(getTestPool(), grandparent, TODAY, u.id)
-    await ensureOccurrenceMaterialized(getTestPool(), parent, TODAY, u.id)
-    const childOcc = await ensureOccurrenceMaterialized(getTestPool(), child, TODAY, u.id)
+    await ensureOccurrenceForItemDay(getTestPool(), grandparent, TODAY, u.id)
+    await ensureOccurrenceForItemDay(getTestPool(), parent, TODAY, u.id)
+    const childOcc = await ensureOccurrenceForItemDay(getTestPool(), child, TODAY, u.id)
 
     // A single 20-minute manual session logged only on the grandchild-level item.
     await repos.insertEvent(getTestPool(), {
@@ -229,10 +230,10 @@ describe('§9.1 — findSessionsByOccurrence lists individual sessions, excludin
 
   it('lists multiple manual sessions logged against the same occurrence, and removing one leaves the others intact', async () => {
     const u = await makeUser('sessions-list-multi@test.com')
-    const item = await repos.insertItem(getTestPool(), {
+    const item = await createItem(getTestPool(), {
       userId: u.id, name: 'Piano', recurrenceRule: { type: 'daily' }, creationSource: 'planned',
     })
-    const occ = await ensureOccurrenceMaterialized(getTestPool(), item, TODAY, u.id)
+    const occ = await ensureOccurrenceForItemDay(getTestPool(), item, TODAY, u.id)
 
     const windows = [
       { sessionId: 'w1', startedAt: '2025-01-15T10:00:00Z', endedAt: '2025-01-15T10:30:00Z', durationMin: 30 },
@@ -266,10 +267,10 @@ describe('§9.1 — findSessionsByOccurrence lists individual sessions, excludin
 
   it('omits an in-progress (started but not stopped) live session', async () => {
     const u = await makeUser('sessions-list-inprogress@test.com')
-    const item = await repos.insertItem(getTestPool(), {
+    const item = await createItem(getTestPool(), {
       userId: u.id, name: 'Reading', recurrenceRule: { type: 'daily' }, creationSource: 'planned',
     })
-    const occ = await ensureOccurrenceMaterialized(getTestPool(), item, TODAY, u.id)
+    const occ = await ensureOccurrenceForItemDay(getTestPool(), item, TODAY, u.id)
 
     await repos.insertEvent(getTestPool(), {
       userId: u.id, eventType: 'session_started', occurrenceId: occ.id, itemId: item.id,
@@ -282,10 +283,10 @@ describe('§9.1 — findSessionsByOccurrence lists individual sessions, excludin
 
   it('§9.1 editing a live (started/stopped) session reflects the edited times and duration, not the original stop', async () => {
     const u = await makeUser('sessions-list-edit-live@test.com')
-    const item = await repos.insertItem(getTestPool(), {
+    const item = await createItem(getTestPool(), {
       userId: u.id, name: 'Day Trading', recurrenceRule: { type: 'daily' }, creationSource: 'planned',
     })
-    const occ = await ensureOccurrenceMaterialized(getTestPool(), item, TODAY, u.id)
+    const occ = await ensureOccurrenceForItemDay(getTestPool(), item, TODAY, u.id)
 
     await repos.insertEvent(getTestPool(), {
       userId: u.id, eventType: 'session_started', occurrenceId: occ.id, itemId: item.id,

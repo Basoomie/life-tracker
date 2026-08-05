@@ -8,6 +8,8 @@ import type {
   Reason,
   Item,
   ItemPrerequisite,
+  ItemWithSchedules,
+  ItemDetail,
   Occurrence,
   DayStartEntry,
   User,
@@ -142,9 +144,8 @@ export const api = {
   },
 
   items: {
-    list: () => apiFetch<Item[]>('/items'),
-    get: (id: string) =>
-      apiFetch<Item & { children: Item[]; prerequisites: ItemPrerequisite[] }>(`/items/${id}`),
+    list: () => apiFetch<ItemWithSchedules[]>('/items'),
+    get: (id: string) => apiFetch<ItemDetail>(`/items/${id}`),
     create: (body: CreateItemBody) =>
       apiFetch<Item>('/items', { method: 'POST', body: JSON.stringify(body) }),
     update: (id: string, body: UpdateItemBody) =>

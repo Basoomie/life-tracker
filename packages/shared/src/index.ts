@@ -1,9 +1,13 @@
 export type { HealthResponse } from './health'
 
+export { isRecurringItem } from './types/api'
+
 export type {
   OccurrenceCompletionState,
   OccurrenceDisposition,
   OccurrenceWithState,
+  ItemWithSchedules,
+  ItemDetail,
   CreateItemBody,
   UpdateItemBody,
   SetPriorityBody,
@@ -58,6 +62,7 @@ export type {
   Bucket,
   DayStartEntry,
   Item,
+  ItemSchedule,
   ItemPrerequisite,
   Occurrence,
   ComputedOccurrence,
@@ -72,7 +77,9 @@ export {
   bucketTimestamp,
   getEffectiveDayStart,
   getDueDays,
-  itemAnchorDate,
+  scheduleAnchorDate,
+  getItemDueSlots,
+  getItemDueDays,
   deriveLeafCompletion,
   computeDerivedPercent,
   computeNodePercent,
@@ -80,6 +87,7 @@ export {
   buildParentCompletionState,
 } from './domain/index'
 export type { LeafCompletionState, ParentCompletionState, CompletionNode } from './domain/index'
+export type { DueSlot } from './domain/index'
 
 export type {
   DateWindow,

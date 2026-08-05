@@ -119,19 +119,24 @@ export async function computeSubtreeLoggedMinutes(
   day: string,
   userId: string
 ): Promise<number> {
-  const [occ, children] = await Promise.all([
-    repos.findOccurrenceByItemAndDay(pool, itemId, day, userId),
+  const [occs, children] = await Promise.all([
+    // §5.5 — an item can be due in several slots on one day; its own logged time for
+    // the day is the sum across them, the same way two sessions on one occurrence add up.
+    repos.findOccurrencesByItemAndDay(pool, itemId, day, userId),
     repos.findChildItems(pool, itemId, userId),
   ])
 
-  const own = occ
-    ? computeLoggedMinutes(await repos.findEventsByOccurrence(pool, occ.id, userId))
-    : 0
+  const ownPerSlot = await Promise.all(
+    occs.map(async (occ) =>
+      computeLoggedMinutes(await repos.findEventsByOccurrence(pool, occ.id, userId))
+    )
+  )
+  const own = ownPerSlot.reduce((sum: number, m: number) => sum + m, 0)
 
   if (children.length === 0) return own
 
   const childTotals = await Promise.all(
     children.map((c) => computeSubtreeLoggedMinutes(pool, c.id, day, userId))
   )
-  return own + childTotals.reduce((sum, m) => sum + m, 0)
+  return own + childTotals.reduce((sum: number, m: number) => sum + m, 0)
 }

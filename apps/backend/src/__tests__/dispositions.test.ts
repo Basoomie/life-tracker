@@ -15,8 +15,9 @@ import {
 } from '../domain/dispositions'
 import { addPrerequisite } from '../domain/prerequisites'
 import { completeLeaf, completeChild, declareParentPercent } from '../domain/completion'
-import { ensureOccurrenceMaterialized } from '../domain/materialization'
+import { ensureOccurrenceForItemDay } from '../domain/materialization'
 import type { Item, Occurrence } from '@tracker/shared'
+import { createItem } from '../domain/items'
 
 beforeAll(async () => { await setupTestDb() })
 afterAll(async () => { await teardownTestDb() })
@@ -34,7 +35,7 @@ async function makeHabit(
   name: string,
   disposition: 'skip' | 'excuse' | 'auto_close' | 'require_manual' = 'skip'
 ) {
-  return repos.insertItem(getTestPool(), {
+  return createItem(getTestPool(), {
     userId,
     name,
     recurrenceRule: { type: 'daily' },
@@ -48,7 +49,7 @@ async function makeTask(
   name: string,
   disposition: 'skip' | 'excuse' | 'auto_close' | 'require_manual' = 'skip'
 ) {
-  return repos.insertItem(getTestPool(), {
+  return createItem(getTestPool(), {
     userId,
     name,
     recurrenceRule: null,
@@ -58,7 +59,7 @@ async function makeTask(
 }
 
 async function materialize(item: Item, day: string, userId: string): Promise<Occurrence> {
-  return ensureOccurrenceMaterialized(getTestPool(), item, day, userId)
+  return ensureOccurrenceForItemDay(getTestPool(), item, day, userId)
 }
 
 // ── §8.1 Per-policy outcomes ──────────────────────────────────────────────────
@@ -110,7 +111,7 @@ describe('§8.1 excuse policy: untouched occurrence at day-end fires an excuse e
 describe('§8.1 auto_close policy: fires auto_closed event at derived child % at day-end', () => {
   it('§8.1 auto_close: fires auto_closed event with derived child % when no children completed', async () => {
     const u = await makeUser('disp-auto-zero@test.com')
-    const parent = await repos.insertItem(getTestPool(), {
+    const parent = await createItem(getTestPool(), {
       userId: u.id,
       name: 'Auto close parent zero',
       recurrenceRule: { type: 'daily' },
@@ -118,7 +119,7 @@ describe('§8.1 auto_close policy: fires auto_closed event at derived child % at
       creationSource: 'planned',
     })
     // Child due on DAY (Wednesday = day 3, i.e. index 3)
-    const child = await repos.insertItem(getTestPool(), {
+    const child = await createItem(getTestPool(), {
       userId: u.id,
       name: 'Auto close child',
       recurrenceRule: { type: 'days_of_week', days: [3] },  // Wednesdays
@@ -144,14 +145,14 @@ describe('§8.1 auto_close policy: fires auto_closed event at derived child % at
     // The parent is still "untouched" for disposition purposes and auto_close fires at derived %.
     const MONDAY = '2025-01-13'
     const u = await makeUser('disp-auto-partial@test.com')
-    const parent = await repos.insertItem(getTestPool(), {
+    const parent = await createItem(getTestPool(), {
       userId: u.id,
       name: 'Auto close parent partial',
       recurrenceRule: { type: 'daily' },
       dispositionPolicy: 'auto_close',
       creationSource: 'planned',
     })
-    const child1 = await repos.insertItem(getTestPool(), {
+    const child1 = await createItem(getTestPool(), {
       userId: u.id,
       name: 'Auto child1',
       recurrenceRule: { type: 'days_of_week', days: [1] },  // Mondays
@@ -159,7 +160,7 @@ describe('§8.1 auto_close policy: fires auto_closed event at derived child % at
       parentId: parent.id,
       creationSource: 'planned',
     })
-    const child2 = await repos.insertItem(getTestPool(), {
+    const child2 = await createItem(getTestPool(), {
       userId: u.id,
       name: 'Auto child2',
       recurrenceRule: { type: 'days_of_week', days: [1] },  // Mondays

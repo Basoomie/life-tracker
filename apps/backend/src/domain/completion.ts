@@ -12,8 +12,7 @@
 import type { Pool } from 'pg'
 import type { Item, Occurrence, TrackerEvent } from '@tracker/shared'
 import {
-  getDueDays,
-  itemAnchorDate,
+  getItemDueSlots,
   deriveLeafCompletion,
   computeDerivedPercent,
   computeNodePercent,
@@ -184,12 +183,38 @@ export async function getLeafCompletionState(
 }
 
 /**
- * §6.1 — Is `child` due on `day`? Recurring children answer via 2a's getDueDays;
- * a one-time child is due only on the day it has a stored occurrence.
+ * §6.1 / §5.5 — Which of `child`'s slots count on `day`, as the occurrence backing
+ * each (null where the occurrence hasn't been materialized yet).
+ *
+ * Recurring slots answer via getItemDueSlots; a one-time slot — and a row left behind
+ * by a removed schedule — is due exactly on the day it has a stored occurrence.
+ * An empty result means "not due today", which is what excludes the child from its
+ * parent's denominator (§6.1, the Tuesday/MWF case).
  */
-function isChildDue(child: Item, day: string, childOcc: Occurrence | null): boolean {
-  if (!child.recurrenceRule) return childOcc !== null
-  return getDueDays(child.recurrenceRule, day, day, itemAnchorDate(child)).length > 0
+async function dueSlotOccurrences(
+  pool: Pool,
+  child: Item,
+  day: string,
+  userId: string
+): Promise<(Occurrence | null)[]> {
+  const [stored, schedules] = await Promise.all([
+    repos.findOccurrencesByItemAndDay(pool, child.id, day, userId),
+    repos.findSchedulesByItem(pool, child.id, userId),
+  ])
+
+  const occByScheduleId = new Map(stored.map((o) => [o.scheduleId, o]))
+  const slots: (Occurrence | null)[] = []
+  const covered = new Set<string>()
+
+  for (const slot of getItemDueSlots(child, schedules, day, day)) {
+    covered.add(slot.scheduleId)
+    slots.push(occByScheduleId.get(slot.scheduleId) ?? null)
+  }
+  for (const occ of stored) {
+    if (!covered.has(occ.scheduleId)) slots.push(occ)
+  }
+
+  return slots
 }
 
 // The same item's children are needed twice while walking the tree (once to know
@@ -234,28 +259,51 @@ async function buildDueChildNodes(
   const nodes: CompletionNode[] = []
 
   for (const child of children) {
-    const childOcc = await repos.findOccurrenceByItemAndDay(pool, child.id, day, userId)
-    if (!isChildDue(child, day, childOcc)) continue
-
-    // An unmaterialized occurrence has no events: untouched, so 0% and no
-    // disposition — but a sub-routine can still score above 0 off its own
-    // children, which is why the recursion below is not gated on childOcc.
-    const childEvents = childOcc
-      ? await repos.findEventsByOccurrence(pool, childOcc.id, userId)
-      : []
-
-    // §8.1 — an excused child is out of the denominator entirely, not a zero.
-    if (deriveDisposition(childEvents).type === 'excused') continue
+    const slotOccs = await dueSlotOccurrences(pool, child, day, userId)
+    if (slotOccs.length === 0) continue   // not due today
 
     const grandChildren = await childrenOf(pool, child.id, userId, cache)
-    nodes.push({
-      isParent: grandChildren.length > 0,
-      leafPercent: deriveLeafCompletion(childEvents).completionPercent,
-      declaredPercent: findDeclaredPercent(childEvents),
-      dueChildren: grandChildren.length > 0
-        ? await buildDueChildNodes(pool, child.id, userId, day, seen, cache)
-        : [],
-    })
+
+    const slotNodes: CompletionNode[] = []
+    for (const childOcc of slotOccs) {
+      // An unmaterialized occurrence has no events: untouched, so 0% and no
+      // disposition — but a sub-routine can still score above 0 off its own
+      // children, which is why the recursion below is not gated on childOcc.
+      const childEvents = childOcc
+        ? await repos.findEventsByOccurrence(pool, childOcc.id, userId)
+        : []
+
+      // §8.1 — an excused slot is out of the denominator entirely, not a zero.
+      if (deriveDisposition(childEvents).type === 'excused') continue
+
+      slotNodes.push({
+        isParent: grandChildren.length > 0,
+        leafPercent: deriveLeafCompletion(childEvents).completionPercent,
+        declaredPercent: findDeclaredPercent(childEvents),
+        dueChildren: grandChildren.length > 0
+          ? await buildDueChildNodes(pool, child.id, userId, day, seen, cache)
+          : [],
+      })
+    }
+
+    // Every slot excused → the child leaves the parent's denominator entirely,
+    // exactly as a single excused child always has (§8.1).
+    if (slotNodes.length === 0) continue
+
+    // §5.5 — a child due in several slots today contributes the MEAN of them, so it
+    // weighs the same as any other child instead of counting once per slot.
+    // (An item with children carries at most one slot, so the multi-slot branch is
+    // only ever reached for leaf children — hence isParent: false.)
+    nodes.push(
+      slotNodes.length === 1
+        ? slotNodes[0]
+        : {
+            isParent: false,
+            leafPercent: computeDerivedPercent(slotNodes.map(computeNodePercent)),
+            declaredPercent: null,
+            dueChildren: [],
+          }
+    )
   }
 
   return nodes

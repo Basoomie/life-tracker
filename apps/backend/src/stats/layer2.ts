@@ -25,6 +25,7 @@ import {
   buildParentDayObservations,
   buildSessionObservations,
   buildBackfillObservations,
+  effectiveRecurrenceRule,
 } from './domain/observations'
 import { computeDataQuality } from './calculators/data-quality'
 import { computeContextStability } from './calculators/context-stability'
@@ -129,7 +130,11 @@ export async function getDayOfWeek(
     undefined, children.length > 0
   )
 
-  return computeDayOfWeek(itemId, userId, window, item.recurrenceRule, dayObs, dataQuality)
+  // §5.5 — scope classification reads the item's combined shape across its slots.
+  const schedules = await repos.findSchedulesByItem(pool, item.id, userId)
+  return computeDayOfWeek(
+    itemId, userId, window, effectiveRecurrenceRule(schedules), dayObs, dataQuality
+  )
 }
 
 // ── §5.3 item 3 (k=2) — Two-condition (weekday vs. weekend) ──────────────────

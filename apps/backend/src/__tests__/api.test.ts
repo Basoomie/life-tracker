@@ -8,9 +8,11 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { setupTestDb, teardownTestDb, getTestPool } from './helpers/test-db'
 import * as repos from '../db/repos/index'
 import { buildApp } from '../app'
-import { ensureOccurrenceMaterialized } from '../domain/materialization'
+import { ensureOccurrenceForItemDay } from '../domain/materialization'
 import { todayLocal } from '../domain/day'
 import type { FastifyInstance } from 'fastify'
+import { createItem } from '../domain/items'
+import { occurrenceOn, soleScheduleOf } from './helpers/schedules'
 
 beforeAll(async () => { await setupTestDb() })
 afterAll(async () => { await teardownTestDb() })
@@ -38,13 +40,13 @@ describe('§6.1 — completing a child via API raises the parent derived percent
     const app = await buildTestApp(u.id)
 
     // Create parent + child items
-    const parent = await repos.insertItem(getTestPool(), {
+    const parent = await createItem(getTestPool(), {
       userId: u.id,
       name: 'API Parent',
       recurrenceRule: { type: 'daily' },
       creationSource: 'planned',
     })
-    const child = await repos.insertItem(getTestPool(), {
+    const child = await createItem(getTestPool(), {
       userId: u.id,
       name: 'API Child',
       recurrenceRule: { type: 'days_of_week', days: [1, 3, 5] }, // Mon/Wed/Fri
@@ -53,8 +55,8 @@ describe('§6.1 — completing a child via API raises the parent derived percent
     })
 
     // Materialize parent + child for TODAY (Wednesday — child IS due)
-    const parentOcc = await ensureOccurrenceMaterialized(getTestPool(), parent, TODAY, u.id)
-    const childOcc  = await ensureOccurrenceMaterialized(getTestPool(), child, TODAY, u.id)
+    const parentOcc = await ensureOccurrenceForItemDay(getTestPool(), parent, TODAY, u.id)
+    const childOcc  = await ensureOccurrenceForItemDay(getTestPool(), child, TODAY, u.id)
 
     // Complete the child via the API
     const completeRes = await app.inject({
@@ -83,14 +85,14 @@ describe('§6.1 — Tuesday-not-due child yields parent 100 derived percent via 
     const u = await makeUser('api-tuesday-vacuous@test.com')
     const app = await buildTestApp(u.id)
 
-    const parent = await repos.insertItem(getTestPool(), {
+    const parent = await createItem(getTestPool(), {
       userId: u.id,
       name: 'API Daily Parent',
       recurrenceRule: { type: 'daily' },
       creationSource: 'planned',
     })
     // MWF child — NOT due on Tuesday
-    await repos.insertItem(getTestPool(), {
+    await createItem(getTestPool(), {
       userId: u.id,
       name: 'API MWF Child',
       recurrenceRule: { type: 'days_of_week', days: [1, 3, 5] },
@@ -99,7 +101,7 @@ describe('§6.1 — Tuesday-not-due child yields parent 100 derived percent via 
     })
 
     // Materialize parent for TUESDAY only (child not due → vacuous 100%)
-    const parentOcc = await ensureOccurrenceMaterialized(getTestPool(), parent, TUESDAY, u.id)
+    const parentOcc = await ensureOccurrenceForItemDay(getTestPool(), parent, TUESDAY, u.id)
 
     const res = await app.inject({
       method: 'GET',
@@ -121,20 +123,20 @@ describe('§6.2 — POST /occurrences/:id/complete on a parent occurrence declar
     const u = await makeUser('api-parent-complete@test.com')
     const app = await buildTestApp(u.id)
 
-    const parent = await repos.insertItem(getTestPool(), {
+    const parent = await createItem(getTestPool(), {
       userId: u.id,
       name: 'API Parent Checkbox',
       recurrenceRule: { type: 'daily' },
       creationSource: 'planned',
     })
-    await repos.insertItem(getTestPool(), {
+    await createItem(getTestPool(), {
       userId: u.id,
       name: 'API Parent Checkbox Child',
       recurrenceRule: { type: 'daily' },
       parentId: parent.id,
       creationSource: 'planned',
     })
-    const parentOcc = await ensureOccurrenceMaterialized(getTestPool(), parent, TODAY, u.id)
+    const parentOcc = await ensureOccurrenceForItemDay(getTestPool(), parent, TODAY, u.id)
 
     const res = await app.inject({
       method: 'POST',
@@ -158,21 +160,21 @@ describe('§6.2 — POST /occurrences/:id/uncomplete overrides a vacuous derived
     const u = await makeUser('api-parent-uncomplete@test.com')
     const app = await buildTestApp(u.id)
 
-    const parent = await repos.insertItem(getTestPool(), {
+    const parent = await createItem(getTestPool(), {
       userId: u.id,
       name: 'API Vacuous Parent',
       recurrenceRule: { type: 'daily' },
       creationSource: 'planned',
     })
     // MWF child — NOT due on Tuesday, so derivedPercent is vacuously 100
-    await repos.insertItem(getTestPool(), {
+    await createItem(getTestPool(), {
       userId: u.id,
       name: 'API Vacuous MWF Child',
       recurrenceRule: { type: 'days_of_week', days: [1, 3, 5] },
       parentId: parent.id,
       creationSource: 'planned',
     })
-    const parentOcc = await ensureOccurrenceMaterialized(getTestPool(), parent, TUESDAY, u.id)
+    const parentOcc = await ensureOccurrenceForItemDay(getTestPool(), parent, TUESDAY, u.id)
 
     // Confirm the vacuous-100 starting state, matching the real bug report
     const before = await app.inject({ method: 'GET', url: `/api/occurrences/${parentOcc.id}` })
@@ -208,13 +210,13 @@ describe('§13.4 — user A cannot read user B occurrences', () => {
     const appB = await buildTestApp(userB.id)
 
     // Create an item + occurrence for userA
-    const itemA = await repos.insertItem(getTestPool(), {
+    const itemA = await createItem(getTestPool(), {
       userId: userA.id,
       name: 'User A Task',
       recurrenceRule: null,
       creationSource: 'planned',
     })
-    await ensureOccurrenceMaterialized(getTestPool(), itemA, TODAY, userA.id)
+    await ensureOccurrenceForItemDay(getTestPool(), itemA, TODAY, userA.id)
 
     // userB queries occurrences — should see nothing for userA's data
     const resB = await appB.inject({
@@ -238,13 +240,13 @@ describe('§10.1 — state changes append events; no in-place mutation', () => {
     const u = await makeUser('api-immutable@test.com')
     const app = await buildTestApp(u.id)
 
-    const item = await repos.insertItem(getTestPool(), {
+    const item = await createItem(getTestPool(), {
       userId: u.id,
       name: 'Immutability Task',
       recurrenceRule: null,
       creationSource: 'planned',
     })
-    const occ = await ensureOccurrenceMaterialized(getTestPool(), item, TODAY, u.id)
+    const occ = await ensureOccurrenceForItemDay(getTestPool(), item, TODAY, u.id)
 
     // Snapshot the occurrence row before any API calls
     const before = await repos.findOccurrenceById(getTestPool(), occ.id, u.id)
@@ -279,10 +281,10 @@ describe('§4.2 — prerequisite cycle rejected at the API with a clear error', 
     const u = await makeUser('api-cycle@test.com')
     const app = await buildTestApp(u.id)
 
-    const itemA = await repos.insertItem(getTestPool(), {
+    const itemA = await createItem(getTestPool(), {
       userId: u.id, name: 'Cycle A', recurrenceRule: null, creationSource: 'planned',
     })
-    const itemB = await repos.insertItem(getTestPool(), {
+    const itemB = await createItem(getTestPool(), {
       userId: u.id, name: 'Cycle B', recurrenceRule: null, creationSource: 'planned',
     })
 
@@ -315,13 +317,13 @@ describe('§4.2 — habit-as-prerequisite rejected at the API', () => {
     const u = await makeUser('api-habit-prereq@test.com')
     const app = await buildTestApp(u.id)
 
-    const habit = await repos.insertItem(getTestPool(), {
+    const habit = await createItem(getTestPool(), {
       userId: u.id,
       name: 'A Habit',
       recurrenceRule: { type: 'daily' },
       creationSource: 'planned',
     })
-    const task = await repos.insertItem(getTestPool(), {
+    const task = await createItem(getTestPool(), {
       userId: u.id,
       name: 'A Task',
       recurrenceRule: null,
@@ -348,7 +350,7 @@ describe('§5.3 — template edit via API is forward-only: past occurrences rema
     const u = await makeUser('api-forward-only@test.com')
     const app = await buildTestApp(u.id)
 
-    const item = await repos.insertItem(getTestPool(), {
+    const item = await createItem(getTestPool(), {
       userId: u.id,
       name: 'Original Name',
       recurrenceRule: { type: 'daily' },
@@ -356,7 +358,7 @@ describe('§5.3 — template edit via API is forward-only: past occurrences rema
     })
 
     // Materialize an occurrence for TUESDAY (in the "past" relative to TODAY)
-    const pastOcc = await ensureOccurrenceMaterialized(getTestPool(), item, TUESDAY, u.id)
+    const pastOcc = await ensureOccurrenceForItemDay(getTestPool(), item, TUESDAY, u.id)
     const oldSnapshotName = pastOcc.snapshot.name
     expect(oldSnapshotName).toBe('Original Name')
 
@@ -399,7 +401,9 @@ describe('§5.1 — POST /items accepts an explicit anchorDay for recurring item
       },
     })
     expect(createRes.statusCode).toBe(201)
-    expect(JSON.parse(createRes.body).anchorDay).toBe('2024-06-03')
+    // §5.5 — the anchor lives on the item's schedule now, not the item row.
+    const schedule = await soleScheduleOf(getTestPool(), JSON.parse(createRes.body).id, u.id)
+    expect(schedule.anchorDay).toBe('2024-06-03')
 
     await app.close()
   })
@@ -418,7 +422,8 @@ describe('§5.1 — POST /items accepts an explicit anchorDay for recurring item
       },
     })
     expect(createRes.statusCode).toBe(201)
-    expect(JSON.parse(createRes.body).anchorDay).toBeNull()
+    const schedule = await soleScheduleOf(getTestPool(), JSON.parse(createRes.body).id, u.id)
+    expect(schedule.anchorDay).toBeNull()
 
     await app.close()
   })
@@ -445,7 +450,7 @@ describe('§5.4 — POST /items tops up a recurring item\'s horizon on creation,
 
     // Without an edit or the nightly background job, today's occurrence must
     // already be a stored row (id !== null) — not left as computed-on-the-fly.
-    const stored = await repos.findOccurrenceByItemAndDay(
+    const stored = await occurrenceOn(
       getTestPool(),
       JSON.parse(createRes.body).id,
       today,
@@ -472,7 +477,7 @@ describe('§5.4 — POST /items tops up a recurring item\'s horizon on creation,
     })
     expect(createRes.statusCode).toBe(201)
 
-    const stored = await repos.findOccurrenceByItemAndDay(
+    const stored = await occurrenceOn(
       getTestPool(),
       JSON.parse(createRes.body).id,
       today,
@@ -566,13 +571,13 @@ describe('§8.2 — carry-forward via API leaves the original occurrence intact'
     const u = await makeUser('api-carry-forward@test.com')
     const app = await buildTestApp(u.id)
 
-    const item = await repos.insertItem(getTestPool(), {
+    const item = await createItem(getTestPool(), {
       userId: u.id,
       name: 'Carry Forward Task',
       recurrenceRule: null,
       creationSource: 'planned',
     })
-    const occ = await ensureOccurrenceMaterialized(getTestPool(), item, TODAY, u.id)
+    const occ = await ensureOccurrenceForItemDay(getTestPool(), item, TODAY, u.id)
 
     const res = await app.inject({
       method: 'POST',
@@ -609,13 +614,13 @@ describe('clear-disposition via API — undo a skip/excuse/carry-forward', () =>
     const u = await makeUser('api-clear-disposition@test.com')
     const app = await buildTestApp(u.id)
 
-    const item = await repos.insertItem(getTestPool(), {
+    const item = await createItem(getTestPool(), {
       userId: u.id,
       name: 'Clear Disposition Task',
       recurrenceRule: null,
       creationSource: 'planned',
     })
-    const occ = await ensureOccurrenceMaterialized(getTestPool(), item, TODAY, u.id)
+    const occ = await ensureOccurrenceForItemDay(getTestPool(), item, TODAY, u.id)
 
     const skipRes = await app.inject({
       method: 'POST',
@@ -643,13 +648,13 @@ describe('clear-disposition via API — undo a skip/excuse/carry-forward', () =>
     const u = await makeUser('api-clear-disposition-reject@test.com')
     const app = await buildTestApp(u.id)
 
-    const item = await repos.insertItem(getTestPool(), {
+    const item = await createItem(getTestPool(), {
       userId: u.id,
       name: 'Clear Disposition Pending Task',
       recurrenceRule: null,
       creationSource: 'planned',
     })
-    const occ = await ensureOccurrenceMaterialized(getTestPool(), item, TODAY, u.id)
+    const occ = await ensureOccurrenceForItemDay(getTestPool(), item, TODAY, u.id)
 
     const res = await app.inject({
       method: 'POST',
@@ -672,13 +677,13 @@ describe('§8 amendment — user-initiated skip/excuse via API are not restricte
     const u = await makeUser('api-skip-past-day@test.com')
     const app = await buildTestApp(u.id)
 
-    const item = await repos.insertItem(getTestPool(), {
+    const item = await createItem(getTestPool(), {
       userId: u.id,
       name: 'Past Skip Task',
       recurrenceRule: null,
       creationSource: 'planned',
     })
-    const pastOcc = await ensureOccurrenceMaterialized(getTestPool(), item, TUESDAY, u.id)
+    const pastOcc = await ensureOccurrenceForItemDay(getTestPool(), item, TUESDAY, u.id)
 
     const res = await app.inject({
       method: 'POST',
@@ -694,13 +699,13 @@ describe('§8 amendment — user-initiated skip/excuse via API are not restricte
     const u = await makeUser('api-excuse-past-day@test.com')
     const app = await buildTestApp(u.id)
 
-    const item = await repos.insertItem(getTestPool(), {
+    const item = await createItem(getTestPool(), {
       userId: u.id,
       name: 'Past Excuse Task',
       recurrenceRule: null,
       creationSource: 'planned',
     })
-    const pastOcc = await ensureOccurrenceMaterialized(getTestPool(), item, TUESDAY, u.id)
+    const pastOcc = await ensureOccurrenceForItemDay(getTestPool(), item, TUESDAY, u.id)
 
     const res = await app.inject({
       method: 'POST',
@@ -720,13 +725,13 @@ describe('§9.1 — live timer start pause resume stop produces correct session 
     const u = await makeUser('api-live-session@test.com')
     const app = await buildTestApp(u.id)
 
-    const item = await repos.insertItem(getTestPool(), {
+    const item = await createItem(getTestPool(), {
       userId: u.id,
       name: 'Timer Task',
       recurrenceRule: null,
       creationSource: 'planned',
     })
-    const occ = await ensureOccurrenceMaterialized(getTestPool(), item, TODAY, u.id)
+    const occ = await ensureOccurrenceForItemDay(getTestPool(), item, TODAY, u.id)
 
     // Start
     const startRes = await app.inject({
@@ -772,14 +777,14 @@ describe('§9.1 — two overlapping live timers run independently', () => {
     const u = await makeUser('api-overlap-sessions@test.com')
     const app = await buildTestApp(u.id)
 
-    const item1 = await repos.insertItem(getTestPool(), {
+    const item1 = await createItem(getTestPool(), {
       userId: u.id, name: 'Overlap Task 1', recurrenceRule: null, creationSource: 'planned',
     })
-    const item2 = await repos.insertItem(getTestPool(), {
+    const item2 = await createItem(getTestPool(), {
       userId: u.id, name: 'Overlap Task 2', recurrenceRule: null, creationSource: 'planned',
     })
-    await ensureOccurrenceMaterialized(getTestPool(), item1, TODAY, u.id)
-    await ensureOccurrenceMaterialized(getTestPool(), item2, TODAY, u.id)
+    await ensureOccurrenceForItemDay(getTestPool(), item1, TODAY, u.id)
+    await ensureOccurrenceForItemDay(getTestPool(), item2, TODAY, u.id)
 
     const start1 = await app.inject({
       method: 'POST', url: '/api/sessions/start', payload: { itemId: item1.id, day: TODAY },
@@ -818,10 +823,10 @@ describe('§9.1 — occurrence loggedMinutes accumulates across independent sess
     const u = await makeUser('api-logged-minutes@test.com')
     const app = await buildTestApp(u.id)
 
-    const item = await repos.insertItem(getTestPool(), {
+    const item = await createItem(getTestPool(), {
       userId: u.id, name: 'Logged Minutes Task', recurrenceRule: null, creationSource: 'planned',
     })
-    const occ = await ensureOccurrenceMaterialized(getTestPool(), item, TODAY, u.id)
+    const occ = await ensureOccurrenceForItemDay(getTestPool(), item, TODAY, u.id)
 
     // First start/stop cycle
     const start1 = await app.inject({
@@ -854,10 +859,10 @@ describe('§9.1 — occurrence loggedMinutes accumulates across independent sess
     const u = await makeUser('api-logged-minutes-inprogress@test.com')
     const app = await buildTestApp(u.id)
 
-    const item = await repos.insertItem(getTestPool(), {
+    const item = await createItem(getTestPool(), {
       userId: u.id, name: 'In Progress Task', recurrenceRule: null, creationSource: 'planned',
     })
-    const occ = await ensureOccurrenceMaterialized(getTestPool(), item, TODAY, u.id)
+    const occ = await ensureOccurrenceForItemDay(getTestPool(), item, TODAY, u.id)
 
     await app.inject({
       method: 'POST', url: '/api/sessions/start', payload: { itemId: item.id, day: TODAY },
@@ -873,14 +878,14 @@ describe('§9.1 — occurrence loggedMinutes accumulates across independent sess
     const u = await makeUser('api-logged-minutes-rollup@test.com')
     const app = await buildTestApp(u.id)
 
-    const parent = await repos.insertItem(getTestPool(), {
+    const parent = await createItem(getTestPool(), {
       userId: u.id, name: 'Rollup Parent', recurrenceRule: { type: 'daily' }, creationSource: 'planned',
     })
-    const child = await repos.insertItem(getTestPool(), {
+    const child = await createItem(getTestPool(), {
       userId: u.id, name: 'Rollup Child', recurrenceRule: { type: 'daily' }, parentId: parent.id, creationSource: 'planned',
     })
-    const parentOcc = await ensureOccurrenceMaterialized(getTestPool(), parent, TODAY, u.id)
-    const childOcc  = await ensureOccurrenceMaterialized(getTestPool(), child, TODAY, u.id)
+    const parentOcc = await ensureOccurrenceForItemDay(getTestPool(), parent, TODAY, u.id)
+    const childOcc  = await ensureOccurrenceForItemDay(getTestPool(), child, TODAY, u.id)
 
     // Time the child only
     const childStart = await app.inject({
@@ -922,10 +927,10 @@ describe('§9.1 — manual session create and edit work', () => {
     const u = await makeUser('api-manual-session@test.com')
     const app = await buildTestApp(u.id)
 
-    const item = await repos.insertItem(getTestPool(), {
+    const item = await createItem(getTestPool(), {
       userId: u.id, name: 'Manual Session Task', recurrenceRule: null, creationSource: 'planned',
     })
-    await ensureOccurrenceMaterialized(getTestPool(), item, TODAY, u.id)
+    await ensureOccurrenceForItemDay(getTestPool(), item, TODAY, u.id)
 
     const startedAt = '2025-01-15T10:00:00.000Z'
     const endedAt   = '2025-01-15T10:30:00.000Z'  // 30 minutes
@@ -967,10 +972,10 @@ describe('§9.1 — manual session create and edit work', () => {
     const u = await makeUser('api-edit-live-session@test.com')
     const app = await buildTestApp(u.id)
 
-    const item = await repos.insertItem(getTestPool(), {
+    const item = await createItem(getTestPool(), {
       userId: u.id, name: 'Day Trading', recurrenceRule: null, creationSource: 'planned',
     })
-    const occ = await ensureOccurrenceMaterialized(getTestPool(), item, TODAY, u.id)
+    const occ = await ensureOccurrenceForItemDay(getTestPool(), item, TODAY, u.id)
 
     const startRes = await app.inject({ method: 'POST', url: '/api/sessions/start', payload: { itemId: item.id, day: TODAY } })
     const { sessionId } = JSON.parse(startRes.body)
@@ -1022,10 +1027,10 @@ describe('§9.1 — DELETE /sessions/:sessionId is a correction, not a mutation'
     const u = await makeUser('api-delete-session@test.com')
     const app = await buildTestApp(u.id)
 
-    const item = await repos.insertItem(getTestPool(), {
+    const item = await createItem(getTestPool(), {
       userId: u.id, name: 'Piano Practice', recurrenceRule: null, creationSource: 'planned',
     })
-    const occ = await ensureOccurrenceMaterialized(getTestPool(), item, TODAY, u.id)
+    const occ = await ensureOccurrenceForItemDay(getTestPool(), item, TODAY, u.id)
 
     const createRes = await app.inject({
       method: 'POST',
@@ -1059,10 +1064,10 @@ describe('§9.1 — DELETE /sessions/:sessionId is a correction, not a mutation'
     const u = await makeUser('api-delete-one-of-several@test.com')
     const app = await buildTestApp(u.id)
 
-    const item = await repos.insertItem(getTestPool(), {
+    const item = await createItem(getTestPool(), {
       userId: u.id, name: 'Habit A', recurrenceRule: null, creationSource: 'planned',
     })
-    const occ = await ensureOccurrenceMaterialized(getTestPool(), item, TODAY, u.id)
+    const occ = await ensureOccurrenceForItemDay(getTestPool(), item, TODAY, u.id)
 
     const windows = [
       { startedAt: '2025-01-15T10:00:00.000Z', endedAt: '2025-01-15T10:30:00.000Z' },  // 30 min
@@ -1250,7 +1255,7 @@ describe('§8.4 — background job runs dispositions for a day and produces expe
     const u = await makeUser('api-background-job@test.com')
     const app = await buildTestApp(u.id)
 
-    const item = await repos.insertItem(getTestPool(), {
+    const item = await createItem(getTestPool(), {
       userId: u.id,
       name: 'Skip Policy Task',
       recurrenceRule: null,
@@ -1259,7 +1264,7 @@ describe('§8.4 — background job runs dispositions for a day and produces expe
     })
 
     // Materialize occurrence for TUESDAY (in the past)
-    const occ = await ensureOccurrenceMaterialized(getTestPool(), item, TUESDAY, u.id)
+    const occ = await ensureOccurrenceForItemDay(getTestPool(), item, TUESDAY, u.id)
 
     // Run background job for TUESDAY
     const res = await app.inject({
@@ -1294,13 +1299,13 @@ describe('§8 amendment — GET /occurrences/overdue backlog', () => {
     const u = await makeUser('api-overdue-pending@test.com')
     const app = await buildTestApp(u.id)
 
-    const item = await repos.insertItem(getTestPool(), {
+    const item = await createItem(getTestPool(), {
       userId: u.id,
       name: 'Missed one-off',
       recurrenceRule: null,
       creationSource: 'planned',
     })
-    const occ = await ensureOccurrenceMaterialized(getTestPool(), item, TUESDAY, u.id)
+    const occ = await ensureOccurrenceForItemDay(getTestPool(), item, TUESDAY, u.id)
 
     const res = await app.inject({ method: 'GET', url: `/api/occurrences/overdue?before=${TODAY}` })
     expect(res.statusCode).toBe(200)
@@ -1316,14 +1321,14 @@ describe('§8 amendment — GET /occurrences/overdue backlog', () => {
     const u = await makeUser('api-overdue-excl-recurring@test.com')
     const app = await buildTestApp(u.id)
 
-    const item = await repos.insertItem(getTestPool(), {
+    const item = await createItem(getTestPool(), {
       userId: u.id,
       name: 'Missed daily habit',
       recurrenceRule: { type: 'daily' },
       creationSource: 'planned',
       dispositionPolicy: 'require_manual',
     })
-    const occ = await ensureOccurrenceMaterialized(getTestPool(), item, TUESDAY, u.id)
+    const occ = await ensureOccurrenceForItemDay(getTestPool(), item, TUESDAY, u.id)
 
     const res = await app.inject({ method: 'GET', url: `/api/occurrences/overdue?before=${TODAY}` })
     const body = JSON.parse(res.body) as Array<{ id: string }>
@@ -1336,13 +1341,13 @@ describe('§8 amendment — GET /occurrences/overdue backlog', () => {
     const u = await makeUser('api-overdue-excl-skipped@test.com')
     const app = await buildTestApp(u.id)
 
-    const item = await repos.insertItem(getTestPool(), {
+    const item = await createItem(getTestPool(), {
       userId: u.id,
       name: 'Already skipped',
       recurrenceRule: null,
       creationSource: 'planned',
     })
-    const occ = await ensureOccurrenceMaterialized(getTestPool(), item, TUESDAY, u.id)
+    const occ = await ensureOccurrenceForItemDay(getTestPool(), item, TUESDAY, u.id)
     await app.inject({ method: 'POST', url: `/api/occurrences/${occ.id}/skip` })
 
     const res = await app.inject({ method: 'GET', url: `/api/occurrences/overdue?before=${TODAY}` })
@@ -1356,13 +1361,13 @@ describe('§8 amendment — GET /occurrences/overdue backlog', () => {
     const u = await makeUser('api-overdue-excl-completed@test.com')
     const app = await buildTestApp(u.id)
 
-    const item = await repos.insertItem(getTestPool(), {
+    const item = await createItem(getTestPool(), {
       userId: u.id,
       name: 'Already done',
       recurrenceRule: null,
       creationSource: 'planned',
     })
-    const occ = await ensureOccurrenceMaterialized(getTestPool(), item, TUESDAY, u.id)
+    const occ = await ensureOccurrenceForItemDay(getTestPool(), item, TUESDAY, u.id)
     await app.inject({ method: 'POST', url: `/api/occurrences/${occ.id}/complete` })
 
     const res = await app.inject({ method: 'GET', url: `/api/occurrences/overdue?before=${TODAY}` })
@@ -1376,21 +1381,21 @@ describe('§8 amendment — GET /occurrences/overdue backlog', () => {
     const u = await makeUser('api-overdue-excl-today@test.com')
     const app = await buildTestApp(u.id)
 
-    const item = await repos.insertItem(getTestPool(), {
+    const item = await createItem(getTestPool(), {
       userId: u.id,
       name: 'Due today, not overdue',
       recurrenceRule: null,
       creationSource: 'planned',
     })
-    const todayOcc = await ensureOccurrenceMaterialized(getTestPool(), item, TODAY, u.id)
+    const todayOcc = await ensureOccurrenceForItemDay(getTestPool(), item, TODAY, u.id)
     // Also materialize a genuinely future occurrence to prove it's excluded too.
-    const futureItem = await repos.insertItem(getTestPool(), {
+    const futureItem = await createItem(getTestPool(), {
       userId: u.id,
       name: 'Due in the future',
       recurrenceRule: null,
       creationSource: 'planned',
     })
-    const futureOcc = await ensureOccurrenceMaterialized(getTestPool(), futureItem, FUTURE_DAY, u.id)
+    const futureOcc = await ensureOccurrenceForItemDay(getTestPool(), futureItem, FUTURE_DAY, u.id)
 
     const res = await app.inject({ method: 'GET', url: `/api/occurrences/overdue?before=${TODAY}` })
     const body = JSON.parse(res.body) as Array<{ id: string }>
@@ -1404,13 +1409,13 @@ describe('§8 amendment — GET /occurrences/overdue backlog', () => {
     const u = await makeUser('api-overdue-excl-archived@test.com')
     const app = await buildTestApp(u.id)
 
-    const item = await repos.insertItem(getTestPool(), {
+    const item = await createItem(getTestPool(), {
       userId: u.id,
       name: 'Deleted before I got to it',
       recurrenceRule: null,
       creationSource: 'planned',
     })
-    const occ = await ensureOccurrenceMaterialized(getTestPool(), item, TUESDAY, u.id)
+    const occ = await ensureOccurrenceForItemDay(getTestPool(), item, TUESDAY, u.id)
     await repos.archiveItem(getTestPool(), item.id, u.id)
 
     const res = await app.inject({ method: 'GET', url: `/api/occurrences/overdue?before=${TODAY}` })
@@ -1424,13 +1429,13 @@ describe('§8 amendment — GET /occurrences/overdue backlog', () => {
     const u = await makeUser('api-overdue-cleared@test.com')
     const app = await buildTestApp(u.id)
 
-    const item = await repos.insertItem(getTestPool(), {
+    const item = await createItem(getTestPool(), {
       userId: u.id,
       name: 'Mis-clicked skip',
       recurrenceRule: null,
       creationSource: 'planned',
     })
-    const occ = await ensureOccurrenceMaterialized(getTestPool(), item, TUESDAY, u.id)
+    const occ = await ensureOccurrenceForItemDay(getTestPool(), item, TUESDAY, u.id)
     await app.inject({ method: 'POST', url: `/api/occurrences/${occ.id}/skip` })
     await app.inject({ method: 'POST', url: `/api/occurrences/${occ.id}/clear-disposition` })
 

@@ -12,7 +12,8 @@ import { resetUserPassword } from '../db/recovery'
 import * as userRepos from '../db/repos/users'
 import * as itemRepos from '../db/repos/items'
 import * as sessionRepos from '../db/repos/auth_sessions'
-import { ensureOccurrenceMaterialized } from '../domain/materialization'
+import { ensureOccurrenceForItemDay } from '../domain/materialization'
+import { createItem } from '../domain/items'
 import type { FastifyInstance } from 'fastify'
 
 const BCRYPT_ROUNDS = 4  // low cost for tests; still exercises the real algorithm
@@ -296,13 +297,13 @@ describe('§13.4 authenticated user A cannot read user B data under real session
     const sessionA = extractSessionCookie(loginA)!
 
     // Create item + occurrence for user B
-    const itemB = await itemRepos.insertItem(getTestPool(), {
+    const itemB = await createItem(getTestPool(), {
       userId: userB.id,
       name: 'User B Secret Task',
       recurrenceRule: null,
       creationSource: 'planned',
     })
-    await ensureOccurrenceMaterialized(getTestPool(), itemB, '2025-01-15', userB.id)
+    await ensureOccurrenceForItemDay(getTestPool(), itemB, '2025-01-15', userB.id)
 
     // User A queries occurrences with their session — must not see B's data
     const res = await app.inject({
@@ -388,13 +389,13 @@ describe('§13.1 DATA-PRESERVATION RECOVERY TEST — recovery resets password; a
     const capturedUserId = user.id
 
     // Seed this user with items, occurrences, and events
-    const item = await itemRepos.insertItem(getTestPool(), {
+    const item = await createItem(getTestPool(), {
       userId: user.id,
       name: 'Recovery Test Item',
       recurrenceRule: null,
       creationSource: 'planned',
     })
-    const occ = await ensureOccurrenceMaterialized(getTestPool(), item, '2025-01-15', user.id)
+    const occ = await ensureOccurrenceForItemDay(getTestPool(), item, '2025-01-15', user.id)
 
     // Record a completion event on the occurrence
     const { rows: [eventBefore] } = await getTestPool().query<{ count: string }>(

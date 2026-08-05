@@ -6,11 +6,12 @@ import type {
   DispositionPolicy,
   Priority,
   QuotaTarget,
-  RecurrenceRule,
-  TimingPrecision,
   Valence,
 } from '@tracker/shared'
 
+// §5.5 — recurrence rule, anchor day, timing and planned duration moved to
+// item_schedules (migration 0014).  They are deliberately absent here: a second copy
+// on `items` would be a second source of truth for the item's timing.
 interface ItemRow {
   id: string
   user_id: string
@@ -19,14 +20,7 @@ interface ItemRow {
   category_id: string | null
   valence: Valence | null
   priority: Priority | null
-  recurrence_rule: RecurrenceRule | null
-  anchor_day: string | null
   quota_target: QuotaTarget | null
-  timing_precision: TimingPrecision
-  timing_bucket_id: string | null
-  timing_start_time: string | null
-  timing_end_time: string | null
-  planned_duration_min: number | null
   parent_id: string | null
   sort_order: number
   disposition_policy: DispositionPolicy
@@ -51,14 +45,7 @@ function toItem(row: ItemRow): Item {
     categoryId: row.category_id,
     valence: row.valence,
     priority: row.priority,
-    recurrenceRule: row.recurrence_rule,
-    anchorDay: row.anchor_day,
     quotaTarget: row.quota_target,
-    timingPrecision: row.timing_precision,
-    timingBucketId: row.timing_bucket_id,
-    timingStartTime: row.timing_start_time,
-    timingEndTime: row.timing_end_time,
-    plannedDurationMin: row.planned_duration_min,
     parentId: row.parent_id,
     sortOrder: row.sort_order,
     dispositionPolicy: row.disposition_policy,
@@ -84,14 +71,7 @@ export type InsertItemData = {
   categoryId?: string | null
   valence?: Valence | null
   priority?: Priority | null
-  recurrenceRule?: RecurrenceRule | null
-  anchorDay?: string | null  // §5.1 — null = fall back to createdAt's date (itemAnchorDate)
   quotaTarget?: QuotaTarget | null
-  timingPrecision?: TimingPrecision
-  timingBucketId?: string | null
-  timingStartTime?: string | null
-  timingEndTime?: string | null
-  plannedDurationMin?: number | null
   parentId?: string | null
   sortOrder?: number
   dispositionPolicy?: DispositionPolicy
@@ -105,10 +85,8 @@ export async function insertItem(
   const { rows } = await pool.query<ItemRow>(
     `INSERT INTO items (
        user_id, name, description, category_id, valence, priority,
-       recurrence_rule, anchor_day, quota_target, timing_precision, timing_bucket_id,
-       timing_start_time, timing_end_time, planned_duration_min,
-       parent_id, sort_order, disposition_policy, creation_source
-     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
+       quota_target, parent_id, sort_order, disposition_policy, creation_source
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
      RETURNING *`,
     [
       data.userId,
@@ -117,14 +95,7 @@ export async function insertItem(
       data.categoryId ?? null,
       data.valence ?? null,
       data.priority ?? null,
-      data.recurrenceRule ? JSON.stringify(data.recurrenceRule) : null,
-      data.anchorDay ?? null,
       data.quotaTarget ? JSON.stringify(data.quotaTarget) : null,
-      data.timingPrecision ?? 'none',
-      data.timingBucketId ?? null,
-      data.timingStartTime ?? null,
-      data.timingEndTime ?? null,
-      data.plannedDurationMin ?? null,
       data.parentId ?? null,
       data.sortOrder ?? 0,
       data.dispositionPolicy ?? 'skip',
@@ -207,14 +178,7 @@ export type UpdateItemData = Partial<{
   categoryId: string | null
   valence: Valence | null
   priority: Priority | null
-  recurrenceRule: RecurrenceRule | null
-  anchorDay: string | null
   quotaTarget: QuotaTarget | null
-  timingPrecision: TimingPrecision
-  timingBucketId: string | null
-  timingStartTime: string | null
-  timingEndTime: string | null
-  plannedDurationMin: number | null
   parentId: string | null
   dispositionPolicy: DispositionPolicy
 }>
@@ -225,20 +189,13 @@ const COLUMN_MAP: Record<string, string> = {
   categoryId:        'category_id',
   valence:           'valence',
   priority:          'priority',
-  recurrenceRule:    'recurrence_rule',
-  anchorDay:         'anchor_day',
   quotaTarget:       'quota_target',
-  timingPrecision:   'timing_precision',
-  timingBucketId:    'timing_bucket_id',
-  timingStartTime:   'timing_start_time',
-  timingEndTime:     'timing_end_time',
-  plannedDurationMin: 'planned_duration_min',
   parentId:          'parent_id',
   dispositionPolicy: 'disposition_policy',
 }
 
 // JSONB fields that need JSON.stringify when non-null
-const JSON_FIELDS = new Set(['recurrenceRule', 'quotaTarget'])
+const JSON_FIELDS = new Set(['quotaTarget'])
 
 // §5.3 — Apply a partial update to an item template (forward-only; regenerating
 // affected future occurrences is the caller's responsibility).

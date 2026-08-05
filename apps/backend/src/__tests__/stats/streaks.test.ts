@@ -18,10 +18,11 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { setupTestDb, teardownTestDb, getTestPool } from '../helpers/test-db'
 import * as repos from '../../db/repos/index'
-import { ensureOccurrenceMaterialized } from '../../domain/materialization'
+import { ensureOccurrenceForItemDay } from '../../domain/materialization'
 import { getItemStreak, getStreakSummaries } from '../../stats/index'
 import type { Item, QuotaTarget } from '@tracker/shared'
 import type { DateWindow } from '@tracker/shared'
+import { createItem } from '../../domain/items'
 
 beforeAll(async () => { await setupTestDb() })
 afterAll(async () => { await teardownTestDb() })
@@ -58,7 +59,7 @@ async function makeUser(suffix: string) {
 // anchorDay is set explicitly so the item's history window (§3.2.4 walks back to
 // the anchor) is pinned to the fixture range rather than to the real creation date.
 async function makeDaily(userId: string, name = 'Daily', anchorDay = MON) {
-  return repos.insertItem(getTestPool(), {
+  return createItem(getTestPool(), {
     userId, name, recurrenceRule: { type: 'daily' }, anchorDay, creationSource: 'planned',
   })
 }
@@ -69,14 +70,14 @@ async function makeQuota(
   name = 'Quota',
   anchorDay = MON
 ) {
-  return repos.insertItem(getTestPool(), {
+  return createItem(getTestPool(), {
     userId, name, recurrenceRule: { type: 'daily' },
     anchorDay, quotaTarget, creationSource: 'planned',
   })
 }
 
 async function complete(item: Item, day: string, userId: string) {
-  const occ = await ensureOccurrenceMaterialized(getTestPool(), item, day, userId)
+  const occ = await ensureOccurrenceForItemDay(getTestPool(), item, day, userId)
   await repos.insertEvent(getTestPool(), {
     userId, eventType: 'item_completed',
     occurrenceId: occ.id, itemId: item.id, appliesToDay: day,
@@ -85,7 +86,7 @@ async function complete(item: Item, day: string, userId: string) {
 }
 
 async function excuse(item: Item, day: string, userId: string) {
-  const occ = await ensureOccurrenceMaterialized(getTestPool(), item, day, userId)
+  const occ = await ensureOccurrenceForItemDay(getTestPool(), item, day, userId)
   await repos.insertEvent(getTestPool(), {
     userId, eventType: 'excused',
     occurrenceId: occ.id, itemId: item.id, appliesToDay: day,
@@ -94,7 +95,7 @@ async function excuse(item: Item, day: string, userId: string) {
 }
 
 async function skip(item: Item, day: string, userId: string) {
-  const occ = await ensureOccurrenceMaterialized(getTestPool(), item, day, userId)
+  const occ = await ensureOccurrenceForItemDay(getTestPool(), item, day, userId)
   await repos.insertEvent(getTestPool(), {
     userId, eventType: 'skipped',
     occurrenceId: occ.id, itemId: item.id, appliesToDay: day,
@@ -479,7 +480,7 @@ describe('§3.2.5 the ambient summary pairs every streak with its 30-day rate', 
   it('§3.2.5 excludes one-time items — a streak is a property of a recurrence', async () => {
     const u = await makeUser('summary-one-time')
     const recurring = await makeDaily(u.id, 'Recurring')
-    const oneTime = await repos.insertItem(getTestPool(), {
+    const oneTime = await createItem(getTestPool(), {
       userId: u.id, name: 'One-time', recurrenceRule: null, creationSource: 'planned',
     })
 

@@ -15,7 +15,8 @@ import {
   declareParentPercent,
 } from '../domain/completion'
 import { skipOccurrenceByUser, excuseOccurrenceByUser, carryForward, clearDispositionByUser } from '../domain/dispositions'
-import { notFound, badRequest, enrichOccurrence } from './helpers'
+import { soleSchedule } from '../domain/items'
+import { notFound, badRequest, enrichOccurrence, findParentOccurrenceOnDay } from './helpers'
 import type { DeclarePercentBody, DispositionBody, CarryForwardBody, RetroactiveBody } from '@tracker/shared'
 
 // An occurrence whose own item has children is a parent node — its completion
@@ -74,7 +75,9 @@ export async function occurrenceRoutes(app: FastifyInstance) {
   // Used when the occurrence has no stored row yet (id=null on the client).
   // Materializes the row if needed, then runs the same completion logic as /:id/complete.
   app.post('/occurrences/complete-by-item-day', async (req, reply) => {
-    const { itemId, appliesToDay } = (req.body ?? {}) as { itemId?: string; appliesToDay?: string }
+    const { itemId, appliesToDay, scheduleId } = (req.body ?? {}) as {
+      itemId?: string; appliesToDay?: string; scheduleId?: string
+    }
     if (!itemId || !appliesToDay) {
       return badRequest(reply, 'missing_params', 'itemId and appliesToDay are required')
     }
@@ -82,14 +85,22 @@ export async function occurrenceRoutes(app: FastifyInstance) {
     const item = await repos.findItemById(pool, itemId, userId)
     if (!item || item.archivedAt) return notFound(reply, 'item')
 
-    const occ = await ensureOccurrenceMaterialized(pool, item, appliesToDay, userId)
+    // §5.5 — (item, day) no longer identifies a single occurrence. The client sends
+    // the scheduleId it rendered; without one, fall back to the item's sole slot,
+    // which throws rather than guessing if the item has several.
+    const schedule = scheduleId
+      ? await repos.findScheduleById(pool, scheduleId, userId)
+      : await soleSchedule(pool, itemId, userId)
+    if (!schedule || schedule.itemId !== itemId) return notFound(reply, 'schedule')
+
+    const occ = await ensureOccurrenceMaterialized(pool, item, schedule, appliesToDay, userId)
 
     if (await occurrenceHasChildren(pool, occ.itemId, userId)) {
       await declareParentPercent(pool, occ, userId, 100)
     } else {
       const parentItemId = occ.snapshot.parentId
       if (parentItemId) {
-        const parentOcc = await repos.findOccurrenceByItemAndDay(pool, parentItemId, occ.appliesToDay, userId)
+        const parentOcc = await findParentOccurrenceOnDay(pool, parentItemId, occ.appliesToDay, userId)
         if (parentOcc) {
           await completeChild(pool, occ, parentOcc, userId)
         } else {
@@ -119,7 +130,7 @@ export async function occurrenceRoutes(app: FastifyInstance) {
       // Route to child or leaf completion based on parentId in snapshot (§6.1)
       const parentItemId = occ.snapshot.parentId
       if (parentItemId) {
-        const parentOcc = await repos.findOccurrenceByItemAndDay(pool, parentItemId, occ.appliesToDay, userId)
+        const parentOcc = await findParentOccurrenceOnDay(pool, parentItemId, occ.appliesToDay, userId)
         if (parentOcc) {
           await completeChild(pool, occ, parentOcc, userId)
         } else {
@@ -146,7 +157,7 @@ export async function occurrenceRoutes(app: FastifyInstance) {
     } else {
       const parentItemId = occ.snapshot.parentId
       if (parentItemId) {
-        const parentOcc = await repos.findOccurrenceByItemAndDay(pool, parentItemId, occ.appliesToDay, userId)
+        const parentOcc = await findParentOccurrenceOnDay(pool, parentItemId, occ.appliesToDay, userId)
         if (parentOcc) {
           await uncompleteChild(pool, occ, parentOcc, userId)
         } else {

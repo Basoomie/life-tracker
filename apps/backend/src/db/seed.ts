@@ -10,6 +10,7 @@
 
 import { Pool } from 'pg'
 import * as repos from './repos/index'
+import { createItem } from '../domain/items'
 
 export async function seed(pool: Pool, userId?: string): Promise<void> {
   // ── Find the target user ──────────────────────────────────────────────────
@@ -69,7 +70,7 @@ export async function seed(pool: Pool, userId?: string): Promise<void> {
   // ── Items ─────────────────────────────────────────────────────────────────
 
   // Night Routine — daily parent, auto-close policy (§8.1 auto_close)
-  const nightRoutine = await repos.insertItem(pool, {
+  const nightRoutine = await createItem(pool, {
     userId:            user.id,
     name:              'Night Routine',
     categoryId:        catHealth.id,
@@ -80,7 +81,7 @@ export async function seed(pool: Pool, userId?: string): Promise<void> {
   })
 
   // Tretinoin — MWF child of Night Routine (§4.1 containment)
-  await repos.insertItem(pool, {
+  await createItem(pool, {
     userId:            user.id,
     name:              'Tretinoin',
     categoryId:        catHealth.id,
@@ -92,7 +93,7 @@ export async function seed(pool: Pool, userId?: string): Promise<void> {
   })
 
   // Workout — 4×/week quota; Mon/Tue/Thu/Sat scheduled days (§5.2)
-  await repos.insertItem(pool, {
+  await createItem(pool, {
     userId:            user.id,
     name:              'Workout',
     categoryId:        catFitness.id,
@@ -104,7 +105,7 @@ export async function seed(pool: Pool, userId?: string): Promise<void> {
   })
 
   // Day-trading — range item 04:00–06:30 (§6.5 range precision)
-  await repos.insertItem(pool, {
+  await createItem(pool, {
     userId:            user.id,
     name:              'Day Trading',
     categoryId:        catTrading.id,
@@ -118,7 +119,7 @@ export async function seed(pool: Pool, userId?: string): Promise<void> {
   })
 
   // Gaming — one-time ad-hoc item (§9.2 ad-hoc capture)
-  await repos.insertItem(pool, {
+  await createItem(pool, {
     userId:            user.id,
     name:              'Gaming session',
     categoryId:        catGaming.id,

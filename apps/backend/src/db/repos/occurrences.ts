@@ -5,6 +5,7 @@ interface OccurrenceRow {
   id: string
   user_id: string
   item_id: string
+  schedule_id: string
   applies_to_day: string
   snapshot: ItemSnapshot
   materialized_at: Date
@@ -15,6 +16,7 @@ function toOccurrence(row: OccurrenceRow): Occurrence {
     id: row.id,
     userId: row.user_id,
     itemId: row.item_id,
+    scheduleId: row.schedule_id,
     appliesToDay: row.applies_to_day,
     snapshot: row.snapshot,
     materializedAt: row.materialized_at,
@@ -26,14 +28,15 @@ export async function insertOccurrence(
   data: {
     userId: string
     itemId: string
+    scheduleId: string      // §5.5 — which of the item's slots this instance is
     appliesToDay: string    // YYYY-MM-DD
     snapshot: ItemSnapshot
   }
 ): Promise<Occurrence> {
   const { rows } = await pool.query<OccurrenceRow>(
-    `INSERT INTO occurrences (user_id, item_id, applies_to_day, snapshot)
-     VALUES ($1, $2, $3, $4) RETURNING *`,
-    [data.userId, data.itemId, data.appliesToDay, JSON.stringify(data.snapshot)]
+    `INSERT INTO occurrences (user_id, item_id, schedule_id, applies_to_day, snapshot)
+     VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+    [data.userId, data.itemId, data.scheduleId, data.appliesToDay, JSON.stringify(data.snapshot)]
   )
   return toOccurrence(rows[0])
 }
@@ -80,19 +83,40 @@ export async function findOccurrencesByItem(
   return rows.map(toOccurrence)
 }
 
-// Fetch a specific item+day occurrence (unique per the UNIQUE constraint)
-export async function findOccurrenceByItemAndDay(
+// §5.5 — Fetch one specific slot's occurrence (unique per the UNIQUE constraint on
+// (item_id, applies_to_day, schedule_id)).  This is the exact-identity lookup.
+export async function findOccurrenceByItemDayAndSchedule(
   pool: Pool,
   itemId: string,
   day: string,
+  scheduleId: string,
   userId: string
 ): Promise<Occurrence | null> {
   const { rows } = await pool.query<OccurrenceRow>(
     `SELECT * FROM occurrences
-     WHERE item_id = $1 AND applies_to_day = $2 AND user_id = $3`,
-    [itemId, day, userId]
+     WHERE item_id = $1 AND applies_to_day = $2 AND schedule_id = $3 AND user_id = $4`,
+    [itemId, day, scheduleId, userId]
   )
   return rows[0] ? toOccurrence(rows[0]) : null
+}
+
+// §5.5 — ALL of an item's slots on a day.  Since an item may carry several schedules,
+// (item, day) no longer identifies a single row; callers that reason about the day as
+// a whole (parent derived %, the stats day-fold) want the full set.
+// Ordered by materialized_at so a day's slots read in a stable order.
+export async function findOccurrencesByItemAndDay(
+  pool: Pool,
+  itemId: string,
+  day: string,
+  userId: string
+): Promise<Occurrence[]> {
+  const { rows } = await pool.query<OccurrenceRow>(
+    `SELECT * FROM occurrences
+     WHERE item_id = $1 AND applies_to_day = $2 AND user_id = $3
+     ORDER BY materialized_at, id`,
+    [itemId, day, userId]
+  )
+  return rows.map(toOccurrence)
 }
 
 // All occurrences for a user across an inclusive date range — the primary query
@@ -192,28 +216,34 @@ export async function findOccurrencesByItemsInRange(
   return rows.map(toOccurrence)
 }
 
-// §5.3 — Delete future occurrences for an item that have no events attached.
+// §5.3 / §5.5 — Delete future occurrences for an item that have no events attached.
 // Used during template edit: frozen past rows and rows already touched by events
 // are left in place; the rest are wiped so they can be re-materialized with the
 // updated snapshot.
+//
+// `scheduleId` scopes the wipe to a single slot.  Editing one schedule must not
+// disturb the item's other slots, so a schedule edit always passes it; an item-level
+// edit (rename, re-category) omits it and regenerates every slot.
 // Returns the count of rows deleted.
 export async function deleteUntouchedFutureOccurrences(
   pool: Pool,
   itemId: string,
   userId: string,
-  fromDay: string   // YYYY-MM-DD — only delete on or after this day
+  fromDay: string,          // YYYY-MM-DD — only delete on or after this day
+  scheduleId?: string       // §5.5 — omit to cover all of the item's slots
 ): Promise<number> {
   const { rowCount } = await pool.query(
     `DELETE FROM occurrences
      WHERE item_id = $1
        AND user_id = $2
        AND applies_to_day >= $3
+       AND ($4::uuid IS NULL OR schedule_id = $4)
        AND id NOT IN (
          SELECT DISTINCT occurrence_id
          FROM events
          WHERE occurrence_id IS NOT NULL AND user_id = $2
        )`,
-    [itemId, userId, fromDay]
+    [itemId, userId, fromDay, scheduleId ?? null]
   )
   return rowCount ?? 0
 }

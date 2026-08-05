@@ -70,7 +70,11 @@ async function releaseFacts(pool: Pool, userId: string, window: DateWindow): Pro
 
   const facts: ReleasedFinding[] = []
   for (const item of topLevel) {
-    const itemFacts = await releaseFactsForItem(pool, userId, item.id, item.name, item.recurrenceRule !== null, window)
+    // §5.5 — "recurring" is a property of the item's slots now: an item counts as
+    // recurring if any of them recurs.
+    const schedules = await repos.findSchedulesByItem(pool, item.id, userId)
+    const isRecurring = schedules.some((s) => s.recurrenceRule !== null)
+    const itemFacts = await releaseFactsForItem(pool, userId, item.id, item.name, isRecurring, window)
     facts.push(...itemFacts)
   }
 

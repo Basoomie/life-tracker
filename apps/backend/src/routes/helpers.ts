@@ -25,6 +25,28 @@ export function badRequest(reply: FastifyReply, error: string, message: string) 
   return reply.status(400).send({ error, message })
 }
 
+export function conflict(reply: FastifyReply, error: string, message: string) {
+  return reply.status(409).send({ error, message })
+}
+
+/**
+ * §4.1 / §5.5 — The occurrence of a child's parent on a given day, if materialized.
+ *
+ * A parent carries at most one schedule (§5.5), so it has at most one occurrence per
+ * day.  Queried in the plural anyway: the invariant is enforced at the route layer,
+ * not by the database, so reading through the plural query keeps this correct rather
+ * than silently depending on a UNIQUE constraint that no longer says so.
+ */
+export async function findParentOccurrenceOnDay(
+  pool: Pool,
+  parentItemId: string,
+  day: string,
+  userId: string
+): Promise<Occurrence | null> {
+  const occs = await repos.findOccurrencesByItemAndDay(pool, parentItemId, day, userId)
+  return occs[0] ?? null
+}
+
 /**
  * §5.4 — Enrich a ComputedOccurrence with derived state for API consumers.
  *
@@ -71,6 +93,7 @@ export async function enrichOccurrence(
       id: occ.id,
       userId: occ.userId,
       itemId: occ.itemId,
+      scheduleId: occ.scheduleId,
       appliesToDay: occ.appliesToDay,
       snapshot: occ.snapshot,
       materializedAt: occ.materializedAt!,

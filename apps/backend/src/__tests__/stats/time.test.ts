@@ -17,6 +17,7 @@ import * as repos from '../../db/repos/index'
 import { getItemTimeStats, getAdHocShare, getCategoryTimeStats } from '../../stats/index'
 import type { DateWindow } from '@tracker/shared'
 import { randomUUID } from 'crypto'
+import { createItem } from '../../domain/items'
 
 beforeAll(async () => { await setupTestDb() })
 afterAll(async () => { await teardownTestDb() })
@@ -77,7 +78,7 @@ async function insertLiveSession(
 describe('§3.3 per-item total time and session count', () => {
   it('§3.3 totalMin sums all sessions for the item in the window', async () => {
     const u = await makeUser('total-min')
-    const item = await repos.insertItem(getTestPool(), {
+    const item = await createItem(getTestPool(), {
       userId: u.id, name: 'Reading',
       recurrenceRule: { type: 'daily' }, creationSource: 'planned',
     })
@@ -95,10 +96,10 @@ describe('§3.3 per-item total time and session count', () => {
   it('§3.3 sessions from other users are excluded', async () => {
     const ua = await makeUser('time-scope-a')
     const ub = await makeUser('time-scope-b')
-    const itemA = await repos.insertItem(getTestPool(), {
+    const itemA = await createItem(getTestPool(), {
       userId: ua.id, name: 'Work', recurrenceRule: { type: 'daily' }, creationSource: 'planned',
     })
-    const itemB = await repos.insertItem(getTestPool(), {
+    const itemB = await createItem(getTestPool(), {
       userId: ub.id, name: 'Work', recurrenceRule: { type: 'daily' }, creationSource: 'planned',
     })
 
@@ -117,7 +118,7 @@ describe('§3.3 per-item total time and session count', () => {
 describe('§3.3 live and manual sessions are both counted', () => {
   it('§3.3 live sessions contribute to totalMin and rawCounts.liveSessions', async () => {
     const u = await makeUser('live-sessions')
-    const item = await repos.insertItem(getTestPool(), {
+    const item = await createItem(getTestPool(), {
       userId: u.id, name: 'Meditation',
       recurrenceRule: { type: 'daily' }, creationSource: 'planned',
     })
@@ -133,7 +134,7 @@ describe('§3.3 live and manual sessions are both counted', () => {
 
   it('§3.3 incomplete live sessions (started but not stopped) are omitted', async () => {
     const u = await makeUser('incomplete-live')
-    const item = await repos.insertItem(getTestPool(), {
+    const item = await createItem(getTestPool(), {
       userId: u.id, name: 'Study',
       recurrenceRule: { type: 'daily' }, creationSource: 'planned',
     })
@@ -157,7 +158,7 @@ describe('§3.3 live and manual sessions are both counted', () => {
 describe('§3.3 planned-vs-actual delta is computed when item has plannedDurationMin', () => {
   it('§3.3 plannedVsActualDeltaMin = totalMin minus plannedMin*sessionDays', async () => {
     const u = await makeUser('planned-actual')
-    const item = await repos.insertItem(getTestPool(), {
+    const item = await createItem(getTestPool(), {
       userId: u.id, name: 'Exercise',
       recurrenceRule: { type: 'daily' }, creationSource: 'planned',
       plannedDurationMin: 30,
@@ -175,7 +176,7 @@ describe('§3.3 planned-vs-actual delta is computed when item has plannedDuratio
 
   it('§3.3 plannedVsActualDeltaMin is null when item has no plannedDurationMin', async () => {
     const u = await makeUser('no-planned')
-    const item = await repos.insertItem(getTestPool(), {
+    const item = await createItem(getTestPool(), {
       userId: u.id, name: 'Reading',
       recurrenceRule: { type: 'daily' }, creationSource: 'planned',
     })
@@ -191,7 +192,7 @@ describe('§3.3 planned-vs-actual delta is computed when item has plannedDuratio
 describe('§3.3 session start-time distribution by UTC hour', () => {
   it('§3.3 sessionStartDistribution groups sessions by UTC start hour', async () => {
     const u = await makeUser('start-dist')
-    const item = await repos.insertItem(getTestPool(), {
+    const item = await createItem(getTestPool(), {
       userId: u.id, name: 'Focus', recurrenceRule: { type: 'daily' }, creationSource: 'planned',
     })
 
@@ -217,7 +218,7 @@ describe('§3.3 session start-time distribution by UTC hour', () => {
 
   it('§3.3 sessionStartDistribution is empty when no sessions', async () => {
     const u = await makeUser('dist-empty')
-    const item = await repos.insertItem(getTestPool(), {
+    const item = await createItem(getTestPool(), {
       userId: u.id, name: 'Empty', recurrenceRule: { type: 'daily' }, creationSource: 'planned',
     })
 
@@ -231,11 +232,11 @@ describe('§3.3 session start-time distribution by UTC hour', () => {
 describe('§3.3 ad-hoc share — planned vs. unplanned time', () => {
   it('§3.3 adHocShare = adHocMin / totalTrackedMin', async () => {
     const u = await makeUser('adhoc-share')
-    const planned = await repos.insertItem(getTestPool(), {
+    const planned = await createItem(getTestPool(), {
       userId: u.id, name: 'Planned Study',
       recurrenceRule: { type: 'daily' }, creationSource: 'planned',
     })
-    const adhoc = await repos.insertItem(getTestPool(), {
+    const adhoc = await createItem(getTestPool(), {
       userId: u.id, name: 'Ad Hoc Browse',
       recurrenceRule: null, creationSource: 'ad_hoc',
     })
@@ -264,15 +265,15 @@ describe('§3.3 ad-hoc share — planned vs. unplanned time', () => {
 describe('§3.3 unplanned time split by valence', () => {
   it('§3.3 adHocByValence accumulates minutes for each valence bucket', async () => {
     const u = await makeUser('valence')
-    const productive = await repos.insertItem(getTestPool(), {
+    const productive = await createItem(getTestPool(), {
       userId: u.id, name: 'Side Project',
       recurrenceRule: null, creationSource: 'ad_hoc', valence: 'productive',
     })
-    const unproductive = await repos.insertItem(getTestPool(), {
+    const unproductive = await createItem(getTestPool(), {
       userId: u.id, name: 'Doom Scroll',
       recurrenceRule: null, creationSource: 'ad_hoc', valence: 'unproductive',
     })
-    const neutral = await repos.insertItem(getTestPool(), {
+    const neutral = await createItem(getTestPool(), {
       userId: u.id, name: 'Reading News',
       recurrenceRule: null, creationSource: 'ad_hoc', valence: 'neutral',
     })
@@ -290,7 +291,7 @@ describe('§3.3 unplanned time split by valence', () => {
 
   it('§3.3 planned sessions do not contribute to adHocByValence', async () => {
     const u = await makeUser('valence-planned')
-    const planned = await repos.insertItem(getTestPool(), {
+    const planned = await createItem(getTestPool(), {
       userId: u.id, name: 'Workout',
       recurrenceRule: { type: 'daily' }, creationSource: 'planned', valence: 'productive',
     })
@@ -311,15 +312,15 @@ describe('§3.3 per-category time aggregates sessions across items in that categ
     const u = await makeUser('cat-time')
     const cat = await repos.insertCategory(getTestPool(), { userId: u.id, name: 'Health' })
 
-    const item1 = await repos.insertItem(getTestPool(), {
+    const item1 = await createItem(getTestPool(), {
       userId: u.id, name: 'Workout', categoryId: cat.id,
       recurrenceRule: { type: 'daily' }, creationSource: 'planned',
     })
-    const item2 = await repos.insertItem(getTestPool(), {
+    const item2 = await createItem(getTestPool(), {
       userId: u.id, name: 'Meal Prep', categoryId: cat.id,
       recurrenceRule: { type: 'daily' }, creationSource: 'planned',
     })
-    const other = await repos.insertItem(getTestPool(), {
+    const other = await createItem(getTestPool(), {
       userId: u.id, name: 'Work',
       recurrenceRule: { type: 'daily' }, creationSource: 'planned',
     })
@@ -339,7 +340,7 @@ describe('§3.3 per-category time aggregates sessions across items in that categ
 describe('§3.3 every time finding includes rawCounts', () => {
   it('§3.3 time_stats rawCounts has sessionCount, liveSessions, manualSessions', async () => {
     const u = await makeUser('time-raw')
-    const item = await repos.insertItem(getTestPool(), {
+    const item = await createItem(getTestPool(), {
       userId: u.id, name: 'Test',
       recurrenceRule: { type: 'daily' }, creationSource: 'planned',
     })

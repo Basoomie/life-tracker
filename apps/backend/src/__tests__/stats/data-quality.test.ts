@@ -14,11 +14,12 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { setupTestDb, teardownTestDb, getTestPool } from '../helpers/test-db'
 import * as repos from '../../db/repos/index'
-import { ensureOccurrenceMaterialized } from '../../domain/materialization'
+import { ensureOccurrenceForItemDay } from '../../domain/materialization'
 import { getItemDataQuality, getUserDataQuality } from '../../stats/index'
 import type { Item } from '@tracker/shared'
 import type { DateWindow } from '@tracker/shared'
 import { randomUUID } from 'crypto'
+import { createItem } from '../../domain/items'
 
 beforeAll(async () => { await setupTestDb() })
 afterAll(async () => { await teardownTestDb() })
@@ -36,14 +37,14 @@ async function makeUser(suffix: string) {
 }
 
 async function makeDaily(userId: string, name = 'Daily', opts = {}) {
-  return repos.insertItem(getTestPool(), {
+  return createItem(getTestPool(), {
     userId, name, recurrenceRule: { type: 'daily' }, creationSource: 'planned',
     ...opts,
   })
 }
 
 async function complete(item: Item, day: string, userId: string) {
-  const occ = await ensureOccurrenceMaterialized(getTestPool(), item, day, userId)
+  const occ = await ensureOccurrenceForItemDay(getTestPool(), item, day, userId)
   await repos.insertEvent(getTestPool(), {
     userId, eventType: 'item_completed',
     occurrenceId: occ.id, itemId: item.id, appliesToDay: day,
@@ -52,7 +53,7 @@ async function complete(item: Item, day: string, userId: string) {
 }
 
 async function skip(item: Item, day: string, userId: string) {
-  const occ = await ensureOccurrenceMaterialized(getTestPool(), item, day, userId)
+  const occ = await ensureOccurrenceForItemDay(getTestPool(), item, day, userId)
   await repos.insertEvent(getTestPool(), {
     userId, eventType: 'skipped',
     occurrenceId: occ.id, itemId: item.id, appliesToDay: day,
@@ -63,7 +64,7 @@ async function skip(item: Item, day: string, userId: string) {
 async function retroactiveComplete(
   item: Item, day: string, userId: string, recordedAt: Date
 ) {
-  const occ = await ensureOccurrenceMaterialized(getTestPool(), item, day, userId)
+  const occ = await ensureOccurrenceForItemDay(getTestPool(), item, day, userId)
   await repos.insertEvent(getTestPool(), {
     userId, eventType: 'retroactive_completion',
     occurrenceId: occ.id, itemId: item.id, appliesToDay: day,
@@ -211,13 +212,13 @@ describe('§4 parent-override frequency — declared vs. derived percent', () =>
   it('§4 declaredOverrideFrequency = 0 when parent never uses declared percent', async () => {
     const u = await makeUser('override-zero')
     const parent = await makeDaily(u.id, 'Parent')
-    const child  = await repos.insertItem(getTestPool(), {
+    const child  = await createItem(getTestPool(), {
       userId: u.id, name: 'Child', parentId: parent.id,
       recurrenceRule: { type: 'daily' }, creationSource: 'planned',
     })
     // Materialize parent occurrences so they have explicit dispositions (not 'missing')
     for (const day of [MON, TUE, WED, THU, FRI]) {
-      await ensureOccurrenceMaterialized(getTestPool(), parent, day, u.id)
+      await ensureOccurrenceForItemDay(getTestPool(), parent, day, u.id)
     }
     await complete(child, MON, u.id)
 
@@ -234,7 +235,7 @@ describe('§4 time-tracking coverage against planned durations (user-wide)', () 
     const u = await makeUser('tt-coverage')
 
     // Item with planned duration + sessions
-    const withPlan = await repos.insertItem(getTestPool(), {
+    const withPlan = await createItem(getTestPool(), {
       userId: u.id, name: 'Workout',
       recurrenceRule: { type: 'daily' }, creationSource: 'planned',
       plannedDurationMin: 30,
@@ -247,7 +248,7 @@ describe('§4 time-tracking coverage against planned durations (user-wide)', () 
     })
 
     // Item with planned duration but NO sessions
-    await repos.insertItem(getTestPool(), {
+    await createItem(getTestPool(), {
       userId: u.id, name: 'Stretching',
       recurrenceRule: { type: 'daily' }, creationSource: 'planned',
       plannedDurationMin: 10,

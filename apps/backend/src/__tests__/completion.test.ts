@@ -15,9 +15,10 @@ import {
   getLeafCompletionState,
   getParentCompletionState,
 } from '../domain/completion'
-import { ensureOccurrenceMaterialized } from '../domain/materialization'
+import { ensureOccurrenceForItemDay } from '../domain/materialization'
 import { skipOccurrenceByUser, excuseOccurrenceByUser } from '../domain/dispositions'
 import type { Item, Occurrence } from '@tracker/shared'
+import { createItem } from '../domain/items'
 
 beforeAll(async () => { await setupTestDb() })
 afterAll(async () => { await teardownTestDb() })
@@ -32,8 +33,8 @@ async function makeUser(email: string) {
   return repos.insertUser(getTestPool(), { email })
 }
 
-async function makeTask(userId: string, name = 'Task', opts: Partial<Parameters<typeof repos.insertItem>[1]> = {}) {
-  return repos.insertItem(getTestPool(), {
+async function makeTask(userId: string, name = 'Task', opts: Partial<Parameters<typeof createItem>[1]> = {}) {
+  return createItem(getTestPool(), {
     userId,
     name,
     recurrenceRule: null,   // one-time task, not a habit
@@ -43,7 +44,7 @@ async function makeTask(userId: string, name = 'Task', opts: Partial<Parameters<
 }
 
 async function makeHabit(userId: string, name = 'Habit') {
-  return repos.insertItem(getTestPool(), {
+  return createItem(getTestPool(), {
     userId,
     name,
     recurrenceRule: { type: 'daily' },
@@ -52,7 +53,7 @@ async function makeHabit(userId: string, name = 'Habit') {
 }
 
 async function makeMWFHabit(userId: string, name = 'MWF Habit') {
-  return repos.insertItem(getTestPool(), {
+  return createItem(getTestPool(), {
     userId,
     name,
     recurrenceRule: { type: 'days_of_week', days: [1, 3, 5] },   // Mon/Wed/Fri
@@ -63,9 +64,9 @@ async function makeMWFHabit(userId: string, name = 'MWF Habit') {
 async function makeDailyHabit(
   userId: string,
   name = 'Daily Habit',
-  opts: Partial<Parameters<typeof repos.insertItem>[1]> = {}
+  opts: Partial<Parameters<typeof createItem>[1]> = {}
 ) {
-  return repos.insertItem(getTestPool(), {
+  return createItem(getTestPool(), {
     userId,
     name,
     recurrenceRule: { type: 'daily' },
@@ -76,7 +77,7 @@ async function makeDailyHabit(
 
 // Create and materialize an occurrence for a given item and day
 async function materialize(item: Item, day: string, userId: string): Promise<Occurrence> {
-  return ensureOccurrenceMaterialized(getTestPool(), item, day, userId)
+  return ensureOccurrenceForItemDay(getTestPool(), item, day, userId)
 }
 
 // ── §6.1 Leaf completion ──────────────────────────────────────────────────────

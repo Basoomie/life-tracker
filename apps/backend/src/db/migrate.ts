@@ -70,6 +70,7 @@ export async function resetDatabase(pool: Pool): Promise<void> {
   await pool.query(`DROP TABLE IF EXISTS user_preferences    CASCADE`)
   await pool.query(`DROP TABLE IF EXISTS events              CASCADE`)
   await pool.query(`DROP TABLE IF EXISTS occurrences         CASCADE`)
+  await pool.query(`DROP TABLE IF EXISTS item_schedules      CASCADE`)
   await pool.query(`DROP TABLE IF EXISTS item_prerequisites  CASCADE`)
   await pool.query(`DROP TABLE IF EXISTS items               CASCADE`)
   await pool.query(`DROP TABLE IF EXISTS day_start_timeline  CASCADE`)

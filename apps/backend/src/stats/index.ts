@@ -21,7 +21,6 @@ import type {
   DateWindow,
   Item,
 } from '@tracker/shared'
-import { itemAnchorDate } from '@tracker/shared'
 import * as repos from '../db/repos/index'
 import { logicalToday } from '../domain/day'
 import {
@@ -30,6 +29,8 @@ import {
   buildSessionObservations,
   buildRescheduleObservations,
   buildBackfillObservations,
+  itemEarliestAnchor,
+  itemPlannedDurationMin,
 } from './domain/observations'
 import { computeLeafAdherence, computeParentAdherence } from './calculators/adherence'
 import { computeStreak } from './calculators/streaks'
@@ -95,8 +96,10 @@ export async function getItemStreak(
   // while longestStreak needs exactly the requested window. Build the union once and
   // slice it: two builds over an all-time window would double the most expensive
   // query on the page for no gain, and could only ever agree by construction anyway.
+  // §5.5 — "as far back as occurrences can exist" is the earliest of the item's slots.
+  const schedules = await repos.findSchedulesByItem(pool, itemId, userId)
   const historyWindow: DateWindow = {
-    startDay: minDay(itemAnchorDate(item), window.startDay),
+    startDay: minDay(itemEarliestAnchor(item, schedules), window.startDay),
     endDay: maxDay(currentDay, window.endDay),
   }
   const historyObs = await buildStreakObservations(pool, userId, item, historyWindow)
@@ -150,13 +153,27 @@ export async function getStreakSummaries(
   const rateWindow = badgeAdherenceWindow(currentDay)
 
   const allItems = await repos.findItemsByUser(pool, userId)
-  const recurring = allItems.filter(i => i.recurrenceRule !== null && i.archivedAt === null)
+  // §5.5 — an item is recurring if any of its slots recurs.
+  const withSchedules = await Promise.all(
+    allItems
+      .filter(i => i.archivedAt === null)
+      .map(async (item) => ({
+        item,
+        schedules: await repos.findSchedulesByItem(pool, item.id, userId),
+      }))
+  )
+  const recurring = withSchedules.filter(
+    ({ schedules }) => schedules.some(s => s.recurrenceRule !== null)
+  )
 
   const items: ItemStreakSummary[] = await Promise.all(
-    recurring.map(async (item): Promise<ItemStreakSummary> => {
+    recurring.map(async ({ item, schedules }): Promise<ItemStreakSummary> => {
       // One build over the item's whole history serves both numbers: the backwards
       // streak walk needs the history, and the 30-day rate is a filter on its tail.
-      const window: DateWindow = { startDay: itemAnchorDate(item), endDay: currentDay }
+      const window: DateWindow = {
+        startDay: itemEarliestAnchor(item, schedules),
+        endDay: currentDay,
+      }
       const observations = await buildStreakObservations(pool, userId, item, window)
       const streak = computeStreak(item.id, userId, window, observations, currentDay, item.quotaTarget)
 
@@ -192,8 +209,9 @@ export async function getItemTimeStats(
   const item = await repos.findItemById(pool, itemId, userId)
   if (!item) throw new Error(`item not found: ${itemId}`)
 
+  const schedules = await repos.findSchedulesByItem(pool, itemId, userId)
   const sessions = await buildSessionObservations(pool, userId, window, { itemId })
-  return computeTimeStats(itemId, userId, window, sessions, item.plannedDurationMin)
+  return computeTimeStats(itemId, userId, window, sessions, itemPlannedDurationMin(schedules))
 }
 
 export async function getAdHocShare(
@@ -284,7 +302,8 @@ export async function getUserDataQuality(
     }
     allDayObs.push(...obs)
 
-    if (item.plannedDurationMin !== null) {
+    const itemSchedules = await repos.findSchedulesByItem(pool, item.id, userId)
+    if (itemPlannedDurationMin(itemSchedules) !== null) {
       sessionStats.push({
         hasPlannedDuration: true,
         hasSessions: sessionItemIds.has(item.id),

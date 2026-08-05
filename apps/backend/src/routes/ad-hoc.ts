@@ -5,9 +5,10 @@ import { randomUUID } from 'crypto'
 import type { FastifyInstance } from 'fastify'
 import { pool } from '../db'
 import * as repos from '../db/repos/index'
-import { ensureOccurrenceMaterialized } from '../domain/materialization'
+import { ensureOccurrenceMaterialized, snapshotFromItem } from '../domain/materialization'
+import { createItemWithSchedule } from '../domain/items'
 import { logicalToday } from '../domain/day'
-import type { AdHocCaptureBody, ItemSnapshot } from '@tracker/shared'
+import type { AdHocCaptureBody } from '@tracker/shared'
 
 export async function adHocRoutes(app: FastifyInstance) {
   // POST /ad-hoc — one-tap: create + materialize + start timer
@@ -18,7 +19,7 @@ export async function adHocRoutes(app: FastifyInstance) {
 
     // §9.2 / §8.1: ad_hoc items are one-time tasks (no recurrence) — same default
     // as any other one-time task (routes/items.ts): 'require_manual', not 'skip'.
-    const item = await repos.insertItem(pool, {
+    const { item, schedule } = await createItemWithSchedule(pool, {
       userId,
       name: body.name,
       categoryId: body.categoryId ?? null,
@@ -30,23 +31,7 @@ export async function adHocRoutes(app: FastifyInstance) {
     })
 
     // §10.2 — template_created event
-    const snapshot: ItemSnapshot = {
-      name: item.name,
-      description: item.description,
-      categoryId: item.categoryId,
-      valence: item.valence,
-      priority: item.priority,
-      recurrenceRule: item.recurrenceRule,
-      quotaTarget: item.quotaTarget,
-      timingPrecision: item.timingPrecision,
-      timingBucketId: item.timingBucketId,
-      timingStartTime: item.timingStartTime,
-      timingEndTime: item.timingEndTime,
-      plannedDurationMin: item.plannedDurationMin,
-      dispositionPolicy: item.dispositionPolicy,
-      parentId: item.parentId,
-      prerequisiteIds: [],
-    }
+    const snapshot = snapshotFromItem(item, schedule, [])
     await repos.insertEvent(pool, {
       userId,
       eventType: 'template_created',
@@ -57,7 +42,7 @@ export async function adHocRoutes(app: FastifyInstance) {
     })
 
     // Materialize the occurrence for today
-    const occurrence = await ensureOccurrenceMaterialized(pool, item, today, userId)
+    const occurrence = await ensureOccurrenceMaterialized(pool, item, schedule, today, userId)
 
     // §9.2 — start the live timer immediately
     const sessionId = randomUUID()

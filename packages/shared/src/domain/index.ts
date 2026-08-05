@@ -1,5 +1,11 @@
 export { bucketLocalDateTime, bucketTimestamp, getEffectiveDayStart } from './day-start'
-export { getDueDays, itemAnchorDate } from './recurrence'
+export {
+  getDueDays,
+  scheduleAnchorDate,
+  getItemDueSlots,
+  getItemDueDays,
+} from './recurrence'
+export type { DueSlot } from './recurrence'
 export {
   deriveLeafCompletion,
   computeDerivedPercent,

@@ -81,7 +81,9 @@ export type DayStartEntry = {
   recordedAt: Date
 }
 
-// §3.1 — the central template entity; both tasks and habits
+// §3.1 — the central template entity; both tasks and habits.
+// Carries everything that describes the *habit*.  Everything that describes *when it
+// happens* lives on its ItemSchedule rows (§5.5).
 export type Item = {
   id: string
   userId: string
@@ -90,21 +92,39 @@ export type Item = {
   categoryId: string | null
   valence: Valence | null
   priority: Priority | null
-  recurrenceRule: RecurrenceRule | null   // null = one-time task
-  anchorDay: string | null                // §5.1 — YYYY-MM-DD; recurrence anchor override.
-                                           // null = fall back to createdAt's date (see itemAnchorDate)
-  quotaTarget: QuotaTarget | null
-  timingPrecision: TimingPrecision
-  timingBucketId: string | null
-  timingStartTime: string | null          // HH:MM
-  timingEndTime: string | null            // HH:MM
-  plannedDurationMin: number | null
+  quotaTarget: QuotaTarget | null         // §5.2 — a target across ALL of the item's slots
   parentId: string | null                 // containment tree (§4.1)
   sortOrder: number                       // manual order among siblings under parentId;
                                            // live (not snapshotted) — see enrichOccurrence
   dispositionPolicy: DispositionPolicy
   creationSource: CreationSource
   archivedAt: Date | null
+  createdAt: Date
+}
+
+// §5.5 — one "when" for an item.  An item carries 0..N of these; two schedules due
+// on the same day produce two independently-completable occurrences.
+//
+// `label` and `sortOrder` are LIVE, not snapshotted (same rule as Item.sortOrder), so
+// renaming or reordering a slot applies everywhere at once rather than waiting for the
+// next materialization.
+export type ItemSchedule = {
+  id: string
+  userId: string
+  itemId: string
+  label: string | null                    // optional slot name, e.g. "Morning block"
+  recurrenceRule: RecurrenceRule | null   // null = one-time task
+  anchorDay: string | null                // §5.1 — YYYY-MM-DD; recurrence anchor override.
+                                           // null = fall back to the item's createdAt date
+                                           // (see scheduleAnchorDate)
+  timingPrecision: TimingPrecision
+  timingBucketId: string | null
+  timingStartTime: string | null          // HH:MM
+  timingEndTime: string | null            // HH:MM
+  plannedDurationMin: number | null
+  sortOrder: number                       // order among the item's own schedules
+  archivedAt: Date | null                 // §5.5 — the user removed this slot; past
+                                           // occurrences remain, future ones are cleared
   createdAt: Date
 }
 
@@ -116,11 +136,14 @@ export type ItemPrerequisite = {
   createdAt: Date
 }
 
-// §3.2 — dated instance of an item; carries a frozen snapshot of template fields
+// §3.2 — dated instance of an item; carries a frozen snapshot of template fields.
+// Identity is (itemId, appliesToDay, scheduleId) per §5.5 — scheduleId is identity
+// (like itemId), which is why it lives on the row rather than inside the snapshot.
 export type Occurrence = {
   id: string
   userId: string
   itemId: string
+  scheduleId: string        // §5.5 — which of the item's slots this instance is
   appliesToDay: string      // YYYY-MM-DD
   snapshot: ItemSnapshot
   materializedAt: Date
@@ -134,6 +157,8 @@ export type ComputedOccurrence = {
   id: string | null
   userId: string
   itemId: string
+  scheduleId: string          // §5.5 — always known, even before materialization:
+                              // it's the schedule the due-day was computed from
   appliesToDay: string        // YYYY-MM-DD
   snapshot: ItemSnapshot
   materializedAt: Date | null

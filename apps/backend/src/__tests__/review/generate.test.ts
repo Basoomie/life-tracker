@@ -7,11 +7,12 @@ import { setupTestDb, teardownTestDb, getTestPool } from '../helpers/test-db'
 import * as repos from '../../db/repos/index'
 import { generateReview } from '../../review/generate'
 import { proposeEvidenceEntry, approveEvidenceEntry, archiveEvidenceEntryWithEvent } from '../../evidence/pipeline'
-import { ensureOccurrenceMaterialized } from '../../domain/materialization'
+import { ensureOccurrenceForItemDay } from '../../domain/materialization'
 import { completeLeaf } from '../../domain/completion'
 import type { AnthropicClientLike } from '../../review/llm/anthropic'
 import type { Item } from '@tracker/shared'
 import type { PubmedClientDeps } from '../../evidence/pubmed-client'
+import { createItem } from '../../domain/items'
 
 beforeAll(async () => { await setupTestDb() })
 afterAll(async () => { await teardownTestDb() })
@@ -21,11 +22,11 @@ async function makeUser(email: string) {
 }
 
 async function makeDailyHabit(userId: string, name = 'Workout') {
-  return repos.insertItem(getTestPool(), { userId, name, recurrenceRule: { type: 'daily' }, creationSource: 'planned' })
+  return createItem(getTestPool(), { userId, name, recurrenceRule: { type: 'daily' }, creationSource: 'planned' })
 }
 
 async function materialize(item: Item, day: string, userId: string) {
-  return ensureOccurrenceMaterialized(getTestPool(), item, day, userId)
+  return ensureOccurrenceForItemDay(getTestPool(), item, day, userId)
 }
 
 function verifiableDeps(): PubmedClientDeps {

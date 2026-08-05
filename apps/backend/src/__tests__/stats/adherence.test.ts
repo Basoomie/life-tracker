@@ -15,10 +15,11 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { setupTestDb, teardownTestDb, getTestPool } from '../helpers/test-db'
 import * as repos from '../../db/repos/index'
-import { ensureOccurrenceMaterialized } from '../../domain/materialization'
+import { ensureOccurrenceForItemDay } from '../../domain/materialization'
 import { getItemAdherence } from '../../stats/index'
 import type { Item, RecurrenceRule } from '@tracker/shared'
 import type { DateWindow } from '@tracker/shared'
+import { createItem } from '../../domain/items'
 
 beforeAll(async () => { await setupTestDb() })
 afterAll(async () => { await teardownTestDb() })
@@ -39,13 +40,13 @@ async function makeUser(suffix: string) {
 }
 
 async function makeDailyHabit(userId: string, name = 'Daily') {
-  return repos.insertItem(getTestPool(), {
+  return createItem(getTestPool(), {
     userId, name, recurrenceRule: { type: 'daily' }, creationSource: 'planned',
   })
 }
 
 async function makeMWFHabit(userId: string, name = 'MWF') {
-  return repos.insertItem(getTestPool(), {
+  return createItem(getTestPool(), {
     userId, name,
     recurrenceRule: { type: 'days_of_week', days: [1, 3, 5] },  // Mon=1, Wed=3, Fri=5
     creationSource: 'planned',
@@ -53,20 +54,20 @@ async function makeMWFHabit(userId: string, name = 'MWF') {
 }
 
 async function makeParent(userId: string, name = 'Parent') {
-  return repos.insertItem(getTestPool(), {
+  return createItem(getTestPool(), {
     userId, name, recurrenceRule: { type: 'daily' }, creationSource: 'planned',
   })
 }
 
 async function makeChild(userId: string, parentId: string, name = 'Child', rule: RecurrenceRule = { type: 'daily' }) {
-  return repos.insertItem(getTestPool(), {
+  return createItem(getTestPool(), {
     userId, name, recurrenceRule: rule, parentId, creationSource: 'planned',
   })
 }
 
 // Materialize and complete a leaf on a given day
 async function complete(item: Item, day: string, userId: string) {
-  const occ = await ensureOccurrenceMaterialized(getTestPool(), item, day, userId)
+  const occ = await ensureOccurrenceForItemDay(getTestPool(), item, day, userId)
   await repos.insertEvent(getTestPool(), {
     userId, eventType: 'item_completed',
     occurrenceId: occ.id, itemId: item.id, appliesToDay: day,
@@ -76,7 +77,7 @@ async function complete(item: Item, day: string, userId: string) {
 
 // Materialize and excuse a leaf on a given day
 async function excuse(item: Item, day: string, userId: string) {
-  const occ = await ensureOccurrenceMaterialized(getTestPool(), item, day, userId)
+  const occ = await ensureOccurrenceForItemDay(getTestPool(), item, day, userId)
   await repos.insertEvent(getTestPool(), {
     userId, eventType: 'excused',
     occurrenceId: occ.id, itemId: item.id, appliesToDay: day,
@@ -86,7 +87,7 @@ async function excuse(item: Item, day: string, userId: string) {
 
 // Materialize and skip a leaf on a given day
 async function skip(item: Item, day: string, userId: string) {
-  const occ = await ensureOccurrenceMaterialized(getTestPool(), item, day, userId)
+  const occ = await ensureOccurrenceForItemDay(getTestPool(), item, day, userId)
   await repos.insertEvent(getTestPool(), {
     userId, eventType: 'skipped',
     occurrenceId: occ.id, itemId: item.id, appliesToDay: day,
@@ -148,7 +149,7 @@ describe('a cleared skip/excuse is not counted as a miss for stats purposes', ()
 
     // Skip THU, then undo it — the observation replay should read this day as
     // 'pending' (matching the API's derived disposition), not still 'skipped'.
-    const occ = await ensureOccurrenceMaterialized(getTestPool(), habit, THU, u.id)
+    const occ = await ensureOccurrenceForItemDay(getTestPool(), habit, THU, u.id)
     await repos.insertEvent(getTestPool(), {
       userId: u.id, eventType: 'skipped',
       occurrenceId: occ.id, itemId: habit.id, appliesToDay: THU,

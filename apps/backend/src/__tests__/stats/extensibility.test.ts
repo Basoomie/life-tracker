@@ -12,7 +12,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { setupTestDb, teardownTestDb, getTestPool } from '../helpers/test-db'
 import * as repos from '../../db/repos/index'
-import { ensureOccurrenceMaterialized } from '../../domain/materialization'
+import { ensureOccurrenceForItemDay } from '../../domain/materialization'
 import {
   getItemAdherence,
   getItemStreak,
@@ -25,6 +25,7 @@ import type { DayObservation } from '../../stats/types'
 import type { Item } from '@tracker/shared'
 import type { DateWindow } from '@tracker/shared'
 import { randomUUID } from 'crypto'
+import { createItem } from '../../domain/items'
 
 beforeAll(async () => { await setupTestDb() })
 afterAll(async () => { await teardownTestDb() })
@@ -42,13 +43,13 @@ async function makeUser(suffix: string) {
 }
 
 async function makeDaily(userId: string, name = 'Habit') {
-  return repos.insertItem(getTestPool(), {
+  return createItem(getTestPool(), {
     userId, name, recurrenceRule: { type: 'daily' }, creationSource: 'planned',
   })
 }
 
 async function complete(item: Item, day: string, userId: string) {
-  const occ = await ensureOccurrenceMaterialized(getTestPool(), item, day, userId)
+  const occ = await ensureOccurrenceForItemDay(getTestPool(), item, day, userId)
   await repos.insertEvent(getTestPool(), {
     userId, eventType: 'item_completed',
     occurrenceId: occ.id, itemId: item.id, appliesToDay: day,
@@ -152,7 +153,7 @@ describe('§3.5 new calculator computes retroactively over already-collected eve
     const pastWindow: DateWindow = { startDay: '2025-01-01', endDay: '2025-01-07' }
 
     for (const day of ['2025-01-01', '2025-01-02', '2025-01-03']) {
-      const occ = await ensureOccurrenceMaterialized(getTestPool(), h, day, u.id)
+      const occ = await ensureOccurrenceForItemDay(getTestPool(), h, day, u.id)
       await repos.insertEvent(getTestPool(), {
         userId: u.id, eventType: 'item_completed',
         occurrenceId: occ.id, itemId: h.id, appliesToDay: day,

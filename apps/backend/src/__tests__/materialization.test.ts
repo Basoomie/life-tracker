@@ -6,15 +6,17 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { setupTestDb, teardownTestDb, getTestPool } from './helpers/test-db'
 import * as repos from '../db/repos/index'
-import { getDueDays, itemAnchorDate } from '@tracker/shared'
+import { getDueDays, scheduleAnchorDate } from '@tracker/shared'
+import { occurrenceOn, soleScheduleOf } from './helpers/schedules'
 import {
-  ensureOccurrenceMaterialized,
+  ensureOccurrenceForItemDay,
   topUpMaterialization,
   regenerateFutureOccurrences,
   getOccurrencesInRange,
   horizonDays,
 } from '../domain/materialization'
 import type { Item, ItemSnapshot } from '@tracker/shared'
+import { createItem } from '../domain/items'
 
 beforeAll(async () => { await setupTestDb() })
 afterAll(async () => { await teardownTestDb() })
@@ -30,8 +32,14 @@ async function makeUser(email: string) {
   return repos.insertUser(getTestPool(), { email })
 }
 
+// §5.5 — the recurrence rule and anchor live on the item's schedule now. Every
+// fixture here creates a single-slot item, so "the" schedule is unambiguous.
+async function scheduleOf(item: Item) {
+  return soleScheduleOf(getTestPool(), item.id, item.userId)
+}
+
 async function makeDailyItem(userId: string, name = 'Daily item') {
-  return repos.insertItem(getTestPool(), {
+  return createItem(getTestPool(), {
     userId,
     name,
     recurrenceRule: { type: 'daily' },
@@ -40,7 +48,7 @@ async function makeDailyItem(userId: string, name = 'Daily item') {
 }
 
 async function makeMWFItem(userId: string) {
-  return repos.insertItem(getTestPool(), {
+  return createItem(getTestPool(), {
     userId,
     name: 'MWF item',
     recurrenceRule: { type: 'days_of_week', days: [1, 3, 5] },
@@ -49,7 +57,7 @@ async function makeMWFItem(userId: string) {
 }
 
 async function makeMonthlyItem(userId: string) {
-  return repos.insertItem(getTestPool(), {
+  return createItem(getTestPool(), {
     userId,
     name: 'Monthly item',
     recurrenceRule: { type: 'monthly' },
@@ -59,7 +67,7 @@ async function makeMonthlyItem(userId: string) {
 
 // §5.1 — an interval item with an explicit anchor_day, decoupled from createdAt.
 async function makeIntervalItem(userId: string, every: number, anchorDay = ANCHOR, name = 'Interval item') {
-  return repos.insertItem(getTestPool(), {
+  return createItem(getTestPool(), {
     userId,
     name,
     recurrenceRule: { type: 'interval', unit: 'day', every },
@@ -153,7 +161,7 @@ describe('§5.4 topUpMaterialization: near-term horizon', () => {
 // ── §5.4 First-event touch ────────────────────────────────────────────────────
 
 describe('§5.4 first event touch materializes the occurrence', () => {
-  it('§5.4 ensureOccurrenceMaterialized creates a stored row on first call', async () => {
+  it('§5.4 ensureOccurrenceForItemDay creates a stored row on first call', async () => {
     const pool = getTestPool()
     const u    = await makeUser('mat-first-touch@test.com')
     const item = await makeDailyItem(u.id)
@@ -161,29 +169,29 @@ describe('§5.4 first event touch materializes the occurrence', () => {
     const futureDay = '2027-06-15'  // far future, certainly not in any horizon
 
     // No row yet
-    const before = await repos.findOccurrenceByItemAndDay(pool, item.id, futureDay, u.id)
+    const before = await occurrenceOn(pool, item.id,futureDay, u.id)
     expect(before).toBeNull()
 
     // Touch it
-    const occ = await ensureOccurrenceMaterialized(pool, item, futureDay, u.id)
+    const occ = await ensureOccurrenceForItemDay(pool, item, futureDay, u.id)
     expect(occ.id).toBeDefined()
     expect(occ.appliesToDay).toBe(futureDay)
     expect(occ.snapshot.name).toBe('Daily item')
 
     // Now stored
-    const after = await repos.findOccurrenceByItemAndDay(pool, item.id, futureDay, u.id)
+    const after = await occurrenceOn(pool, item.id,futureDay, u.id)
     expect(after).not.toBeNull()
     expect(after!.id).toBe(occ.id)
   })
 
-  it('§5.4 ensureOccurrenceMaterialized is idempotent (no-op if already exists)', async () => {
+  it('§5.4 ensureOccurrenceForItemDay is idempotent (no-op if already exists)', async () => {
     const pool = getTestPool()
     const u    = await makeUser('mat-idempotent@test.com')
     const item = await makeDailyItem(u.id, 'Idempotent item')
 
     const day = '2027-07-10'
-    const first  = await ensureOccurrenceMaterialized(pool, item, day, u.id)
-    const second = await ensureOccurrenceMaterialized(pool, item, day, u.id)
+    const first  = await ensureOccurrenceForItemDay(pool, item, day, u.id)
+    const second = await ensureOccurrenceForItemDay(pool, item, day, u.id)
     expect(second.id).toBe(first.id)  // same row returned
   })
 })
@@ -255,8 +263,9 @@ describe('§5.3 regenerateFutureOccurrences', () => {
       timingEndTime: null, plannedDurationMin: null, dispositionPolicy: 'skip',
       parentId: null, prerequisiteIds: [],
     }
+    const schedule = await soleScheduleOf(pool, item.id, u.id)
     const pastOcc = await repos.insertOccurrence(pool, {
-      userId: u.id, itemId: item.id, appliesToDay: pastDay, snapshot: oldSnap,
+      userId: u.id, itemId: item.id, scheduleId: schedule.id, appliesToDay: pastDay, snapshot: oldSnap,
     })
 
     // Update template
@@ -278,7 +287,7 @@ describe('§5.3 regenerateFutureOccurrences', () => {
     // Materialize a future occurrence
     await topUpMaterialization(pool, u.id, TODAY)
     const futureDay = addDays(TODAY, 1)
-    const occ = await repos.findOccurrenceByItemAndDay(pool, item.id, futureDay, u.id)
+    const occ = await occurrenceOn(pool, item.id,futureDay, u.id)
     expect(occ).not.toBeNull()
 
     // Attach an event to it
@@ -345,7 +354,7 @@ describe('§5.4 getOccurrencesInRange: merged read API', () => {
 
     // Compare with getDueDays using UTC anchor date
     const anchor  = item.createdAt.toISOString().slice(0, 10)
-    const expected = getDueDays(item.recurrenceRule!, startDay, endDay, anchor)
+    const expected = getDueDays((await scheduleOf(item)).recurrenceRule!, startDay, endDay, anchor)
 
     expect(itemOccs.map((o) => o.appliesToDay)).toEqual(expected)
   })
@@ -363,7 +372,7 @@ describe('§5.4 getOccurrencesInRange: merged read API', () => {
 
     // Materialize those occurrences
     for (const occ of computed) {
-      await ensureOccurrenceMaterialized(pool, item, occ.appliesToDay, u.id)
+      await ensureOccurrenceForItemDay(pool, item, occ.appliesToDay, u.id)
     }
 
     // Second call: now stored → all materialized
@@ -394,7 +403,7 @@ describe('invariant: computed due-days == materialized rows appliesToDay for sam
     const endDay  = addDays(TODAY, horizon)
     const anchor  = item.createdAt.toISOString().slice(0, 10)
 
-    const expectedDays = getDueDays(item.recurrenceRule!, TODAY, endDay, anchor)
+    const expectedDays = getDueDays((await scheduleOf(item)).recurrenceRule!, TODAY, endDay, anchor)
     const rows         = await repos.findOccurrencesByRange(pool, u.id, TODAY, endDay)
 
     expect(rows.map((r) => r.appliesToDay)).toEqual(expectedDays)
@@ -411,7 +420,7 @@ describe('invariant: computed due-days == materialized rows appliesToDay for sam
     const endDay  = addDays(TODAY, horizon)
     const anchor  = item.createdAt.toISOString().slice(0, 10)
 
-    const expectedDays = getDueDays(item.recurrenceRule!, TODAY, endDay, anchor)
+    const expectedDays = getDueDays((await scheduleOf(item)).recurrenceRule!, TODAY, endDay, anchor)
     const rows         = await repos.findOccurrencesByRange(pool, u.id, TODAY, endDay)
 
     expect(rows.map((r) => r.appliesToDay)).toEqual(expectedDays)
@@ -428,7 +437,7 @@ describe('invariant: computed due-days == materialized rows appliesToDay for sam
     const endDay  = addDays(TODAY, horizon)
     const anchor  = item.createdAt.toISOString().slice(0, 10)
 
-    const expectedDays = getDueDays(item.recurrenceRule!, TODAY, endDay, anchor)
+    const expectedDays = getDueDays((await scheduleOf(item)).recurrenceRule!, TODAY, endDay, anchor)
     const rows         = await repos.findOccurrencesByRange(pool, u.id, TODAY, endDay)
 
     expect(rows.map((r) => r.appliesToDay)).toEqual(expectedDays)
@@ -443,13 +452,13 @@ describe('§5.1 anchor_day: explicit recurrence start day', () => {
     const u    = await makeUser('mat-anchor-explicit@test.com')
     const item = await makeIntervalItem(u.id, 3, ANCHOR)  // every 3 days from 2024-01-01
 
-    expect(itemAnchorDate(item)).toBe(ANCHOR)  // not today's date
+    expect(scheduleAnchorDate(await scheduleOf(item), item)).toBe(ANCHOR)  // not today's date
 
     await topUpMaterialization(pool, u.id, TODAY)
 
     const horizon = horizonDays({ type: 'interval', unit: 'day', every: 3 })
     const endDay  = addDays(TODAY, horizon)
-    const expectedDays = getDueDays(item.recurrenceRule!, TODAY, endDay, ANCHOR)
+    const expectedDays = getDueDays((await scheduleOf(item)).recurrenceRule!, TODAY, endDay, ANCHOR)
     const rows          = await repos.findOccurrencesByRange(pool, u.id, TODAY, endDay)
 
     expect(rows.map((r) => r.appliesToDay)).toEqual(expectedDays)
@@ -457,15 +466,16 @@ describe('§5.1 anchor_day: explicit recurrence start day', () => {
 
   it('§5.1 an interval item created without an explicit anchor_day falls back to createdAt', async () => {
     const u    = await makeUser('mat-anchor-fallback@test.com')
-    const item = await repos.insertItem(getTestPool(), {
+    const item = await createItem(getTestPool(), {
       userId: u.id,
       name: 'No explicit anchor',
       recurrenceRule: { type: 'interval', unit: 'day', every: 5 },
       creationSource: 'planned',
     })
 
-    expect(item.anchorDay).toBeNull()
-    expect(itemAnchorDate(item)).toBe(item.createdAt.toISOString().slice(0, 10))
+    const schedule = await scheduleOf(item)
+    expect(schedule.anchorDay).toBeNull()
+    expect(scheduleAnchorDate(schedule, item)).toBe(item.createdAt.toISOString().slice(0, 10))
   })
 
   it('§5.1 two items with the same interval but different anchor_day are due on different days', async () => {

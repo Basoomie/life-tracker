@@ -7,7 +7,7 @@
 // All date arithmetic uses Date.UTC / getUTC* to avoid DST distortion.
 
 import type { RecurrenceRule } from '../types/enums'
-import type { Item } from '../types/entities'
+import type { Item, ItemSchedule } from '../types/entities'
 
 // Advance a YYYY-MM-DD string by one calendar day (UTC-safe).
 function nextDay(dateStr: string): string {
@@ -63,11 +63,74 @@ function buildDate(year: number, month: number, day: number): string | null {
   )
 }
 
-// §5.1 amendment — the anchor date for an item's 'interval'/'monthly' recurrence.
-// Uses the explicit anchor_day if the user set one at creation; otherwise falls
-// back to the UTC calendar date of createdAt (the pre-amendment default).
-export function itemAnchorDate(item: Item): string {
-  return item.anchorDay ?? item.createdAt.toISOString().slice(0, 10)
+// §5.1 amendment / §5.5 — the anchor date for a schedule's 'interval'/'monthly'
+// recurrence.  Uses the explicit anchor_day if the user set one; otherwise falls back
+// to the UTC calendar date of the owning item's createdAt (the pre-amendment default).
+//
+// The fallback is the *item's* creation date, not the schedule's, so that a schedule
+// backfilled by migration 0014 anchors exactly where it did before the split.
+export function scheduleAnchorDate(schedule: ItemSchedule, item: Item): string {
+  return schedule.anchorDay ?? item.createdAt.toISOString().slice(0, 10)
+}
+
+// §5.5 — one due (day, schedule) pair.  This, not a bare day, is what identifies an
+// occurrence once an item can carry several schedules.
+export type DueSlot = {
+  day: string          // YYYY-MM-DD
+  scheduleId: string
+}
+
+/**
+ * §5.5 — Every slot an item is due in [startDate, endDate], across all of its
+ * schedules, in ascending (day, schedule sort order) order.
+ *
+ * Two schedules due on the same day yield two slots for that day — that is the whole
+ * point.  Archived schedules (§5.5: the user removed the slot) and one-time schedules
+ * (null rule; they only ever exist as stored rows) contribute nothing here.
+ *
+ * Callers that want the distinct *days* an item is due — stats, which treat the item
+ * as the unit — should use getItemDueDays instead of de-duplicating this themselves.
+ */
+export function getItemDueSlots(
+  item: Item,
+  schedules: ItemSchedule[],
+  startDate: string,
+  endDate: string
+): DueSlot[] {
+  const slots: DueSlot[] = []
+
+  const active = schedules
+    .filter((s) => s.archivedAt === null)
+    .sort((a, b) => a.sortOrder - b.sortOrder || a.createdAt.getTime() - b.createdAt.getTime())
+
+  for (const schedule of active) {
+    if (!schedule.recurrenceRule) continue
+    const days = getDueDays(
+      schedule.recurrenceRule,
+      startDate,
+      endDate,
+      scheduleAnchorDate(schedule, item)
+    )
+    for (const day of days) slots.push({ day, scheduleId: schedule.id })
+  }
+
+  // Day-major so a caller walking the list sees a day's slots together.
+  slots.sort((a, b) => a.day.localeCompare(b.day))
+  return slots
+}
+
+/**
+ * §5.5 — The distinct days an item is due in the window (the union across its
+ * schedules).  A day on which several slots fall appears exactly once.
+ */
+export function getItemDueDays(
+  item: Item,
+  schedules: ItemSchedule[],
+  startDate: string,
+  endDate: string
+): string[] {
+  const days = new Set(getItemDueSlots(item, schedules, startDate, endDate).map((s) => s.day))
+  return Array.from(days).sort()
 }
 
 /**

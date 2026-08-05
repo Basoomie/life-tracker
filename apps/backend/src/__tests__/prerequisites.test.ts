@@ -12,8 +12,9 @@ import {
   validateNotHabit,
 } from '../domain/prerequisites'
 import { completeLeaf } from '../domain/completion'
-import { ensureOccurrenceMaterialized } from '../domain/materialization'
-import type { Item } from '@tracker/shared'
+import { ensureOccurrenceForItemDay } from '../domain/materialization'
+import type { Item, ItemSchedule } from '@tracker/shared'
+import { createItem } from '../domain/items'
 
 beforeAll(async () => { await setupTestDb() })
 afterAll(async () => { await teardownTestDb() })
@@ -27,7 +28,7 @@ async function makeUser(email: string) {
 }
 
 async function makeTask(userId: string, name: string) {
-  return repos.insertItem(getTestPool(), {
+  return createItem(getTestPool(), {
     userId,
     name,
     recurrenceRule: null,   // task = no recurrence
@@ -36,7 +37,7 @@ async function makeTask(userId: string, name: string) {
 }
 
 async function makeHabit(userId: string, name: string) {
-  return repos.insertItem(getTestPool(), {
+  return createItem(getTestPool(), {
     userId,
     name,
     recurrenceRule: { type: 'daily' },
@@ -45,33 +46,36 @@ async function makeHabit(userId: string, name: string) {
 }
 
 async function completeTask(item: Item, userId: string) {
-  const occ = await ensureOccurrenceMaterialized(getTestPool(), item, TODAY, userId)
+  const occ = await ensureOccurrenceForItemDay(getTestPool(), item, TODAY, userId)
   await completeLeaf(getTestPool(), occ, userId)
 }
 
 // ── §4.2 Task-to-task only ────────────────────────────────────────────────────
 
 describe('§4.2 task-to-task only — habits cannot participate on either end', () => {
-  it('§4.2 habit cannot be used as a prerequisite', () => {
-    const fakeHabit = {
-      id: 'fake-habit',
-      recurrenceRule: { type: 'daily' as const },
-    } as Item
+  // §5.5 — "is a habit" is now a property of the item's slots, so these pass the
+  // schedules rather than the item.
+  const habitSchedules = [{ recurrenceRule: { type: 'daily' as const } } as ItemSchedule]
 
-    const err = validateNotHabit(fakeHabit, 'prerequisite')
+  it('§4.2 habit cannot be used as a prerequisite', () => {
+    const err = validateNotHabit(habitSchedules, 'prerequisite')
     expect(err).not.toBeNull()
     expect(err).toContain('recurring habit')
   })
 
   it('§4.2 habit cannot have a prerequisite', () => {
-    const fakeHabit = {
-      id: 'fake-habit',
-      recurrenceRule: { type: 'daily' as const },
-    } as Item
-
-    const err = validateNotHabit(fakeHabit, 'item')
+    const err = validateNotHabit(habitSchedules, 'item')
     expect(err).not.toBeNull()
     expect(err).toContain('recurring habit')
+  })
+
+  it('§4.2 + §5.5 an item is a habit if ANY of its slots recurs', () => {
+    const mixed = [
+      { recurrenceRule: null } as ItemSchedule,
+      { recurrenceRule: { type: 'daily' as const } } as ItemSchedule,
+    ]
+    expect(validateNotHabit(mixed, 'item')).toContain('recurring habit')
+    expect(validateNotHabit([{ recurrenceRule: null } as ItemSchedule], 'item')).toBeNull()
   })
 
   it('§4.2 addPrerequisite rejects habit as prerequisite (DB check)', async () => {
@@ -255,7 +259,7 @@ describe('§4.2 blocked item is still schedulable/visible, excluded from actiona
     await addPrerequisite(getTestPool(), item, prereq, u.id)
 
     // Can materialize an occurrence even though blocked
-    const occ = await ensureOccurrenceMaterialized(getTestPool(), item, TODAY, u.id)
+    const occ = await ensureOccurrenceForItemDay(getTestPool(), item, TODAY, u.id)
     expect(occ.id).toBeDefined()
     expect(occ.itemId).toBe(item.id)
   })

@@ -2,7 +2,7 @@
 // All types are consumed by both frontend (step 4) and backend routes.
 // Defined once here so the API cannot drift from the client.
 
-import type { ComputedOccurrence } from './entities'
+import type { ComputedOccurrence, Item, ItemPrerequisite, ItemSchedule } from './entities'
 import type {
   Priority,
   Valence,
@@ -49,6 +49,25 @@ export type OccurrenceWithState = ComputedOccurrence & {
   // rolls up child completions. Excludes any currently in-progress session, whose
   // live elapsed time the client tracks separately while it's running.
   loggedMinutes: number
+}
+
+// ── Item read shapes (§5.5) ───────────────────────────────────────────────────
+
+// An item always travels with its schedules: without them a client can't tell when
+// the item happens, whether it recurs, or how to render its timing.
+export type ItemWithSchedules = Item & {
+  schedules: ItemSchedule[]
+}
+
+export type ItemDetail = ItemWithSchedules & {
+  children: Item[]
+  prerequisites: ItemPrerequisite[]
+}
+
+// §5.5 — an item recurs if any of its slots does. Shared so the client and the
+// prerequisite rule (§4.2) can never disagree about what "a habit" means.
+export function isRecurringItem(schedules: ItemSchedule[]): boolean {
+  return schedules.some((s) => s.recurrenceRule !== null)
 }
 
 // ── Request body types ────────────────────────────────────────────────────────
