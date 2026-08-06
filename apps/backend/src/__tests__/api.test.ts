@@ -8,10 +8,11 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { setupTestDb, teardownTestDb, getTestPool } from './helpers/test-db'
 import * as repos from '../db/repos/index'
 import { buildApp } from '../app'
-import { ensureOccurrenceForItemDay } from '../domain/materialization'
+import { ensureOccurrenceForItemDay, ensureOccurrenceMaterialized } from '../domain/materialization'
 import { todayLocal } from '../domain/day'
 import type { FastifyInstance } from 'fastify'
 import { createItem } from '../domain/items'
+import { addSchedule } from '../domain/schedules'
 import { occurrenceOn, soleScheduleOf } from './helpers/schedules'
 
 beforeAll(async () => { await setupTestDb() })
@@ -1005,6 +1006,103 @@ describe('§9.1 — manual session create and edit work', () => {
     expect(listed[0].durationMin).toBe(25)
     expect(listed[0].startedAt).toBe('2025-01-15T09:50:00.000Z')
     expect(listed[0].endedAt).toBe('2025-01-15T10:15:00.000Z')
+
+    await app.close()
+  })
+})
+
+// ── §5.5 — logging time against one slot of a multi-slot item ────────────────
+
+describe('§5.5 — a session is logged against a slot, not against (item, day)', () => {
+  // The two-slot item both tests need: one daily slot, then a second daily slot.
+  async function makeTwoSlotItem(userId: string, name: string) {
+    const pool = getTestPool()
+    const item = await createItem(pool, {
+      userId, name, recurrenceRule: { type: 'daily' }, creationSource: 'planned',
+    })
+    const [slotA] = await repos.findSchedulesByItem(pool, item.id, userId)
+    const added = await addSchedule(
+      pool, item, userId, { label: 'Evening', recurrenceRule: { type: 'daily' } }, TODAY
+    )
+    if (!added.ok) throw new Error(`addSchedule rejected: ${added.error}`)
+    const slotB = added.value
+    // Materialize both of today's occurrences so "the other slot is untouched" is a
+    // statement about a real row rather than about an absent one.
+    await ensureOccurrenceMaterialized(pool, item, slotA, TODAY, userId)
+    await ensureOccurrenceMaterialized(pool, item, slotB, TODAY, userId)
+    return { item, slotA, slotB }
+  }
+
+  it('§5.5 POST /sessions/manual logs the minutes against the named slot only, on a multi-slot item', async () => {
+    const u = await makeUser('api-manual-session-multi-slot@test.com')
+    const app = await buildTestApp(u.id)
+    const { item, slotA, slotB } = await makeTwoSlotItem(u.id, 'Immersion (Japanese)')
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/sessions/manual',
+      payload: {
+        itemId: item.id,
+        scheduleId: slotB.id,
+        day: TODAY,
+        startedAt: '2025-01-15T14:00:00.000Z',
+        endedAt: '2025-01-15T14:40:00.000Z',
+      },
+    })
+    expect(res.statusCode).toBe(201)
+    expect(JSON.parse(res.body).durationMin).toBe(40)
+
+    // The minutes land on slot B's occurrence; slot A's is untouched.
+    const occB = await repos.findOccurrenceByItemDayAndSchedule(getTestPool(), item.id, TODAY, slotB.id, u.id)
+    const occA = await repos.findOccurrenceByItemDayAndSchedule(getTestPool(), item.id, TODAY, slotA.id, u.id)
+    expect(JSON.parse(res.body).occurrenceId).toBe(occB!.id)
+    const loggedB = await app.inject({ method: 'GET', url: `/api/occurrences/${occB!.id}` })
+    const loggedA = await app.inject({ method: 'GET', url: `/api/occurrences/${occA!.id}` })
+    expect(JSON.parse(loggedB.body).loggedMinutes).toBe(40)
+    expect(JSON.parse(loggedA.body).loggedMinutes).toBe(0)
+
+    await app.close()
+  })
+
+  it('§5.5 POST /sessions/start starts the timer on the named slot of a multi-slot item', async () => {
+    const u = await makeUser('api-start-session-multi-slot@test.com')
+    const app = await buildTestApp(u.id)
+    const { item, slotB } = await makeTwoSlotItem(u.id, 'Immersion (Japanese)')
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/sessions/start',
+      payload: { itemId: item.id, scheduleId: slotB.id, day: TODAY },
+    })
+    expect(res.statusCode).toBe(201)
+
+    const occB = await repos.findOccurrenceByItemDayAndSchedule(getTestPool(), item.id, TODAY, slotB.id, u.id)
+    expect(JSON.parse(res.body).occurrenceId).toBe(occB!.id)
+
+    await app.close()
+  })
+
+  it('§5.5 POST /sessions/manual is refused with 404 when the named schedule belongs to another item', async () => {
+    const u = await makeUser('api-manual-session-foreign-slot@test.com')
+    const app = await buildTestApp(u.id)
+    const { item } = await makeTwoSlotItem(u.id, 'Immersion (Japanese)')
+    const other = await createItem(getTestPool(), {
+      userId: u.id, name: 'Unrelated', recurrenceRule: { type: 'daily' }, creationSource: 'planned',
+    })
+    const otherSlot = await soleScheduleOf(getTestPool(), other.id, u.id)
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/sessions/manual',
+      payload: {
+        itemId: item.id,
+        scheduleId: otherSlot.id,
+        day: TODAY,
+        startedAt: '2025-01-15T14:00:00.000Z',
+        endedAt: '2025-01-15T14:40:00.000Z',
+      },
+    })
+    expect(res.statusCode).toBe(404)
 
     await app.close()
   })

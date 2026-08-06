@@ -166,7 +166,12 @@ export function NowView({ onEditItem }: Props) {
   // ── Timer ──────────────────────────────────────────────────────────────────
 
   const handleTimerStart = useCallback(async (occ: OccurrenceWithState) => {
-    const { sessionId, occurrenceId } = await api.sessions.start({ itemId: occ.itemId, day: occ.appliesToDay })
+    // §5.5 — the timer runs against the slot the user tapped, not just (item, day).
+    const { sessionId, occurrenceId } = await api.sessions.start({
+      itemId: occ.itemId,
+      scheduleId: occ.scheduleId,
+      day: occ.appliesToDay,
+    })
     setSessions((prev) => {
       const next = new Map(prev)
       next.set(occurrenceId, {

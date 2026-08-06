@@ -117,7 +117,14 @@ export function SessionManagerModal({ occ, onClose, onChanged }: Props) {
     setFormError(null)
     try {
       if (formTarget === 'add') {
-        await api.sessions.manual({ itemId: occ.itemId, day: occ.appliesToDay, startedAt, endedAt })
+        // §5.5 — scheduleId, not just (item, day): the minutes belong to this slot.
+        await api.sessions.manual({
+          itemId: occ.itemId,
+          scheduleId: occ.scheduleId,
+          day: occ.appliesToDay,
+          startedAt,
+          endedAt,
+        })
       } else if (formTarget) {
         await api.sessions.edit(formTarget, { startedAt, endedAt })
       }

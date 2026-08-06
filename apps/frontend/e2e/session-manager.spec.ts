@@ -191,6 +191,31 @@ test.describe('§9.1 — Session manager: list, add, edit, delete individual log
     await expect(row.getByTestId('timer-logged')).toHaveText('40:00')
   })
 
+  test('§5.5 adding a manual session names the slot it is logged against, so a multi-slot item is not ambiguous', async ({ page }) => {
+    const sessions: SessionSummary[] = []
+    await setupSessionMocks(page, sessions)
+    await page.goto('/')
+
+    const manualRequest = page.waitForRequest('/api/sessions/manual')
+
+    const row = page.getByTestId('occ-row-occ-piano')
+    await row.getByTestId('occ-manage-time-btn').click()
+    const modal = page.getByTestId('session-manager-modal')
+    await modal.getByTestId('session-add-btn').click()
+    await modal.getByTestId('session-form-date').fill('2025-06-16')
+    await modal.getByTestId('session-form-start').fill('14:00')
+    await modal.getByTestId('session-form-end').fill('14:40')
+    await modal.getByTestId('session-form-submit').click()
+
+    // Without the scheduleId the server cannot tell which of the item's slots the
+    // minutes belong to, and refuses to guess.
+    const body = (await manualRequest).postDataJSON() as { itemId: string; scheduleId?: string }
+    expect(body.itemId).toBe('item-piano')
+    expect(body.scheduleId).toBe(OCC.scheduleId)
+
+    await expect(modal.getByTestId('session-list').locator('li')).toHaveCount(1)
+  })
+
   test('§9.1 deleting one session removes only that entry and reduces the total by exactly its duration, leaving the others unchanged', async ({ page }) => {
     const sessions = fourWindows()
     await setupSessionMocks(page, sessions)

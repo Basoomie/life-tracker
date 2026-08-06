@@ -155,13 +155,18 @@ export type RetroactiveBody = {
   recordedAt?: string   // ISO 8601 timestamp; defaults to now
 }
 
+// §5.5 — (itemId, day) does not identify one occurrence once an item has several
+// slots, so the client sends the scheduleId of the slot it rendered. Optional only
+// for single-slot callers; the server refuses to guess when the item is multi-slot.
 export type StartSessionBody = {
   itemId: string
+  scheduleId?: string
   day?: string   // YYYY-MM-DD; defaults to today
 }
 
 export type ManualSessionBody = {
   itemId: string
+  scheduleId?: string
   day?: string
   startedAt: string   // ISO 8601
   endedAt: string     // ISO 8601

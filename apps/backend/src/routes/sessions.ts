@@ -6,11 +6,34 @@ import { randomUUID } from 'crypto'
 import type { FastifyInstance } from 'fastify'
 import { pool } from '../db'
 import * as repos from '../db/repos/index'
-import { ensureOccurrenceForItemDay } from '../domain/materialization'
+import { ensureOccurrenceForItemDay, ensureOccurrenceMaterialized } from '../domain/materialization'
 import { computeSessionDurationMin } from '../domain/sessions'
 import { notFound } from './helpers'
 import { logicalToday } from '../domain/day'
+import type { Item, Occurrence } from '@tracker/shared'
 import type { StartSessionBody, ManualSessionBody, EditSessionBody } from '@tracker/shared'
+
+/**
+ * §5.5 — Resolve the occurrence a session is logged against.
+ *
+ * Time is logged against one *slot*, not against (item, day): an item scheduled both
+ * morning and evening has two occurrences that day and the minutes belong to exactly
+ * one of them. The client sends the scheduleId it rendered; without one we fall back
+ * to the item's sole slot, which throws rather than guessing when there are several.
+ *
+ * Returns null when the given scheduleId doesn't exist or belongs to another item.
+ */
+async function occurrenceForSession(
+  item: Item,
+  scheduleId: string | undefined,
+  day: string,
+  userId: string
+): Promise<Occurrence | null> {
+  if (!scheduleId) return ensureOccurrenceForItemDay(pool, item, day, userId)
+  const schedule = await repos.findScheduleById(pool, scheduleId, userId)
+  if (!schedule || schedule.itemId !== item.id) return null
+  return ensureOccurrenceMaterialized(pool, item, schedule, day, userId)
+}
 
 export async function sessionRoutes(app: FastifyInstance) {
   // POST /sessions/start — begin a live timer for an item
@@ -22,7 +45,8 @@ export async function sessionRoutes(app: FastifyInstance) {
     if (!item) return notFound(reply, 'item')
 
     const day = body.day ?? (await logicalToday(pool, userId))
-    const occ = await ensureOccurrenceForItemDay(pool, item, day, userId)
+    const occ = await occurrenceForSession(item, body.scheduleId, day, userId)
+    if (!occ) return notFound(reply, 'schedule')
 
     const sessionId = randomUUID()
     await repos.insertEvent(pool, {
@@ -114,7 +138,8 @@ export async function sessionRoutes(app: FastifyInstance) {
     if (!item) return notFound(reply, 'item')
 
     const day = body.day ?? (await logicalToday(pool, userId))
-    const occ = await ensureOccurrenceForItemDay(pool, item, day, userId)
+    const occ = await occurrenceForSession(item, body.scheduleId, day, userId)
+    if (!occ) return notFound(reply, 'schedule')
 
     const startedAt = new Date(body.startedAt)
     const endedAt   = new Date(body.endedAt)
