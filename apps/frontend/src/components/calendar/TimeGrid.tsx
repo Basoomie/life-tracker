@@ -2,6 +2,7 @@
 // Core requirement: a 2.5h block renders 2.5× the height of a 1h block.
 
 import { useEffect, useRef, useState } from 'react'
+import type { ReactNode } from 'react'
 import { OccurrenceRow } from '../now/OccurrenceRow'
 import { OccurrenceCard } from '../shared/OccurrenceCard'
 import { SortableList } from '../shared/SortableList'
@@ -119,7 +120,7 @@ export function TimeGrid({
   // applies to a plain leaf row; a parent-with-children selection stays
   // open regardless (you're likely interacting with several children in a
   // row, so auto-closing after any one of them would be disruptive).
-  function renderRow(occ: OccurrenceWithState, closeAfterAction = false) {
+  function renderRow(occ: OccurrenceWithState, closeAfterAction = false, progress?: ReactNode) {
     const occId = occ.id ?? occ.itemId
     return (
       <OccurrenceRow
@@ -140,6 +141,7 @@ export function TimeGrid({
         onEdit={() => onEdit(occ.itemId)}
         onArchive={() => { onArchive(occ); if (closeAfterAction) setSelected(null) }}
         onManageSessions={() => onManageSessions(occ)}
+        progress={progress}
       />
     )
   }
@@ -157,7 +159,7 @@ export function TimeGrid({
           key={occurrenceKey(occ)}
           node={node}
           depth={0}
-          renderLeaf={(o) => renderRow(o)}
+          renderLeaf={(o, progress) => renderRow(o, false, progress)}
           onReordered={onReordered}
           defaultExpanded={defaultExpanded}
         />

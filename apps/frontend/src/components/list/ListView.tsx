@@ -1,6 +1,7 @@
 // §12.3 — List view: flat sorted list per time-range; priority-flip grouping.
 
 import { useState, useEffect, useMemo, useCallback } from 'react'
+import type { ReactNode } from 'react'
 import { useRangeData, useOverdueData, useDayStartEntries } from '../../hooks/useRangeData'
 import { useOccurrenceActions } from '../../hooks/useOccurrenceActions'
 import { useStreakSummaries } from '../../hooks/useStreakSummaries'
@@ -166,7 +167,7 @@ export function ListView({ onEditItem }: Props) {
     return map
   }, [treesByDay])
 
-  function renderRow(occ: OccurrenceWithState, isChild = false) {
+  function renderRow(occ: OccurrenceWithState, isChild = false, progress?: ReactNode) {
     const occId = occ.id ?? occ.itemId
     return (
       <OccurrenceRow
@@ -188,6 +189,7 @@ export function ListView({ onEditItem }: Props) {
         onEdit={() => onEditItem(occ.itemId)}
         onArchive={() => setPendingArchive(occ)}
         onManageSessions={() => setSessionManagerTarget(occ)}
+        progress={progress}
       />
     )
   }
@@ -199,7 +201,7 @@ export function ListView({ onEditItem }: Props) {
   function renderNode(occ: OccurrenceWithState) {
     const node = nodeByKey.get(occ.id ?? occ.itemId)
     if (node && (node.children.length > 0 || occ.hasChildren)) {
-      return <OccurrenceCard key={occurrenceKey(occ)} node={node} depth={0} renderLeaf={(o) => renderRow(o)} onReordered={handleReordered} />
+      return <OccurrenceCard key={occurrenceKey(occ)} node={node} depth={0} renderLeaf={(o, progress) => renderRow(o, false, progress)} onReordered={handleReordered} />
     }
     return renderRow(occ)
   }

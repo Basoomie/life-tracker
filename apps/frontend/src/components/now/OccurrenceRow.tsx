@@ -1,4 +1,4 @@
-import type { CSSProperties } from 'react'
+import type { CSSProperties, ReactNode } from 'react'
 import type { OccurrenceWithState, ItemStreakSummary } from '@tracker/shared'
 import type { Bucket } from '@tracker/shared'
 import type { SessionState } from './TimerControl'
@@ -39,6 +39,12 @@ type Props = {
   // v2 §3.2.5 — the ambient streak badge. Absent for one-time items (a streak is
   // a property of a recurrence) and while the summary request is still in flight.
   streak?: ItemStreakSummary
+  // The derived-% bar + completed/total label, supplied by OccurrenceCard for a
+  // parent occurrence (leaf rows pass nothing and render no bar). It lives
+  // *inside* the row rather than below it so that it and .occ-actions are flex
+  // siblings: on narrow screens, where the actions wrap onto their own line,
+  // that's the only way CSS can order the bar above the buttons.
+  progress?: ReactNode
 }
 
 // Statuses that get a badge instead of reading as a plain open row (completed
@@ -89,6 +95,7 @@ export function OccurrenceRow({
   onArchive,
   onManageSessions,
   streak,
+  progress,
 }: Props) {
   const isComplete = occ.completionState.isComplete
   const timingLabel = formatTimingLabel(occ, buckets)
@@ -118,6 +125,9 @@ export function OccurrenceRow({
     occ.isBlocked ? 'occ-row--blocked' : '',
     isDispositioned ? `occ-row--dispositioned occ-row--${occ.disposition.type}` : '',
     isAutoClosed ? 'occ-row--auto_closed' : '',
+    // Only a row carrying a progress bar needs to wrap onto a second line at
+    // full width; leaf rows keep their single-line layout.
+    progress ? 'occ-row--with-progress' : '',
   ].filter(Boolean).join(' ')
 
   return (
@@ -193,6 +203,8 @@ export function OccurrenceRow({
           )}
         </div>
       </div>
+
+      {progress}
 
       {/* Actions */}
       <div className="occ-actions">

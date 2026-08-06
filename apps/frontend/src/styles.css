@@ -510,6 +510,46 @@ input, select, textarea {
   flex-shrink: 0;
 }
 
+/* ── Parent progress bar (rendered by OccurrenceCard, lives inside the row) ──
+   A full-width flex line of its own, ordered after the title/actions line at
+   desktop widths — visually identical to sitting under the header, but as a
+   flex sibling of .occ-actions it can be re-ordered above the buttons once
+   they wrap onto their own line (see the ≤480px block). ─────────────────── */
+.occ-row--with-progress {
+  flex-wrap: wrap;
+  row-gap: var(--space-2);
+}
+
+.occ-row__progress {
+  flex-basis: 100%;
+  order: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.occ-row__progress-track {
+  flex: 1;
+  max-width: 160px;
+  height: 6px;
+  background: var(--color-border-subtle);
+  border-radius: var(--radius-full);
+  overflow: hidden;
+}
+
+.occ-row__progress-fill {
+  height: 100%;
+  background: var(--color-accent);
+  border-radius: var(--radius-full);
+}
+
+.occ-row__progress-label {
+  font-size: var(--text-xs);
+  color: var(--color-text-secondary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
 @media (max-width: 480px) {
   /* The icon cluster (timer, clock, edit, trash, disposition) doesn't shrink,
      so on a phone-width row it was squeezing the title down to a sliver —
@@ -526,6 +566,10 @@ input, select, textarea {
     flex-wrap: wrap;
     /* Align under the title: checkbox width (20px) + row gap (--space-3). */
     margin-left: calc(20px + var(--space-3));
+    /* Once the buttons have a line to themselves, the progress bar reads as
+       belonging to the title above it, not floating under the button cluster —
+       so it goes first (order 1) and the buttons last. */
+    order: 2;
   }
 }
 
@@ -583,37 +627,6 @@ input, select, textarea {
 .occ-card__toggle:hover {
   background: var(--color-border-subtle);
   color: var(--color-text-primary);
-}
-
-.occ-card__progress {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding: 0 var(--space-4) var(--space-2);
-}
-
-.occ-card--nested > .occ-card__progress { padding: 0 var(--space-3) var(--space-2); }
-
-.occ-card__progress-track {
-  flex: 1;
-  max-width: 160px;
-  height: 6px;
-  background: var(--color-border-subtle);
-  border-radius: var(--radius-full);
-  overflow: hidden;
-}
-
-.occ-card__progress-fill {
-  height: 100%;
-  background: var(--color-accent);
-  border-radius: var(--radius-full);
-}
-
-.occ-card__progress-label {
-  font-size: var(--text-xs);
-  color: var(--color-text-secondary);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
 }
 
 .occ-card__children {

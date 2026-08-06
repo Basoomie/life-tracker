@@ -2,6 +2,7 @@
 // Owns session state for live timers; all mutations go through the API.
 
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
+import type { ReactNode } from 'react'
 import { useNowData } from '../../hooks/useNowData'
 import { useStreakSummaries } from '../../hooks/useStreakSummaries'
 import { useDayStartEntries } from '../../hooks/useRangeData'
@@ -325,7 +326,7 @@ export function NowView({ onEditItem }: Props) {
 
   // ── Render helpers ─────────────────────────────────────────────────────────
 
-  function renderRow(occ: OccurrenceWithState, isChild = false) {
+  function renderRow(occ: OccurrenceWithState, isChild = false, progress?: ReactNode) {
     const occId = occ.id ?? occ.itemId
     return (
       <OccurrenceRow
@@ -346,6 +347,7 @@ export function NowView({ onEditItem }: Props) {
         onEdit={() => onEditItem(occ.itemId)}
         onArchive={() => setPendingArchive(occ)}
         onManageSessions={() => setSessionManagerTarget(occ)}
+        progress={progress}
       />
     )
   }
@@ -357,7 +359,7 @@ export function NowView({ onEditItem }: Props) {
   function renderNode(occ: OccurrenceWithState) {
     const node = nodeByKey.get(occ.id ?? occ.itemId)
     if (node && (node.children.length > 0 || occ.hasChildren)) {
-      return <OccurrenceCard key={occurrenceKey(occ)} node={node} depth={0} renderLeaf={(o) => renderRow(o)} onReordered={handleReordered} />
+      return <OccurrenceCard key={occurrenceKey(occ)} node={node} depth={0} renderLeaf={(o, progress) => renderRow(o, false, progress)} onReordered={handleReordered} />
     }
     return renderRow(occ)
   }

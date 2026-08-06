@@ -16,7 +16,10 @@ import { occurrenceKey, sortableKey, orderedItemIds } from '../../lib/occurrence
 type Props = {
   node: OccurrenceNode
   depth: number
-  renderLeaf: (occ: OccurrenceNode['occ']) => ReactNode
+  // `progress` is the parent's derived-% bar; the view must forward it to
+  // OccurrenceRow so it renders inside the row (see OccurrenceRow's `progress`
+  // prop for why). Children are rendered with it omitted.
+  renderLeaf: (occ: OccurrenceNode['occ'], progress?: ReactNode) => ReactNode
   // Patches sortOrder locally for the reordered children — deliberately NOT
   // a full refresh(): both views' refresh() flips a loading flag that
   // unmounts the whole tree while it refetches, which would collapse every
@@ -97,10 +100,24 @@ export function OccurrenceCard({ node, depth, renderLeaf, onReordered, defaultEx
     depth === 0 ? (expanded ? 'occ-card--expanded' : '') : 'occ-card--nested',
   ].filter(Boolean).join(' ')
 
+  // Handed to the row so it sits on its own full-width line *within* the row's
+  // flex flow — which is what lets narrow screens order it above the wrapped
+  // action buttons instead of below them.
+  const progress = (
+    <div className="occ-row__progress">
+      <div className="occ-row__progress-track">
+        <div className="occ-row__progress-fill" style={{ width: `${pct}%` }} />
+      </div>
+      <span className="occ-row__progress-label" data-testid={`occ-card-progress-${itemId}`}>
+        {completedChildren}/{totalChildren}
+      </span>
+    </div>
+  )
+
   return (
     <div className={cardClasses} data-testid={`occ-card-${itemId}`} data-expanded={expanded}>
       <div className="occ-card__header">
-        {renderLeaf(occ)}
+        {renderLeaf(occ, progress)}
         <button
           className="occ-card__toggle"
           onClick={() => setExpanded((v) => !v)}
@@ -110,15 +127,6 @@ export function OccurrenceCard({ node, depth, renderLeaf, onReordered, defaultEx
         >
           <span aria-hidden="true">{expanded ? '▲' : '▼'}</span>
         </button>
-      </div>
-
-      <div className="occ-card__progress">
-        <div className="occ-card__progress-track">
-          <div className="occ-card__progress-fill" style={{ width: `${pct}%` }} />
-        </div>
-        <span className="occ-card__progress-label" data-testid={`occ-card-progress-${itemId}`}>
-          {completedChildren}/{totalChildren}
-        </span>
       </div>
 
       {expanded && (
@@ -148,7 +156,7 @@ export function OccurrenceCard({ node, depth, renderLeaf, onReordered, defaultEx
 type DraggableChildProps = {
   child: OccurrenceNode
   depth: number
-  renderLeaf: (occ: OccurrenceNode['occ']) => ReactNode
+  renderLeaf: (occ: OccurrenceNode['occ'], progress?: ReactNode) => ReactNode
   onReordered: (orderedItemIds: string[]) => void
 }
 
