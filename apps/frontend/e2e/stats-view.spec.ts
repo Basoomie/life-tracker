@@ -5,6 +5,8 @@
 import { test, expect, type Page } from '@playwright/test'
 import type {
   Item,
+  ItemSchedule,
+  ItemWithSchedules,
   DateWindow,
   LeafAdherenceFinding,
   ParentAdherenceFinding,
@@ -26,14 +28,25 @@ const WINDOW: DateWindow = { startDay: '2026-01-01', endDay: '2026-07-10' }
 
 // ── Fixture factories ────────────────────────────────────────────────────────
 
-function makeItem(o: Partial<Item> & { id: string; name: string }): Item {
+// §5.5 — an item travels with its schedules. Callers still pass the slot's rule flat,
+// because that is how the create API and the form think about a new item; this
+// assembles the one-slot shape the API actually returns.
+function makeItem(
+  o: Partial<Item> & { id: string; name: string; recurrenceRule?: ItemSchedule['recurrenceRule'] }
+): ItemWithSchedules {
+  const { recurrenceRule = { type: 'daily' as const }, ...itemFields } = o
   return {
     userId: 'u1', description: null, categoryId: null, valence: null, priority: null,
-    recurrenceRule: { type: 'daily' }, quotaTarget: null, timingPrecision: 'none',
-    timingBucketId: null, timingStartTime: null, timingEndTime: null, plannedDurationMin: null,
-    parentId: null, dispositionPolicy: 'skip', creationSource: 'planned',
+    quotaTarget: null, parentId: null, sortOrder: 0,
+    dispositionPolicy: 'skip', creationSource: 'planned',
     archivedAt: null, createdAt: new Date(),
-    ...o,
+    ...itemFields,
+    schedules: [{
+      id: `${o.id}-s0`, userId: 'u1', itemId: o.id, label: null,
+      recurrenceRule, anchorDay: null, timingPrecision: 'none',
+      timingBucketId: null, timingStartTime: null, timingEndTime: null,
+      plannedDurationMin: null, sortOrder: 0, archivedAt: null, createdAt: new Date(),
+    }],
   }
 }
 

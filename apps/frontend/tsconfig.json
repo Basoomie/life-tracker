@@ -10,5 +10,9 @@
       "@tracker/shared": ["../../packages/shared/src/index.ts"]
     }
   },
-  "include": ["src/**/*"]
+  // e2e/ is included deliberately: its fixtures are annotated with the shared domain
+  // types, and without typechecking them those annotations are claims nobody verifies.
+  // A fixture that silently drifts from the real API shape makes the suite green while
+  // testing something the server never sends.
+  "include": ["src/**/*", "e2e/**/*"]
 }

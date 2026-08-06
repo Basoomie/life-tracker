@@ -547,7 +547,13 @@ test.describe('§12.2 — Now view tier ordering and rendering', () => {
 
     const completedTrading = {
       ...TRADING_OCC,
-      completionState: { ...TRADING_OCC.completionState, isComplete: true, completedAt: '2025-06-16T05:00:00Z' },
+      completionState: {
+        ...TRADING_OCC.completionState,
+        isComplete: true,
+        // Dates cross the wire as ISO strings; the domain type says Date. Same cast
+        // this file already uses for materializedAt.
+        completedAt: '2025-06-16T05:00:00Z' as unknown as Date,
+      },
     }
 
     let completed = false
@@ -595,7 +601,13 @@ test.describe('§12.2 — Now view tier ordering and rendering', () => {
     const completedTrading = {
       ...TRADING_OCC,
       loggedMinutes: 5,
-      completionState: { ...TRADING_OCC.completionState, isComplete: true, completedAt: '2025-06-16T05:00:00Z' },
+      completionState: {
+        ...TRADING_OCC.completionState,
+        isComplete: true,
+        // Dates cross the wire as ISO strings; the domain type says Date. Same cast
+        // this file already uses for materializedAt.
+        completedAt: '2025-06-16T05:00:00Z' as unknown as Date,
+      },
     }
 
     await setupApiMocks(page, [completedTrading])

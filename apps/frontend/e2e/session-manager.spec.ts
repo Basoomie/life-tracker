@@ -24,6 +24,8 @@ function makeOcc(overrides: MakeOccOverrides): OccurrenceWithState {
     id: overrides.id,
     userId: 'u1',
     itemId: overrides.itemId,
+    // §5.5 — an occurrence belongs to one of its item's slots.
+    scheduleId: `${overrides.itemId}-s0`,
     appliesToDay: '2025-06-16',
     materializedAt: '2025-06-16T04:00:00Z' as unknown as null,
     snapshot: {

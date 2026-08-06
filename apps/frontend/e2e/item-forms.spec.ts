@@ -21,6 +21,8 @@ function makeOcc(overrides: {
     id: overrides.id,
     userId: 'u1',
     itemId: overrides.itemId,
+    // §5.5 — matches the schedule id makeItem gives the same item's first slot.
+    scheduleId: `${overrides.itemId}-s0`,
     appliesToDay: '2026-07-07',
     materializedAt: '2026-07-07T04:00:00Z' as unknown as null,
     snapshot: {
@@ -766,7 +768,11 @@ test.describe('§4.2 / §4c-ii — Prerequisites in full-edit', () => {
 // ─────────────────────────────────────────────────────────────────────────────
 test.describe('§4c-ii — Full-edit: parent nesting, disposition, edit mode', () => {
 
-  async function openEditForm(page: Page, item: Item, allItems: Item[] = [item]) {
+  async function openEditForm(
+    page: Page,
+    item: ItemWithSchedules,
+    allItems: ItemWithSchedules[] = [item]
+  ) {
     const occ = makeOcc({ id: `occ-${item.id}`, itemId: item.id, name: item.name })
     await page.route('/me', (r) => r.fulfill({ json: { id: 'u1', email: 'test@tracker.local', createdAt: new Date().toISOString() } }))
     await page.route(/\/api\/occurrences\?start=.*&end=.*/, (r) => r.fulfill({ json: [occ] }))
