@@ -539,10 +539,14 @@ input, select, textarea {
 }
 
 .occ-row__progress-track {
-  /* Basis rather than `flex: 1` — the bar's parent is now content-sized, so a
-     0-basis track would collapse to nothing. */
-  flex: 1 1 160px;
-  max-width: 160px;
+  /* A definite width, not a flex basis. The track's own content is an empty
+     fill div, so its intrinsic size is 0 — and .occ-row__progress is now
+     shrink-to-fit (it no longer spans the line), which means it sizes to that
+     intrinsic 0 and the bar disappears. `width` is what makes the track
+     contribute its 160px to the parent's size; flex-shrink still lets it give
+     way on a very narrow row. */
+  width: 160px;
+  flex-shrink: 1;
   height: 6px;
   background: var(--color-border-subtle);
   border-radius: var(--radius-full);

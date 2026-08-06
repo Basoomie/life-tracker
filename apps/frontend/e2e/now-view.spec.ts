@@ -1156,6 +1156,28 @@ test.describe('Occurrence nesting — parent/child cards (Now view)', () => {
     await expect(page.getByTestId(`occ-card-progress-${ROUTINE_OCC.itemId}`)).toHaveText('0/0')
   })
 
+  // The bar's own content is an empty fill div, so its width comes entirely from
+  // CSS — which means a layout change can silently collapse it to nothing while
+  // every text assertion still passes. Measure it.
+  test('§6.1 the parent progress bar renders at a legible width, with the derived % to its right', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2025-06-16T22:00:00'))
+    await setupApiMocks(page, [ROUTINE_OCC, TRETINOIN_OCC])
+
+    await page.goto('/')
+
+    const row = page.getByTestId(`occ-row-${ROUTINE_OCC.id}`)
+    const track = row.locator('.occ-row__progress-track')
+    const trackBox = (await track.boundingBox())!
+    expect(trackBox.width).toBeGreaterThan(100)
+    expect(trackBox.height).toBeGreaterThan(0)
+
+    // §6.2's % belongs to the bar, not to the time/streak/adherence run on the
+    // meta line — so it sits after the bar, and never inside .occ-meta.
+    await expect(row.locator('.occ-meta').getByTestId('derived-pct')).toHaveCount(0)
+    const pctBox = (await row.getByTestId('derived-pct').boundingBox())!
+    expect(pctBox.x).toBeGreaterThan(trackBox.x + trackBox.width)
+  })
+
   test('expanding a parent card reveals its children and adds border/shadow', async ({ page }) => {
     await page.clock.setFixedTime(new Date('2025-06-16T22:00:00'))
     await setupApiMocks(page, [ROUTINE_OCC, TRETINOIN_OCC])
