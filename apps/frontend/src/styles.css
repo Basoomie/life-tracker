@@ -453,9 +453,16 @@ input, select, textarea {
   opacity: 0.5;
 }
 
+/* The parent % is the one number on the row that's read at a glance, so its hue
+   carries how far along the parent is: a continuous red→green ramp, not a
+   pass/fail threshold — 60% should look like 60%, not like "failing". The row
+   sets --occ-pct inline; hue 25 (red) at 0 sweeps linearly to 145 (green) at
+   100. The grey fallback applies only if the property is somehow unset. */
 .occ-percent {
+  --occ-pct: 0;
   font-size: var(--text-xs);
   color: var(--color-text-secondary);
+  color: oklch(var(--ramp-lightness) var(--ramp-chroma) calc(25 + var(--occ-pct) * 1.2));
   font-variant-numeric: tabular-nums;
 }
 

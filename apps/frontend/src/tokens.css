@@ -33,6 +33,13 @@
   --color-danger-subtle:   #FEF2F2;
   --color-danger-fg:       #991B1B;
 
+  /* Continuous 0→100% ramp (parent derived %). Only the hue moves along the
+     ramp; lightness and chroma are fixed per theme so every point on the
+     red→green sweep has the same contrast against the surface. A plain HSL
+     sweep can't do this — its mid-range yellows wash out on a light surface. */
+  --ramp-lightness: 0.52;
+  --ramp-chroma:    0.15;
+
   /* Timer — purple */
   --color-timer:           #7C3AED;
   --color-timer-subtle:    #F5F3FF;
@@ -92,6 +99,12 @@
   --color-danger:          #F85149;
   --color-danger-subtle:   #2C1A1C;
   --color-danger-fg:       #FFA198;
+
+  /* Ramp re-tuned for dark surfaces: lifted well above the light-mode lightness
+     (a 0.52 red on #14171D is barely legible), chroma eased back a touch since
+     the red end of the sweep is out of sRGB gamut at that lightness. */
+  --ramp-lightness: 0.78;
+  --ramp-chroma:    0.13;
 
   /* Timer — purple, free to tune for legibility (never a solid button fill today) */
   --color-timer:           #9F8CFA;

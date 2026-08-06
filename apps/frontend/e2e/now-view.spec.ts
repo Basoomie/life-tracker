@@ -415,6 +415,46 @@ test.describe('§12.2 — Now view tier ordering and rendering', () => {
     await expect(page.getByTestId(`occ-card-${ROUTINE_OCC.itemId}`)).toHaveAttribute('data-expanded', 'true')
   })
 
+  // A readability affordance on top of §6.2's derived %, not a spec rule of its
+  // own. What matters is that the ramp is *continuous*: a mid value has to read
+  // as its own colour rather than snapping to one of two states, or the number
+  // turns into a pass/fail verdict on a parent that's simply part-done.
+  test('§6.2 the parent % is colour-coded on a continuous red→green ramp, not a pass/fail threshold', async ({ page }) => {
+    const parentAt = (pct: number) => makeOcc({
+      id: `occ-p${pct}`, itemId: `item-p${pct}`, name: `Parent ${pct}`,
+      completionState: {
+        isLeaf: false, derivedPercent: pct, completionPercent: pct,
+        isComplete: false, completedAt: null, wasRetroactive: false, declaredPercent: null,
+      },
+      hasChildren: true,
+    })
+
+    await page.clock.setFixedTime(new Date('2025-06-16T05:00:00'))
+    await setupApiMocks(page, [parentAt(0), parentAt(50), parentAt(95)])
+    await page.goto('/')
+
+    // Resolve each rendered colour to real RGB channels through a canvas, so the
+    // assertion doesn't depend on how the browser chooses to serialize oklch().
+    const channels = (pct: number) =>
+      page.getByTestId(`occ-row-occ-p${pct}`).getByTestId('derived-pct').evaluate((el) => {
+        const ctx = document.createElement('canvas').getContext('2d')!
+        ctx.fillStyle = getComputedStyle(el).color
+        ctx.fillRect(0, 0, 1, 1)
+        const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data
+        return { r, g, b }
+      })
+
+    const low = await channels(0)
+    const mid = await channels(50)
+    const high = await channels(95)
+
+    expect(low.r).toBeGreaterThan(low.g)     // 0% reads red
+    expect(high.g).toBeGreaterThan(high.r)   // 95% reads green
+    // The midpoint is neither endpoint — it sits between them on both channels.
+    expect(mid.g).toBeGreaterThan(low.g)
+    expect(mid.r).toBeGreaterThan(high.r)
+  })
+
   test('§9.1 timer start → pause → resume → stop; two simultaneous timers run at once', async ({ page }) => {
     await page.clock.setFixedTime(new Date('2025-06-16T05:00:00'))
     await setupApiMocks(page, [TRADING_OCC, ROUTINE_OCC])

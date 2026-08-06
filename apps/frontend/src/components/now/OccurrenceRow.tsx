@@ -1,3 +1,4 @@
+import type { CSSProperties } from 'react'
 import type { OccurrenceWithState, ItemStreakSummary } from '@tracker/shared'
 import type { Bucket } from '@tracker/shared'
 import type { SessionState } from './TimerControl'
@@ -98,6 +99,11 @@ export function OccurrenceRow({
   const declaredPct = occ.completionState.declaredPercent
   const showBothPercents =
     derivedPct !== null && declaredPct !== null && Math.round(declaredPct) !== Math.round(derivedPct)
+  // Drives the 0→100 colour ramp. It tracks the *leading* number — the one the
+  // ramp is actually colouring — which is the declared value whenever the pair
+  // is shown; the subordinate "· logged X%" keeps its own tertiary grey (§6.2),
+  // so the ramp never gets to overstate a parent the user hasn't declared done.
+  const headlinePct = showBothPercents ? Math.round(declaredPct!) : Math.round(derivedPct ?? 0)
 
   const dispositionMeta = DISPOSITION_META[occ.disposition.type]
   // Skipped/excused/carried-forward: no longer active for today. Visually
@@ -170,7 +176,11 @@ export function OccurrenceRow({
           )}
           {streak && <StreakBadge summary={streak} />}
           {derivedPct !== null && (
-            <span className="occ-percent" data-testid="derived-pct">
+            <span
+              className="occ-percent"
+              data-testid="derived-pct"
+              style={{ '--occ-pct': headlinePct } as CSSProperties}
+            >
               {showBothPercents ? (
                 <>
                   {Math.round(declaredPct!)}%
