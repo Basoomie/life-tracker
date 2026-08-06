@@ -119,6 +119,28 @@ export function OccurrenceRow({
   const isDispositioned = CLEARABLE_DISPOSITIONS.has(occ.disposition.type)
   const isAutoClosed = occ.disposition.type === 'auto_closed'
 
+  // Rendered either at the end of the progress line (parents, which have a bar
+  // to sit beside) or in the meta line (a parent with no materialized children,
+  // which has a derived % but no bar). It must not share the meta line *with* a
+  // bar: sitting between the streak/adherence figures and the bar it describes,
+  // it reads as a third member of that numeric run rather than as the bar's value.
+  const percentEl = derivedPct !== null && (
+    <span
+      className="occ-percent"
+      data-testid="derived-pct"
+      style={{ '--occ-pct': headlinePct } as CSSProperties}
+    >
+      {showBothPercents ? (
+        <>
+          {Math.round(declaredPct!)}%
+          <span className="occ-percent__derived"> · logged {Math.round(derivedPct)}%</span>
+        </>
+      ) : (
+        <>{Math.round(derivedPct)}%</>
+      )}
+    </span>
+  )
+
   const rowClasses = [
     'occ-row',
     isChild ? 'occ-row--child' : '',
@@ -185,26 +207,16 @@ export function OccurrenceRow({
             </span>
           )}
           {streak && <StreakBadge summary={streak} />}
-          {derivedPct !== null && (
-            <span
-              className="occ-percent"
-              data-testid="derived-pct"
-              style={{ '--occ-pct': headlinePct } as CSSProperties}
-            >
-              {showBothPercents ? (
-                <>
-                  {Math.round(declaredPct!)}%
-                  <span className="occ-percent__derived"> · logged {Math.round(derivedPct)}%</span>
-                </>
-              ) : (
-                <>{Math.round(derivedPct)}%</>
-              )}
-            </span>
-          )}
+          {!progress && percentEl}
         </div>
       </div>
 
-      {progress}
+      {progress && (
+        <div className="occ-row__progress-line">
+          {progress}
+          {percentEl}
+        </div>
+      )}
 
       {/* Actions */}
       <div className="occ-actions">

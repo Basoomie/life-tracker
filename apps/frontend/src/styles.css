@@ -520,16 +520,28 @@ input, select, textarea {
   row-gap: var(--space-2);
 }
 
-.occ-row__progress {
+/* The full-width line itself: the bar (with its completed/total count) followed
+   by the colour-ramped parent %. The % lives here rather than on the meta line
+   so it reads as the bar's value instead of as a third figure in the
+   time/streak/adherence run. */
+.occ-row__progress-line {
   flex-basis: 100%;
   order: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.occ-row__progress {
   display: flex;
   align-items: center;
   gap: var(--space-2);
 }
 
 .occ-row__progress-track {
-  flex: 1;
+  /* Basis rather than `flex: 1` — the bar's parent is now content-sized, so a
+     0-basis track would collapse to nothing. */
+  flex: 1 1 160px;
   max-width: 160px;
   height: 6px;
   background: var(--color-border-subtle);
