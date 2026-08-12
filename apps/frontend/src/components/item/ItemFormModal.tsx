@@ -23,6 +23,7 @@ import {
   slotFromSchedule,
   buildRecurrenceRule,
   slotTimingBody,
+  describeSchedules,
   type SlotDraft,
 } from './ScheduleFields'
 
@@ -147,6 +148,12 @@ export function ItemFormModal({ itemId, categories, buckets, onSaved, onClose }:
   const parentCandidates = allItems.filter(
     (it) => it.id !== itemId && !it.archivedAt
   )
+
+  // §4.1 — the selected parent, for the read-only schedule caption below the
+  // picker. May be absent while allItems is still loading.
+  const selectedParent = parentId
+    ? parentCandidates.find((it) => it.id === parentId) ?? null
+    : null
 
   // §8.1 — switching Type in create mode re-defaults the disposition policy
   // (skip for recurring, require_manual for one-time), unless the user already
@@ -623,6 +630,21 @@ export function ItemFormModal({ itemId, categories, buckets, onSaved, onClose }:
                         <option key={it.id} value={it.id}>{it.name}</option>
                       ))}
                     </select>
+                    {/* The parent's own schedule, read-only. A child due on a day
+                        its parent isn't is legal (§4.1 — each node has its own
+                        recurrence) but is usually a mismatched anchor day, and
+                        finding out meant opening the parent — which isn't
+                        reachable at all unless it happens to be due on a day
+                        you're looking at. The answer is cheap to show here:
+                        parentCandidates already carries every item's slots. */}
+                    {selectedParent && (
+                      <p className="field__caption" data-testid="if-parent-schedule">
+                        {selectedParent.name} · {describeSchedules(
+                          selectedParent.schedules,
+                          new Date(selectedParent.createdAt).toISOString().slice(0, 10)
+                        )}
+                      </p>
+                    )}
                   </div>
                 </div>
 

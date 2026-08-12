@@ -3038,3 +3038,12 @@ input, select, textarea {
     text-align: left;
   }
 }
+
+/* A read-only fact about a field's current value, sitting under the control.
+   Deliberately not .form-note (which is a warning-tinted callout): nothing here
+   needs acting on, it just saves a trip to another item to find out. */
+.field__caption {
+  font-size: var(--text-xs);
+  color: var(--color-text-tertiary);
+  margin-top: var(--space-1);
+}

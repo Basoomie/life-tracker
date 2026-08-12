@@ -1144,3 +1144,63 @@ test.describe('§5.5 — multiple schedules per item', () => {
     await expect(page.getByTestId('if-add-schedule-blocked')).toBeVisible()
   })
 })
+
+// ─────────────────────────────────────────────────────────────────────────────
+// §4.1 — the parent picker reports the parent's own schedule
+// ─────────────────────────────────────────────────────────────────────────────
+test.describe('§4.1 — a child can see its parent\'s schedule without opening the parent', () => {
+
+  test('§4.1 the parent picker reports the parent\'s recurrence and start day, not the child\'s', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2026-08-12T08:00:00'))
+
+    // Same recurrence, different anchor day — the mismatch that makes a child
+    // fall due on a day its parent doesn't, and the one that is invisible while
+    // you're looking at the child alone.
+    const parent = makeItem({
+      id: 'item-parent', name: 'Monthly Deep Clean',
+      recurrenceRule: { type: 'monthly' }, anchorDay: '2026-08-03',
+    })
+    const child = makeItem({
+      id: 'item-child', name: 'Vacuum', parentId: 'item-parent',
+      recurrenceRule: { type: 'monthly' }, anchorDay: '2026-08-17',
+    })
+
+    const occ = makeOcc({ id: 'occ-child', itemId: child.id, name: child.name })
+    await page.route('/me', (r) => r.fulfill({ json: { id: 'u1', email: 'test@tracker.local', createdAt: new Date().toISOString() } }))
+    await page.route(/\/api\/occurrences\?start=.*&end=.*/, (r) => r.fulfill({ json: [occ] }))
+    await page.route('/api/buckets',      (r) => r.fulfill({ json: BUCKETS }))
+    await page.route('/api/categories',   (r) => r.fulfill({ json: CATEGORIES }))
+    await page.route('/api/reasons',      (r) => r.fulfill({ json: [] }))
+    await page.route('/api/preferences',  (r) => r.fulfill({ json: {} }))
+    await page.route('/api/items',        (r) => r.fulfill({ json: [parent, child] }))
+    await page.route(`/api/items/${child.id}`, (r) =>
+      r.fulfill({ json: { ...child, children: [], prerequisites: [] } })
+    )
+    await routeScheduleSync(page, child)
+
+    await page.goto('/')
+    await page.getByTestId(`occ-row-${occ.id}`).getByTestId('occ-edit-btn').click()
+    await expect(page.getByTestId('item-form-modal')).toBeVisible()
+    await page.getByTestId('if-advanced-toggle').click()
+
+    const caption = page.getByTestId('if-parent-schedule')
+    await expect(caption).toBeVisible()
+    // Names the parent and how it recurs...
+    await expect(caption).toContainText('Monthly Deep Clean · monthly, from')
+    // ...and the PARENT's start day (the 3rd), not the child's (the 17th) —
+    // reading the child's own anchor back at you would answer nothing.
+    await expect(caption).toContainText('3')
+    await expect(caption).not.toContainText('17')
+  })
+
+  test('§4.1 a top-level item has no parent schedule to report', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2026-08-12T08:00:00'))
+    const item = makeItem({ id: 'item-solo', name: 'Read', recurrenceRule: { type: 'daily' } })
+    await openFullEditForItem(page, item)
+    await page.getByTestId('if-advanced-toggle').click()
+
+    await expect(page.getByTestId('if-parent')).toBeVisible()
+    await expect(page.getByTestId('if-parent-schedule')).toHaveCount(0)
+  })
+
+})

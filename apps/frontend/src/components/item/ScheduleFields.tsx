@@ -10,6 +10,7 @@
 // byte-identical in the DOM as well as on screen.
 
 import type { Bucket, ItemSchedule, RecurrenceRule, TimingPrecision } from '@tracker/shared'
+import { formatDayWithYear } from '../../lib/date-range'
 
 export type RecurrenceType = 'daily' | 'days_of_week' | 'interval_day' | 'interval_week' | 'monthly'
 
@@ -65,6 +66,48 @@ export function recTypeFromRule(rule: RecurrenceRule): RecurrenceType {
   if (rule.type === 'monthly')      return 'monthly'
   if (rule.type === 'interval')     return rule.unit === 'day' ? 'interval_day' : 'interval_week'
   return 'daily'
+}
+
+/**
+ * A recurrence rule in words — "every day", "Mon, Wed, Fri", "every 2 weeks",
+ * "monthly". Mirrors the vocabulary of the recurrence picker above so the same
+ * schedule reads the same whether you're editing it or being told about it.
+ */
+export function describeRecurrence(rule: RecurrenceRule): string {
+  if (rule.type === 'daily')   return 'every day'
+  if (rule.type === 'monthly') return 'monthly'
+  if (rule.type === 'days_of_week') {
+    return [...rule.days].sort((a, b) => a - b).map((d) => DAY_LABELS[d]).join(', ')
+  }
+  const unit = rule.unit === 'day' ? 'day' : 'week'
+  return rule.every === 1 ? `every ${unit}` : `every ${rule.every} ${unit}s`
+}
+
+/**
+ * One line describing when an item happens: its recurrence and its start day —
+ * the two fields that have to line up between a parent and its children, and
+ * the pair you otherwise have to open a second item to compare.
+ *
+ * §5.1 — a slot with no explicit anchorDay falls back to the item's creation
+ * date, matching scheduleAnchorDate() on the server; pass that as
+ * `fallbackAnchor` or the summary will claim a start day the scheduler doesn't
+ * use. Several slots are joined rather than collapsed (§5.5) — though a parent
+ * carries at most one, so the common case is a single phrase.
+ */
+export function describeSchedules(
+  schedules: ItemSchedule[],
+  fallbackAnchor: string
+): string {
+  if (schedules.length === 0) return 'no schedule'
+  return schedules
+    .map((s) => {
+      const start = formatDayWithYear(s.anchorDay ?? fallbackAnchor)
+      // A one-time slot has no rule: it happens on its anchor day, full stop —
+      // "from" would imply a series that isn't there.
+      if (!s.recurrenceRule) return `one-time, on ${start}`
+      return `${describeRecurrence(s.recurrenceRule)}, from ${start}`
+    })
+    .join(' · ')
 }
 
 /** Turn a saved schedule into the draft the form edits. */

@@ -101,3 +101,16 @@ export function formatDayLabel(dateStr: string): string {
     timeZone: 'UTC',
   })
 }
+
+// Like formatDayLabel, but carrying the year and no weekday: for dates read in
+// isolation rather than scanned in a list — a start day months or years back,
+// where "Sun, Aug 3" leaves the actual question (which August?) unanswered.
+export function formatDayWithYear(dateStr: string): string {
+  const d = new Date(dateStr + 'T00:00:00Z')
+  return d.toLocaleDateString(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    timeZone: 'UTC',
+  })
+}
