@@ -39,6 +39,13 @@ type Props = {
   // v2 §3.2.5 — the ambient streak badge. Absent for one-time items (a streak is
   // a property of a recurrence) and while the summary request is still in flight.
   streak?: ItemStreakSummary
+  // §4.1 — the parent's name, for a child rendered outside its parent's card
+  // because the parent isn't due today. Without it the row looks top-level and
+  // there is nothing on screen explaining why it's there or what it belongs to —
+  // the question that has to be answered where it arises, since the parent
+  // itself is nowhere in the view. Set only for that case (see
+  // detachedParentName); a child inside its parent's card needs no label.
+  parentLabel?: string | null
   // The derived-% bar + completed/total label, supplied by OccurrenceCard for a
   // parent occurrence (leaf rows pass nothing and render no bar). It lives
   // *inside* the row rather than below it so that it and .occ-actions are flex
@@ -96,6 +103,7 @@ export function OccurrenceRow({
   onManageSessions,
   streak,
   progress,
+  parentLabel,
 }: Props) {
   const isComplete = occ.completionState.isComplete
   const timingLabel = formatTimingLabel(occ, buckets)
@@ -182,6 +190,11 @@ export function OccurrenceRow({
 
       {/* Row body */}
       <div className="occ-body">
+        {parentLabel && (
+          <div className="occ-parent-label" data-testid="occ-parent-label">
+            <span aria-hidden="true">↳</span> under {parentLabel}
+          </div>
+        )}
         <div className={`occ-name${isComplete ? ' occ-name--completed' : ''}${isDispositioned ? ' occ-name--dispositioned' : ''}`}>
           {occ.snapshot.name}
         </div>

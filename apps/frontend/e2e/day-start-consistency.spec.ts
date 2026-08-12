@@ -40,6 +40,8 @@ function makeOcc(overrides: {
     isBlocked: false,
     incompletePrerequisiteIds: [],
     hasChildren: false,
+    parentItemId: null,
+    parentName: null,
     sortOrder: 0,
     loggedMinutes: overrides.loggedMinutes ?? 0,
     completionState: {

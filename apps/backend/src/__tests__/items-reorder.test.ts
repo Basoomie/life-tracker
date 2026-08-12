@@ -11,6 +11,9 @@ import * as repos from '../db/repos/index'
 import { buildApp } from '../app'
 import type { FastifyInstance } from 'fastify'
 import { createItem } from '../domain/items'
+import { ensureOccurrenceForItemDay } from '../domain/materialization'
+
+const TODAY = '2025-01-15'  // Wednesday, matching api.test.ts
 
 beforeAll(async () => { await setupTestDb() })
 afterAll(async () => { await teardownTestDb() })
@@ -372,6 +375,106 @@ describe('a newly created root item appends after existing siblings, not at posi
 
     const roots = await repos.findRootItems(getTestPool(), u.id)
     expect(roots.map((i) => i.id)).toEqual([a.id, b.id, created.id])
+
+    await app.close()
+  })
+})
+
+// ── §4.1 — an occurrence reports LIVE containment ────────────────────────────
+//
+// The client decides which rows are top-level (and therefore which may be
+// dragged via reorder-root) from the occurrence payload. If that payload
+// describes containment as it was frozen at materialization, the client and
+// this endpoint answer "is this a top-level item?" differently, and the drag
+// fails after the fact with not_root_item.
+
+describe('§4.1 an occurrence reports the item\'s live parent, not the parentId frozen in its snapshot', () => {
+  it('§4.1 an occurrence reports the item\'s live parent, not the parentId frozen in its snapshot', async () => {
+    const u = await makeUser('live-parent@test.com')
+    const app = await buildTestApp(u.id)
+
+    const parent = await createItem(getTestPool(), { userId: u.id, name: 'Monthly Deep Clean', creationSource: 'planned' })
+    const child = await createItem(getTestPool(), { userId: u.id, name: 'Vacuum', creationSource: 'planned' })
+
+    // Materialize while the item is still top-level: the snapshot freezes
+    // parentId = null (§5.3 — history is immutable).
+    await ensureOccurrenceForItemDay(getTestPool(), child, TODAY, u.id)
+
+    // Now nest it. §5.3 leaves the already-materialized occurrence alone.
+    const patch = await app.inject({
+      method: 'PATCH',
+      url: `/api/items/${child.id}`,
+      payload: { parentId: parent.id },
+    })
+    expect(patch.statusCode).toBe(200)
+
+    const res = await app.inject({
+      method: 'GET',
+      url: `/api/occurrences?start=${TODAY}&end=${TODAY}`,
+    })
+    expect(res.statusCode).toBe(200)
+    const occs = JSON.parse(res.body) as Array<{
+      itemId: string
+      snapshot: { parentId: string | null }
+      parentItemId: string | null
+      parentName: string | null
+    }>
+    const occ = occs.find((o) => o.itemId === child.id)!
+
+    // The snapshot still says what it said the day it was written...
+    expect(occ.snapshot.parentId).toBeNull()
+    // ...while the live edge — the one reorder-root reads — says otherwise.
+    expect(occ.parentItemId).toBe(parent.id)
+    // The name travels with it so a detached child can name its parent (§4.1)
+    // without the client holding every item.
+    expect(occ.parentName).toBe('Monthly Deep Clean')
+
+    await app.close()
+  })
+})
+
+describe('§4.1 reorder-root refuses exactly the items whose occurrences report a live parent', () => {
+  it('§4.1 reorder-root refuses exactly the items whose occurrences report a live parent', async () => {
+    const u = await makeUser('live-parent-gate@test.com')
+    const app = await buildTestApp(u.id)
+
+    const parent = await createItem(getTestPool(), { userId: u.id, name: 'Monthly Deep Clean', creationSource: 'planned' })
+    const child = await createItem(getTestPool(), { userId: u.id, name: 'Vacuum', parentId: parent.id, creationSource: 'planned' })
+    const root = await createItem(getTestPool(), { userId: u.id, name: 'Read', creationSource: 'planned' })
+
+    // Only the child is materialized today — the case that put it on screen
+    // with no parent row to nest inside.
+    await ensureOccurrenceForItemDay(getTestPool(), child, TODAY, u.id)
+    await ensureOccurrenceForItemDay(getTestPool(), root, TODAY, u.id)
+
+    const res = await app.inject({
+      method: 'GET',
+      url: `/api/occurrences?start=${TODAY}&end=${TODAY}`,
+    })
+    const occs = JSON.parse(res.body) as Array<{ itemId: string; parentItemId: string | null }>
+    const childOcc = occs.find((o) => o.itemId === child.id)!
+    const rootOcc  = occs.find((o) => o.itemId === root.id)!
+
+    // What the payload says about containment...
+    expect(childOcc.parentItemId).toBe(parent.id)
+    expect(rootOcc.parentItemId).toBeNull()
+
+    // ...is exactly what reorder-root enforces. A client that gates its drag
+    // handle on parentItemId can therefore never post a request this refuses.
+    const refused = await app.inject({
+      method: 'PATCH',
+      url: `/api/items/${child.id}/reorder-root`,
+      payload: { afterItemId: null },
+    })
+    expect(refused.statusCode).toBe(400)
+    expect(JSON.parse(refused.body).error).toBe('not_root_item')
+
+    const accepted = await app.inject({
+      method: 'PATCH',
+      url: `/api/items/${root.id}/reorder-root`,
+      payload: { afterItemId: null },
+    })
+    expect(accepted.statusCode).toBe(200)
 
     await app.close()
   })

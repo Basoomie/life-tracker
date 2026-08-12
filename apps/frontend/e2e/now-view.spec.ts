@@ -30,6 +30,7 @@ type MakeOccOverrides = {
   name: string
   isBlocked?: boolean
   hasChildren?: boolean
+  parentName?: string | null   // §4.1 — only needed by detached-child fixtures
   sortOrder?: number
   loggedMinutes?: number
   incompletePrerequisiteIds?: string[]
@@ -84,6 +85,10 @@ function makeOcc(overrides: MakeOccOverrides): OccurrenceWithState {
       ...overrides.disposition,
     },
     hasChildren: overrides.hasChildren ?? false,
+    // §4.1 — live containment. Mirrors the fixture's snapshot.parentId, which is
+    // what these fixtures already express nesting with.
+    parentItemId: overrides.snapshot?.parentId ?? null,
+    parentName: overrides.parentName ?? null,
     sortOrder: overrides.sortOrder ?? 0,
     loggedMinutes: overrides.loggedMinutes ?? 0,
   } as OccurrenceWithState
@@ -155,6 +160,20 @@ const ROOT_A_OCC = makeOcc({
 const ROOT_B_OCC = makeOcc({
   id: 'occ-root-b', itemId: 'item-root-b', name: 'Root B',
   sortOrder: 1,
+})
+
+// §4.1 — a child due today whose parent is NOT (their schedules diverge, e.g. a
+// monthly parent and a child anchored to a different start day). It has no
+// parent occurrence to nest inside, so it renders at the top of the view while
+// still being a child in the data. It is itself a parent, which is the case that
+// most looks like a top-level item on screen.
+const DETACHED_CHILD_OCC = makeOcc({
+  id: 'occ-detached', itemId: 'item-detached', name: 'Vacuum',
+  snapshot: { parentId: 'item-absent-parent' },
+  parentName: 'Monthly Deep Clean',
+  completionState: { isLeaf: false, derivedPercent: 0, completionPercent: 0, isComplete: false, completedAt: null, wasRetroactive: false, declaredPercent: null },
+  hasChildren: true,
+  sortOrder: 0,
 })
 
 // A blocked item
@@ -1430,6 +1449,97 @@ test.describe('Manual root reordering (drag-and-drop, unscheduled tier, Now view
     // New order shows up via a local state patch, not a refetch
     await expect(unscheduled).toContainText(/Root B[\s\S]*Root A/)
     expect(todayFetchCount).toBe(fetchesBeforeDrag)
+  })
+
+})
+
+test.describe('§4.1 — children are never rendered on the same level as parents', () => {
+
+  test('§4.1 a child whose parent is not due today renders as a child row, not a top-level item', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2025-06-16T22:00:00'))
+    await setupApiMocks(page, [ROOT_A_OCC, DETACHED_CHILD_OCC])
+
+    await page.goto('/')
+
+    // It is still shown — its own schedule says it is due, and hiding it would
+    // drop work the user asked for.
+    const row = page.getByTestId(`occ-row-${DETACHED_CHILD_OCC.id}`)
+    await expect(row).toBeVisible()
+    // ...but as a child, carrying the parent it belongs to. That name is the
+    // only thing on screen that explains why the row is there, since the parent
+    // itself is nowhere in this view.
+    await expect(row.getByTestId('occ-parent-label')).toHaveText('↳ under Monthly Deep Clean')
+    await expect(row).toHaveClass(/occ-row--child/)
+    // Never draggable at root level: reorder-root would refuse its item id.
+    await expect(page.getByTestId(`root-drag-handle-${DETACHED_CHILD_OCC.itemId}`)).toHaveCount(0)
+    // A genuine top-level item alongside it keeps its handle.
+    await expect(page.getByTestId(`root-drag-handle-${ROOT_A_OCC.itemId}`)).toBeVisible()
+  })
+
+  test('§4.1 a detached child is never sent to reorder-root as the dropped-after neighbour', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2025-06-16T22:00:00'))
+    // The detached child sorts first (sortOrder 0), so a naive implementation
+    // that treated it as a top-level row would hand its id to reorder-root as
+    // afterItemId — which the server rejects, failing a drag of a perfectly
+    // valid top-level item.
+    await setupApiMocks(page, [DETACHED_CHILD_OCC, ROOT_A_OCC, ROOT_B_OCC])
+
+    const reorderBodies: Array<{ afterItemId: string | null }> = []
+    await page.route(/\/api\/items\/.*\/reorder-root/, async (route) => {
+      reorderBodies.push(route.request().postDataJSON())
+      await route.fulfill({ json: [] })
+    })
+
+    await page.goto('/')
+
+    await dragHandleTo(
+      page,
+      `root-drag-handle-${ROOT_A_OCC.itemId}`,
+      `root-drag-handle-${ROOT_B_OCC.itemId}`
+    )
+
+    await expect.poll(() => reorderBodies.length).toBe(1)
+    expect(reorderBodies[0].afterItemId).toBe(ROOT_B_OCC.itemId)
+    expect(reorderBodies[0].afterItemId).not.toBe(DETACHED_CHILD_OCC.itemId)
+  })
+
+  test('a reorder the server refuses is surfaced, not silently reverted', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2025-06-16T22:00:00'))
+    await setupApiMocks(page, [ROOT_A_OCC, ROOT_B_OCC])
+
+    await page.route(/\/api\/items\/.*\/reorder-root/, async (route) => {
+      await route.fulfill({
+        status: 400,
+        json: { error: 'not_root_item', message: 'reorder-root only applies to top-level items; use reorder-children for a child' },
+      })
+    })
+
+    await page.goto('/')
+
+    await dragHandleTo(
+      page,
+      `root-drag-handle-${ROOT_A_OCC.itemId}`,
+      `root-drag-handle-${ROOT_B_OCC.itemId}`
+    )
+
+    // The order reverts (the server is the authority), but not in silence — a
+    // silent revert is indistinguishable from a drag that never registered.
+    await expect(page.getByTestId('reorder-error')).toBeVisible()
+    await expect(page.getByTestId('tier-unscheduled')).toContainText(/Root A[\s\S]*Root B/)
+  })
+
+  test('§4.1 a child whose parent IS due today still nests inside the parent card, unlabelled', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2025-06-16T22:00:00'))
+    await setupApiMocks(page, [ROUTINE_OCC, CHILD_A_OCC])
+
+    await page.goto('/')
+    await page.getByTestId(`occ-card-toggle-${ROUTINE_OCC.itemId}`).click()
+
+    // The hierarchy is already visible, so the row needs no parent caption.
+    const child = page.getByTestId(`occ-row-${CHILD_A_OCC.id}`)
+    await expect(child).toBeVisible()
+    await expect(child.getByTestId('occ-parent-label')).toHaveCount(0)
+    await expect(page.getByTestId(`root-drag-handle-${CHILD_A_OCC.itemId}`)).toHaveCount(0)
   })
 
 })

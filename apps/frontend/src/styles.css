@@ -393,6 +393,15 @@ input, select, textarea {
   text-decoration: line-through;
 }
 
+/* §4.1 — "↳ under <parent>" on a child rendered outside its parent's card.
+   A caption, not a control: tertiary text above the name, so it explains the
+   row's place in the hierarchy without competing with the task itself. */
+.occ-parent-label {
+  font-size: var(--text-xs);
+  color: var(--color-text-tertiary);
+  margin-bottom: 2px;
+}
+
 .occ-meta {
   display: flex;
   align-items: center;
@@ -1255,6 +1264,15 @@ input, select, textarea {
   color: var(--color-text-tertiary);
   font-size: var(--text-sm);
   font-style: italic;
+}
+
+/* A reorder that the server refused. Reverting in silence is indistinguishable
+   from a drag that never registered, which is exactly how a rejected
+   reorder-root stayed invisible. */
+.sortable-list__error {
+  padding: var(--space-2) var(--space-4);
+  color: var(--color-danger);
+  font-size: var(--text-xs);
 }
 
 /* ── Calendar view (§12.4) ─────────────────────────────────────────────────── */

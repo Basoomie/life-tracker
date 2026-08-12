@@ -66,6 +66,8 @@ function makeOcc(overrides: MakeOccOverrides): OccurrenceWithState {
       ...overrides.disposition,
     },
     hasChildren: false,
+    parentItemId: null,
+    parentName: null,
     sortOrder: 0,
     loggedMinutes: 0,
   } as OccurrenceWithState

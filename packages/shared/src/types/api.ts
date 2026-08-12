@@ -43,6 +43,15 @@ export type OccurrenceWithState = ComputedOccurrence & {
   disposition: OccurrenceDisposition
   hasChildren: boolean
   sortOrder: number   // live Item.sortOrder — this occurrence's position among its siblings
+  // §4.1 — the item's LIVE containment edge, deliberately separate from
+  // snapshot.parentId (which froze at materialization and can be stale after a
+  // reparent). "Is this a top-level item?" is a question about the item as it
+  // stands now — the reorder endpoints answer it from items.parent_id, so any
+  // client that answers it from the snapshot will disagree with the server.
+  // parentName travels with the id so a detached child can name its parent
+  // without the client having to hold every item.
+  parentItemId: string | null
+  parentName: string | null
   // §9.1 — sum of finalized (stopped/manual) session durations logged against this
   // occurrence, in minutes. For a parent occurrence this rolls up its whole subtree
   // (its own sessions plus every descendant's), the same way derived completion %

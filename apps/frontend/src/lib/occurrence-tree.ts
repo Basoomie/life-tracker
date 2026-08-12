@@ -1,7 +1,14 @@
 // Builds a parent/child tree from a flat occurrence array for a single day.
-// Parent/child matching is item-level (Item.parentId) and same-day only —
-// mirrors the backend's own rule for attaching a child occurrence to its
-// parent occurrence (see apps/backend/src/domain/completion.ts).
+// Parent/child matching is item-level and same-day only — mirrors the backend's
+// own rule for attaching a child occurrence to its parent occurrence (see
+// apps/backend/src/domain/completion.ts).
+//
+// §4.1 — containment comes from the occurrence's LIVE parentItemId, not
+// snapshot.parentId. The snapshot froze at materialization, so after a reparent
+// it can name a stale parent (or none at all) while items.parent_id — the
+// column the reorder endpoints read — says otherwise. Building the tree from
+// the snapshot is what let a child be treated as a top-level item and offered a
+// root drag handle the server then refused.
 
 import type { OccurrenceWithState } from '@tracker/shared'
 import type { Bucket } from '@tracker/shared'
@@ -12,10 +19,34 @@ export type OccurrenceNode = {
   children: OccurrenceNode[]
 }
 
-// Returns the roots — occurrences with no parent in this array, either
-// because they have no parent item, or because the parent's occurrence
-// wasn't materialized for this day (off-schedule day). Those still render
-// as normal standalone rows, matching how the backend treats them as leaves.
+/**
+ * §4.1 — a child rendered at top level because its parent has no occurrence
+ * today ("detached"), and the parent's name to label it with.
+ *
+ * Returns null for a genuine top-level item (no parent at all) and for a child
+ * rendered inside its parent's card (parent present, so the hierarchy is
+ * already visible). Non-null only for the case the UI has to explain: the item
+ * is due, its parent is not, and it would otherwise look top-level.
+ */
+export function detachedParentName(
+  occ: OccurrenceWithState,
+  occsForDay: OccurrenceWithState[]
+): string | null {
+  if (occ.parentItemId === null) return null
+  const parentPresent = occsForDay.some((o) => o.itemId === occ.parentItemId)
+  return parentPresent ? null : occ.parentName
+}
+
+/** §4.1 — is this item top-level, as the server would answer it? */
+export function isRootItem(occ: OccurrenceWithState): boolean {
+  return occ.parentItemId === null
+}
+
+// Returns the rows that render at the top level — occurrences with no parent
+// item, plus children whose parent has no occurrence this day (§4.1: those
+// render as child rows carrying their parent's name, never as top-level items —
+// see detachedParentName). Hiding them instead would drop work the user's own
+// schedule says is due today.
 export function buildOccurrenceTree(
   occs: OccurrenceWithState[],
   buckets: Bucket[]
@@ -29,7 +60,7 @@ export function buildOccurrenceTree(
   const childrenByParentItemId = new Map<string, OccurrenceWithState[]>()
 
   for (const occ of occs) {
-    const parentId = occ.snapshot.parentId
+    const parentId = occ.parentItemId
     if (!parentId || !byItemId.has(parentId)) continue
     const siblings = childrenByParentItemId.get(parentId) ?? []
     siblings.push(occ)
@@ -51,7 +82,7 @@ export function buildOccurrenceTree(
   // tiering, ListView's day/priority sorting) already impose their own
   // ordering on roots and would otherwise sort twice.
   const roots = occs.filter((occ) => {
-    const parentId = occ.snapshot.parentId
+    const parentId = occ.parentItemId
     return !parentId || !byItemId.has(parentId)
   })
 

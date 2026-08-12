@@ -13,7 +13,7 @@ import { FilterBar } from '../FilterBar'
 import { TimeGrid } from './TimeGrid'
 import { applyFilters, makeDefaultFilters, serializeFilters, deserializeFilters } from '../../lib/filters'
 import { getRangeDates, getDaysInRange, formatDayLabel, todayStr } from '../../lib/date-range'
-import { buildOccurrenceTree, type OccurrenceNode } from '../../lib/occurrence-tree'
+import { buildOccurrenceTree, detachedParentName, type OccurrenceNode } from '../../lib/occurrence-tree'
 import { api } from '../../lib/api'
 import { bucketTimestamp } from '@tracker/shared'
 import type { RangeKey } from '../../lib/date-range'
@@ -181,6 +181,10 @@ export function CalendarView({ onEditItem }: Props) {
         onArchive={setPendingArchive}
         onManageSessions={setSessionManagerTarget}
         onReordered={handleReordered}
+        // §4.1 — resolved here, not inside TimeGrid: TimeGrid only receives the
+        // FILTERED roots, and a parent hidden by a filter is not a detached
+        // parent. occsByDay is the unfiltered same-day set the rule needs.
+        parentLabelFor={(o) => detachedParentName(o, occsByDay.get(o.appliesToDay) ?? [])}
         streaks={streaks}
       />
     )

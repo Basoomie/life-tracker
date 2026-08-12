@@ -299,17 +299,42 @@ export async function nextRootSortOrder(
   return rows[0].next
 }
 
-// This item's own position among its siblings (live — see enrichOccurrence).
-export async function findItemSortOrder(
+// This item's live position among its siblings and its live containment edge
+// (§4.1), for enrichOccurrence. Both are properties of the item as it stands
+// now, NOT of the occurrence's frozen snapshot — an occurrence materialized
+// before a reparent still carries the old parentId in its snapshot, and a
+// client that trusts that will disagree with the reorder endpoints, which read
+// items.parent_id. The parent's name is joined in the same round trip so a
+// detached child (§4.1 — parent not due today) can name its parent without the
+// caller holding every item.
+export type ItemOrderContext = {
+  sortOrder: number
+  parentItemId: string | null
+  parentName: string | null
+}
+
+export async function findItemOrderContext(
   pool: Pool,
   itemId: string,
   userId: string
-): Promise<number> {
-  const { rows } = await pool.query<{ sort_order: number }>(
-    `SELECT sort_order FROM items WHERE id = $1 AND user_id = $2`,
+): Promise<ItemOrderContext> {
+  const { rows } = await pool.query<{
+    sort_order: number
+    parent_id: string | null
+    parent_name: string | null
+  }>(
+    `SELECT i.sort_order, i.parent_id, p.name AS parent_name
+       FROM items i
+       LEFT JOIN items p ON p.id = i.parent_id AND p.user_id = i.user_id
+      WHERE i.id = $1 AND i.user_id = $2`,
     [itemId, userId]
   )
-  return rows[0]?.sort_order ?? 0
+  const row = rows[0]
+  return {
+    sortOrder: row?.sort_order ?? 0,
+    parentItemId: row?.parent_id ?? null,
+    parentName: row?.parent_name ?? null,
+  }
 }
 
 // Manual drag-and-drop reorder. Caller (route) is responsible for validating

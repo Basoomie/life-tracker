@@ -15,7 +15,7 @@ import { SessionManagerModal } from './SessionManagerModal'
 import { ConfirmModal } from '../shared/ConfirmModal'
 import { OccurrenceCard } from '../shared/OccurrenceCard'
 import { SortableList } from '../shared/SortableList'
-import { buildOccurrenceTree, type OccurrenceNode } from '../../lib/occurrence-tree'
+import { buildOccurrenceTree, detachedParentName, type OccurrenceNode } from '../../lib/occurrence-tree'
 import { occurrenceKey } from '../../lib/occurrence-key'
 import { api } from '../../lib/api'
 import { saveSessions, loadSessions } from '../../lib/sessions'
@@ -333,12 +333,17 @@ export function NowView({ onEditItem }: Props) {
 
   function renderRow(occ: OccurrenceWithState, isChild = false, progress?: ReactNode) {
     const occId = occ.id ?? occ.itemId
+    // §4.1 — non-null only for a child whose parent has no occurrence today, so
+    // this doubles as "render me as a child": a row that would otherwise be
+    // indistinguishable from a top-level item.
+    const parentLabel = detachedParentName(occ, occurrences)
     return (
       <OccurrenceRow
         key={occId}
         occ={occ}
         buckets={buckets}
-        isChild={isChild}
+        isChild={isChild || parentLabel !== null}
+        parentLabel={parentLabel}
         streak={streaks.get(occ.itemId)}
         session={sessions.get(occId)}
         onComplete={() => handleComplete(occ)}

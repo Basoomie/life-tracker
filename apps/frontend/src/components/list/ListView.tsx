@@ -15,7 +15,7 @@ import { FilterBar } from '../FilterBar'
 import { sortByTiming, groupByPriority, splitTimed } from '../../lib/list-sort'
 import { applyFilters, makeDefaultFilters, serializeFilters, deserializeFilters } from '../../lib/filters'
 import { getRangeDates, getDaysInRange, formatDayLabel, todayStr } from '../../lib/date-range'
-import { buildOccurrenceTree, type OccurrenceNode } from '../../lib/occurrence-tree'
+import { buildOccurrenceTree, detachedParentName, type OccurrenceNode } from '../../lib/occurrence-tree'
 import { occurrenceKey } from '../../lib/occurrence-key'
 import { api } from '../../lib/api'
 import { bucketTimestamp } from '@tracker/shared'
@@ -169,12 +169,17 @@ export function ListView({ onEditItem }: Props) {
 
   function renderRow(occ: OccurrenceWithState, isChild = false, progress?: ReactNode) {
     const occId = occ.id ?? occ.itemId
+    // §4.1 — scoped to the occurrence's OWN day (containment is same-day), and to
+    // the unfiltered set: a parent hidden by a filter hasn't stopped being this
+    // row's parent, and labelling it "detached" would be a lie about the data.
+    const parentLabel = detachedParentName(occ, occsByDay.get(occ.appliesToDay) ?? [])
     return (
       <OccurrenceRow
         key={occId}
         occ={occ}
         buckets={buckets}
-        isChild={isChild}
+        isChild={isChild || parentLabel !== null}
+        parentLabel={parentLabel}
         isToday={occ.appliesToDay === today}
         streak={streaks.get(occ.itemId)}
         session={sessions.get(occId)}

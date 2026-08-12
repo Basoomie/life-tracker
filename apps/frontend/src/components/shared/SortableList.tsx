@@ -23,9 +23,10 @@ import { CSS } from '@dnd-kit/utilities'
 import type { OccurrenceWithState } from '@tracker/shared'
 import { api } from '../../lib/api'
 import { occurrenceKey, sortableKey, orderedItemIds } from '../../lib/occurrence-key'
+import { isRootItem } from '../../lib/occurrence-tree'
 
 type Props = {
-  items: OccurrenceWithState[]   // already sorted by sortOrder; root items only
+  items: OccurrenceWithState[]   // already sorted by sortOrder
   renderItem: (occ: OccurrenceWithState) => ReactNode
   onReordered: (orderedItemIds: string[]) => void
 }
@@ -35,14 +36,26 @@ export function SortableList({ items, renderItem, onReordered }: Props) {
   // local state patch lands (or reverted on API failure) — same pattern as
   // OccurrenceCard's orderOverride.
   const [orderOverride, setOrderOverride] = useState<string[] | null>(null)
+  // A failed reorder used to revert in silence, which looks exactly like a drag
+  // that never registered — the reason a 400 from reorder-root took a long
+  // debugging session to find. Failures are shown.
+  const [error, setError] = useState<string | null>(null)
+
+  // §4.1 — reorder-root only accepts genuinely top-level items, so only those
+  // are draggable. A detached child (due today, parent not) renders below them
+  // as a plain row: dragging it would post its id to reorder-root and be
+  // refused, and leaving it in the sortable set would also let it become some
+  // other row's afterItemId, failing that drag too.
+  const rootItems = items.filter(isRootItem)
+  const detachedChildren = items.filter((o) => !isRootItem(o))
 
   // §5.5 — keyed by (item, schedule): a two-slot item is two rows here, so an
   // item-id override would collapse them into one.
   const displayItems = orderOverride
     ? orderOverride
-        .map((key) => items.find((o) => sortableKey(o) === key))
+        .map((key) => rootItems.find((o) => sortableKey(o) === key))
         .filter((o): o is OccurrenceWithState => o !== undefined)
-    : items
+    : rootItems
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
@@ -70,29 +83,45 @@ export function SortableList({ items, renderItem, onReordered }: Props) {
     }
 
     try {
+      setError(null)
       await api.items.reorderRoot(moved.itemId, afterItemId)
       onReordered(orderedItemIds(reordered))
       setOrderOverride(null)
-    } catch {
+    } catch (e) {
       setOrderOverride(null)
+      setError(e instanceof Error ? e.message : 'Could not save the new order')
     }
   }
 
   return (
-    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-      <SortableContext items={displayItems.map(sortableKey)} strategy={verticalListSortingStrategy}>
-        {displayItems.map((occ) => (
-          <SortableRow
-            key={occurrenceKey(occ)}
-            sortId={sortableKey(occ)}
-            itemId={occ.itemId}
-            name={occ.snapshot.name}
-          >
-            {renderItem(occ)}
-          </SortableRow>
-        ))}
-      </SortableContext>
-    </DndContext>
+    <>
+      {error && (
+        <div className="sortable-list__error" role="alert" data-testid="reorder-error">
+          {error}
+        </div>
+      )}
+      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+        <SortableContext items={displayItems.map(sortableKey)} strategy={verticalListSortingStrategy}>
+          {displayItems.map((occ) => (
+            <SortableRow
+              key={occurrenceKey(occ)}
+              sortId={sortableKey(occ)}
+              itemId={occ.itemId}
+              name={occ.snapshot.name}
+            >
+              {renderItem(occ)}
+            </SortableRow>
+          ))}
+        </SortableContext>
+      </DndContext>
+      {/* §4.1 — after the draggable top-level rows, never interleaved with them:
+          their position is their parent's business, not this list's. */}
+      {detachedChildren.map((occ) => (
+        <div key={occurrenceKey(occ)} data-testid={`detached-child-${occ.itemId}`}>
+          {renderItem(occ)}
+        </div>
+      ))}
+    </>
   )
 }
 

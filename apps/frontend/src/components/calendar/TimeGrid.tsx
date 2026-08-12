@@ -34,6 +34,10 @@ type Props = {
   onArchive: (occ: OccurrenceWithState) => void
   onManageSessions: (occ: OccurrenceWithState) => void
   onReordered: (orderedItemIds: string[]) => void
+  // §4.1 — resolves "is this a child rendered outside its parent's card, and
+  // what's the parent called?". Supplied by CalendarView because the rule needs
+  // the day's UNFILTERED occurrences, which this component never sees.
+  parentLabelFor: (occ: OccurrenceWithState) => string | null
   // v2 §3.2.5 — streaks appear on the item DETAIL row only, never on the day grid:
   // a grid cell is a day, and a streak is a property of an item across days.
   streaks: Map<string, ItemStreakSummary>
@@ -85,6 +89,7 @@ export function TimeGrid({
   onArchive,
   onManageSessions,
   onReordered,
+  parentLabelFor,
   streaks,
 }: Props) {
   const layout: DayLayout = computeDayLayout(occs, buckets, dayStart)
@@ -122,11 +127,14 @@ export function TimeGrid({
   // row, so auto-closing after any one of them would be disruptive).
   function renderRow(occ: OccurrenceWithState, closeAfterAction = false, progress?: ReactNode) {
     const occId = occ.id ?? occ.itemId
+    const parentLabel = parentLabelFor(occ)
     return (
       <OccurrenceRow
         key={occId}
         occ={occ}
         buckets={buckets}
+        isChild={parentLabel !== null}
+        parentLabel={parentLabel}
         isToday={isToday}
         streak={streaks.get(occ.itemId)}
         session={sessions.get(occId)}

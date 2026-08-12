@@ -28,6 +28,7 @@ type MakeOccOverrides = {
   appliesToDay?: string
   isBlocked?: boolean
   hasChildren?: boolean
+  parentName?: string | null   // §4.1 — only needed by detached-child fixtures
   sortOrder?: number
   loggedMinutes?: number
   snapshot?: Partial<OccurrenceWithState['snapshot']>
@@ -84,6 +85,10 @@ function makeOcc(overrides: MakeOccOverrides): OccurrenceWithState {
       ...overrides.disposition,
     },
     hasChildren: overrides.hasChildren ?? false,
+    // §4.1 — live containment. Mirrors the fixture's snapshot.parentId, which is
+    // what these fixtures already express nesting with.
+    parentItemId: overrides.snapshot?.parentId ?? null,
+    parentName: overrides.parentName ?? null,
     sortOrder: overrides.sortOrder ?? 0,
     loggedMinutes: overrides.loggedMinutes ?? 0,
   } as OccurrenceWithState

@@ -63,11 +63,11 @@ export async function enrichOccurrence(
   userId: string
 ): Promise<OccurrenceWithState> {
   // Blocked status + children can be resolved without a stored occurrence.
-  const [blocked, incompletePrereqIds, children, sortOrder] = await Promise.all([
+  const [blocked, incompletePrereqIds, children, orderContext] = await Promise.all([
     isBlocked(pool, occ.itemId, userId),
     getIncompletePrerequisites(pool, occ.itemId, userId),
     repos.findChildItems(pool, occ.itemId, userId),
-    repos.findItemSortOrder(pool, occ.itemId, userId),
+    repos.findItemOrderContext(pool, occ.itemId, userId),
   ])
 
   const hasChildren = children.length > 0
@@ -166,7 +166,10 @@ export async function enrichOccurrence(
     completionState,
     disposition,
     hasChildren,
-    sortOrder,
+    sortOrder: orderContext.sortOrder,
+    // §4.1 — live containment, not snapshot.parentId. See findItemOrderContext.
+    parentItemId: orderContext.parentItemId,
+    parentName: orderContext.parentName,
     loggedMinutes,
   }
 }

@@ -16,6 +16,7 @@ function makeOcc(overrides: {
   itemId: string
   name: string
   snapshot?: Partial<OccurrenceWithState['snapshot']>
+  parentName?: string | null   // §4.1 — only needed by detached-child fixtures
 }): OccurrenceWithState {
   return {
     id: overrides.id,
@@ -62,6 +63,10 @@ function makeOcc(overrides: {
       derivedPercentAtClose: null,
     },
     hasChildren: false,
+    // §4.1 — live containment. Mirrors the fixture's snapshot.parentId, which is
+    // what these fixtures already express nesting with.
+    parentItemId: overrides.snapshot?.parentId ?? null,
+    parentName: overrides.parentName ?? null,
     sortOrder: 0,
     loggedMinutes: 0,
   } as OccurrenceWithState
