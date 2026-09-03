@@ -73,6 +73,22 @@ export type ItemDetail = ItemWithSchedules & {
   prerequisites: ItemPrerequisite[]
 }
 
+// §5.6 — which slice of the user's items GET /items should return.
+// 'active' is the default because every day-to-day surface wants exactly that;
+// asking for the inactive list is always a deliberate act.
+export type ItemStatusFilter = 'active' | 'inactive' | 'all'
+
+// §5.6 — the outcome of a deactivate/reactivate call.
+//
+// `affected` is the whole set the call switched, acted-on item first, because
+// deactivation cascades over the containment subtree (§4.1) and the user needs to be
+// told what else moved.  A count alone would leave them guessing which sub-tasks.
+export type ItemActivationResponse = {
+  item: ItemWithSchedules
+  affected: Item[]
+  clearedFutureOccurrences: number
+}
+
 // §5.5 — an item recurs if any of its slots does. Shared so the client and the
 // prerequisite rule (§4.2) can never disagree about what "a habit" means.
 export function isRecurringItem(schedules: ItemSchedule[]): boolean {

@@ -24,6 +24,7 @@ const ITEM: Item = {
   sortOrder: 0,
   dispositionPolicy: 'skip',
   creationSource: 'planned',
+  deactivatedAt: null,
   archivedAt: null,
   createdAt: new Date('2024-06-01T12:00:00Z'),
 }

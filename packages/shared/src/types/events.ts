@@ -222,6 +222,31 @@ type TemplateSoftDeletedEvent = EventBase & {
   payload: Record<string, never>
 }
 
+// §5.6 — the item is paused from appliesToDay forward.  appliesToDay is load-bearing,
+// not decorative: replaying these two events is the ONLY way to know which days an item
+// was paused on, and that answer is not backfillable from a current-state flag.
+//
+// cascadedFrom names the ancestor whose deactivation swept this item in (§4.1
+// containment), or null when the user deactivated this item directly.  Reactivation
+// reads it to undo exactly what it did and no more — a child the user had already
+// paused on its own is not switched back on by its parent.
+type TemplateDeactivatedEvent = EventBase & {
+  eventType: 'template_deactivated'
+  payload: {
+    cascadedFrom: string | null
+    clearedFutureOccurrences: number
+  }
+}
+
+// §5.6 — the item is scheduled again from appliesToDay forward.  The paused days are
+// NOT backfilled: the item genuinely was not due on them.
+type TemplateReactivatedEvent = EventBase & {
+  eventType: 'template_reactivated'
+  payload: {
+    cascadedFrom: string | null
+  }
+}
+
 // §5.5 — a frozen copy of one schedule's fields, carried by every schedule_* event.
 // Without it the log would say "a slot changed" but not what it changed to, and a
 // later reader could not explain why occurrences appeared or vanished on given days.
@@ -486,6 +511,8 @@ export type TrackerEvent =
   | TemplateCreatedEvent
   | TemplateEditedEvent
   | TemplateSoftDeletedEvent
+  | TemplateDeactivatedEvent
+  | TemplateReactivatedEvent
   | ScheduleAddedEvent
   | ScheduleEditedEvent
   | ScheduleRemovedEvent

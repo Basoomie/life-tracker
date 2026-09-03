@@ -101,6 +101,39 @@ export async function findTemplateEventsByItem(
   return rows.map(toEvent)
 }
 
+// §5.6 — Every deactivate/reactivate transition for a set of items, keyed by item id.
+//
+// Bulk, because the stats layer needs the paused timeline of a whole subtree at once
+// and an N+1 there would put a query per item inside every window computation.
+// Ordered by recorded_at so the replay in pausedIntervalsFromEvents sees them in the
+// order they happened.
+export async function findDeactivationEventsByItems(
+  pool: Pool,
+  itemIds: string[],
+  userId: string
+): Promise<Map<string, TrackerEvent[]>> {
+  const byItem = new Map<string, TrackerEvent[]>()
+  if (itemIds.length === 0) return byItem
+
+  const { rows } = await pool.query<EventRow>(
+    `SELECT * FROM events
+     WHERE user_id = $1
+       AND item_id = ANY($2::uuid[])
+       AND event_type IN ('template_deactivated', 'template_reactivated')
+     ORDER BY recorded_at`,
+    [userId, itemIds]
+  )
+
+  for (const row of rows) {
+    const event = toEvent(row)
+    if (!event.itemId) continue
+    const list = byItem.get(event.itemId)
+    if (list) list.push(event)
+    else byItem.set(event.itemId, [event])
+  }
+  return byItem
+}
+
 // All events that belong to a specific session (identified by payload.sessionId).
 // Covers session_started, session_paused, session_resumed, session_stopped,
 // session_created, and session_edited — all share sessionId in their payload.

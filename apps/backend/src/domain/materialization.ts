@@ -24,7 +24,12 @@ import type {
   ComputedOccurrence,
   RecurrenceRule,
 } from '@tracker/shared'
-import { getDueDays, scheduleAnchorDate } from '@tracker/shared'
+import {
+  getDueDays,
+  scheduleAnchorDate,
+  pausedIntervalsFromEvents,
+  isDayPaused,
+} from '@tracker/shared'
 import * as repos from '../db/repos/index'
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -131,6 +136,12 @@ export async function topUpMaterializationForSchedule(
   userId: string,
   today: string
 ): Promise<void> {
+  // §5.6 — the single choke point through which recurring occurrences come into
+  // existence, so the pause is enforced here rather than at each of the half-dozen
+  // callers.  Without this, regenerateFutureOccurrences would re-materialize exactly
+  // the rows a deactivation had just cleared, and the pause would last microseconds.
+  if (item.deactivatedAt !== null) return
+
   if (!schedule.recurrenceRule) return  // one-time slots materialize at creation (step 3)
 
   const endDay  = addDays(today, horizonDays(schedule.recurrenceRule))
@@ -185,7 +196,9 @@ export async function topUpMaterialization(
   userId: string,
   today: string   // YYYY-MM-DD
 ): Promise<void> {
-  const items = await repos.findItemsByUser(pool, userId)
+  // §5.6 — active only: a paused item must not have its horizon topped back up, or
+  // the nightly job would quietly undo the deactivation one day at a time.
+  const items = await repos.findActiveItemsByUser(pool, userId)
   for (const item of items) {
     await topUpMaterializationForItem(pool, item, userId, today)
   }
@@ -247,11 +260,28 @@ export async function getOccurrencesInRange(
   startDay: string,
   endDay: string
 ): Promise<ComputedOccurrence[]> {
+  // Non-deleted items, INCLUDING paused ones (§5.6).  Both halves of this function
+  // need them for opposite reasons: the rule expansion below must skip them, and the
+  // stored-row pass at the end must keep them, because a paused item's past
+  // occurrences are frozen history and stay visible.
   const [items, allSchedules, stored] = await Promise.all([
     repos.findItemsByUser(pool, userId),
     repos.findSchedulesByUser(pool, userId),
     repos.findOccurrencesByRange(pool, userId, startDay, endDay),
   ])
+
+  // §5.6 — an item that is active TODAY may still have been paused during the range
+  // being asked about.  Its rules must not expand back over those days: looking at
+  // last month after reactivating would otherwise show the paused days as due and
+  // missed.  This is the same exclusion the stats layer applies (design-v2 §9.1.1.b),
+  // and it is applied here for the same reason — so the two can never disagree about
+  // what was due.
+  const pausedByItem = await repos.findDeactivationEventsByItems(
+    pool, items.map((i) => i.id), userId
+  )
+  const pausedIntervals = new Map(
+    items.map((i) => [i.id, pausedIntervalsFromEvents(pausedByItem.get(i.id) ?? [])])
+  )
 
   // Index stored occurrences by full identity for O(1) lookup and deduplication.
   const storedIndex = new Map<string, Occurrence>()
@@ -273,6 +303,10 @@ export async function getOccurrencesInRange(
   const results: ComputedOccurrence[] = []
 
   for (const item of items) {
+    // §5.6 — a paused item generates nothing new.  Note this skips only the rule
+    // expansion: any stored row it already has is picked up by the pass below.
+    if (item.deactivatedAt !== null) continue
+
     const schedules = schedulesByItem.get(item.id) ?? []
     if (schedules.length === 0) continue
 
@@ -289,9 +323,15 @@ export async function getOccurrencesInRange(
       const anchor  = scheduleAnchorDate(schedule, item)
       const dueDays = getDueDays(schedule.recurrenceRule, startDay, endDay, anchor)
 
+      const paused = pausedIntervals.get(item.id) ?? []
+
       for (const day of dueDays) {
+        // §5.6 — a day the item was paused on was not a due day.  Skipped only when
+        // there is no stored row: a row that survived the pause did so because it
+        // carried an event, and that happened.
         const key     = `${item.id}:${day}:${schedule.id}`
         const stored2 = storedIndex.get(key)
+        if (!stored2 && isDayPaused(day, paused)) continue
 
         if (stored2) {
           results.push({
@@ -371,8 +411,11 @@ export async function getOverdueOccurrences(
   userId: string,
   today: string   // YYYY-MM-DD
 ): Promise<Occurrence[]> {
+  // §5.6 — active only.  The backlog answers "what do I still owe?", and a task you
+  // have deliberately paused is not owed.  Its stored row keeps existing and stays
+  // visible in history; it just stops nagging.
   const [items, stored] = await Promise.all([
-    repos.findItemsByUser(pool, userId),
+    repos.findActiveItemsByUser(pool, userId),
     repos.findOccurrencesBeforeDay(pool, userId, today),
   ])
   const activeItemIds = new Set(items.map((item) => item.id))

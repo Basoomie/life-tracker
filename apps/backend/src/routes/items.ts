@@ -11,11 +11,13 @@ import {
   topUpMaterializationForItem,
 } from '../domain/materialization'
 import { createItemWithSchedule, soleSchedule } from '../domain/items'
+import { deactivateItemTree, reactivateItemTree, findInactiveAncestor } from '../domain/deactivation'
 import { addSchedule, editSchedule, removeSchedule, canBeParent } from '../domain/schedules'
 import { addPrerequisite, removePrerequisite } from '../domain/prerequisites'
 import { notFound, badRequest, conflict } from './helpers'
 import { logicalToday } from '../domain/day'
 import type {
+  Item,
   CreateItemBody,
   UpdateItemBody,
   SetPriorityBody,
@@ -24,6 +26,8 @@ import type {
   ReorderRootBody,
   ItemWithSchedules,
   ItemDetail,
+  ItemStatusFilter,
+  ItemActivationResponse,
   CreateScheduleBody,
   UpdateScheduleBody,
 } from '@tracker/shared'
@@ -53,14 +57,59 @@ const ITEM_FIELDS = [
   'dispositionPolicy',
 ] as const satisfies readonly (keyof UpdateItemBody)[]
 
+// §5.6 — Refusal message when `parentId` cannot take a child because it, or something
+// above it, is inactive.  Returns null when the parent is fine.
+//
+// Shared by create and re-parent so the two can never drift into disagreeing about
+// what a legal parent is.
+async function inactiveParentRefusal(parentId: string, userId: string): Promise<string | null> {
+  const parent = await repos.findItemById(pool, parentId, userId)
+  if (!parent) return null   // a missing parent is the FK's problem, not this rule's
+
+  const blocker =
+    parent.deactivatedAt !== null ? parent : await findInactiveAncestor(pool, parent, userId)
+  if (!blocker) return null
+
+  return `"${blocker.name}" is inactive (§5.6), so nothing can be added under it. Reactivate it first.`
+}
+
+// §5.6 — Attach schedules to the acted-on item for the activation response, so the
+// client can re-render the row it just changed without a second round trip.
+async function withSchedules(
+  change: { item: Item; affected: Item[]; clearedFutureOccurrences: number },
+  userId: string
+): Promise<ItemActivationResponse> {
+  const schedules = await repos.findSchedulesByItem(pool, change.item.id, userId)
+  return {
+    item: { ...change.item, schedules },
+    affected: change.affected,
+    clearedFutureOccurrences: change.clearedFutureOccurrences,
+  }
+}
+
 export async function itemRoutes(app: FastifyInstance) {
-  // GET /items — list all active items for the user, each with its schedules (§5.5).
+  // GET /items?status=active|inactive|all — list items with their schedules (§5.5).
   // Schedules travel with the item because without them a client cannot tell when the
   // item happens or whether it recurs.
+  //
+  // §5.6 — `status` defaults to 'active', so every existing caller (pickers, forms,
+  // the day-to-day views) keeps seeing exactly what it saw before, and the inactive
+  // list is something a caller has to ask for by name.
   app.get('/items', async (req, reply) => {
     const userId = req.userId
+    const { status = 'active' } = req.query as { status?: ItemStatusFilter }
+
+    if (status !== 'active' && status !== 'inactive' && status !== 'all') {
+      return badRequest(reply, 'invalid_status', "status must be one of 'active', 'inactive', 'all'")
+    }
+
+    const listItems =
+      status === 'inactive' ? repos.findInactiveItemsByUser
+      : status === 'all'    ? repos.findItemsByUser
+      : repos.findActiveItemsByUser
+
     const [items, schedules] = await Promise.all([
-      repos.findItemsByUser(pool, userId),
+      listItems(pool, userId),
       repos.findSchedulesByUser(pool, userId),
     ])
     const byItem = new Map<string, typeof schedules>()
@@ -89,6 +138,14 @@ export async function itemRoutes(app: FastifyInstance) {
         'parent_multi_schedule',
         'That item has more than one schedule and so cannot be a parent (§5.5): a parent with two slots on one day leaves "which slot does this child belong to?" undefined.'
       )
+    }
+
+    // §5.6 — the same invariant reactivation protects, enforced on the way in: an
+    // active item must never sit under an inactive ancestor, or its occurrences would
+    // belong to a parent that appears in no view.
+    if (body.parentId) {
+      const refusal = await inactiveParentRefusal(body.parentId, userId)
+      if (refusal) return conflict(reply, 'parent_inactive', refusal)
     }
 
     // New children/root items append after existing siblings rather than
@@ -176,6 +233,12 @@ export async function itemRoutes(app: FastifyInstance) {
     // literal would insert undefined values for every absent key, causing them to be
     // NULLed out; the split below therefore copies keys only when present.
     const body = req.body as UpdateItemBody
+
+    // §5.6 — re-parenting under an inactive item is refused, same rule as on create.
+    if (body.parentId) {
+      const refusal = await inactiveParentRefusal(body.parentId, userId)
+      if (refusal) return conflict(reply, 'parent_inactive', refusal)
+    }
 
     // §5.5 — re-parenting under a multi-slot item is refused, same rule as on create.
     if (body.parentId && !(await canBeParent(pool, body.parentId, userId))) {
@@ -286,6 +349,37 @@ export async function itemRoutes(app: FastifyInstance) {
         : conflict(reply, result.code, result.error)
     }
     return reply.send(result.value.schedule)
+  })
+
+  // POST /items/:id/deactivate — §5.6 pause the item and its subtree.
+  //
+  // Deliberately not DELETE: pausing and deleting are different decisions with
+  // different events, and collapsing them would make the log unable to say which the
+  // user meant.
+  app.post('/items/:id/deactivate', async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const userId = req.userId
+    const item = await repos.findItemById(pool, id, userId)
+    if (!item || item.archivedAt) return notFound(reply, 'item')
+
+    const result = await deactivateItemTree(pool, item, userId, await logicalToday(pool, userId))
+    if (!result.ok) return conflict(reply, result.code, result.error)
+
+    return reply.send(await withSchedules(result.value, userId))
+  })
+
+  // POST /items/:id/reactivate — §5.6 switch it back on, with the descendants this
+  // item's own deactivation cascaded over (and no others).
+  app.post('/items/:id/reactivate', async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const userId = req.userId
+    const item = await repos.findItemById(pool, id, userId)
+    if (!item || item.archivedAt) return notFound(reply, 'item')
+
+    const result = await reactivateItemTree(pool, item, userId, await logicalToday(pool, userId))
+    if (!result.ok) return conflict(reply, result.code, result.error)
+
+    return reply.send(await withSchedules(result.value, userId))
   })
 
   // DELETE /items/:id — soft-delete (archive) + event

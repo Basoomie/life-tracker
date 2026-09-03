@@ -1,4 +1,6 @@
 export { bucketLocalDateTime, bucketTimestamp, getEffectiveDayStart } from './day-start'
+export { pausedIntervalsFromEvents, isDayPaused } from './active-intervals'
+export type { PausedInterval } from './active-intervals'
 export {
   getDueDays,
   scheduleAnchorDate,

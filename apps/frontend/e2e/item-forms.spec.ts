@@ -110,6 +110,7 @@ function makeItem(overrides: ItemOverrides): ItemWithSchedules {
     sortOrder: 0,
     dispositionPolicy: 'skip',
     creationSource: 'planned',
+    deactivatedAt: null,
     archivedAt: null,
     createdAt: new Date() as unknown as Date,
     ...itemFields,

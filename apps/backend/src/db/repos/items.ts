@@ -25,6 +25,7 @@ interface ItemRow {
   sort_order: number
   disposition_policy: DispositionPolicy
   creation_source: CreationSource
+  deactivated_at: Date | null
   archived_at: Date | null
   created_at: Date
 }
@@ -50,6 +51,7 @@ function toItem(row: ItemRow): Item {
     sortOrder: row.sort_order,
     dispositionPolicy: row.disposition_policy,
     creationSource: row.creation_source,
+    deactivatedAt: row.deactivated_at,
     archivedAt: row.archived_at,
     createdAt: row.created_at,
   }
@@ -105,13 +107,48 @@ export async function insertItem(
   return toItem(rows[0])
 }
 
-// Active (non-archived) items for the user
+// Every item the user has not deleted — INCLUDING inactive ones (§5.6).
+//
+// This is the right list for anything that reads history: an item paused last week
+// still has months of real occurrences behind it, and dropping it here would make it
+// vanish from its own statistics.  Scheduling paths want findActiveItemsByUser instead.
 export async function findItemsByUser(
   pool: Pool,
   userId: string
 ): Promise<Item[]> {
   const { rows } = await pool.query<ItemRow>(
     `SELECT * FROM items WHERE user_id = $1 AND archived_at IS NULL ORDER BY created_at`,
+    [userId]
+  )
+  return rows.map(toItem)
+}
+
+// §5.6 — Items that are neither deleted nor paused: the ones that are actually
+// scheduled right now.  Every materialization and due-day path uses this, so a
+// deactivated item stops producing occurrences without any caller having to remember.
+export async function findActiveItemsByUser(
+  pool: Pool,
+  userId: string
+): Promise<Item[]> {
+  const { rows } = await pool.query<ItemRow>(
+    `SELECT * FROM items
+     WHERE user_id = $1 AND archived_at IS NULL AND deactivated_at IS NULL
+     ORDER BY created_at`,
+    [userId]
+  )
+  return rows.map(toItem)
+}
+
+// §5.6 — The paused items, most recently paused first: what the user browses when
+// looking for something to switch back on.
+export async function findInactiveItemsByUser(
+  pool: Pool,
+  userId: string
+): Promise<Item[]> {
+  const { rows } = await pool.query<ItemRow>(
+    `SELECT * FROM items
+     WHERE user_id = $1 AND archived_at IS NULL AND deactivated_at IS NOT NULL
+     ORDER BY deactivated_at DESC`,
     [userId]
   )
   return rows.map(toItem)
@@ -125,6 +162,38 @@ export async function findItemById(
 ): Promise<Item | null> {
   const { rows } = await pool.query<ItemRow>(
     `SELECT * FROM items WHERE id = $1 AND user_id = $2`,
+    [id, userId]
+  )
+  return rows[0] ? toItem(rows[0]) : null
+}
+
+// §5.6 — Pause an item.  Guarded on deactivated_at IS NULL so a repeat call is a
+// no-op returning null rather than silently moving the timestamp: the caller uses
+// that to decide whether an event should be logged at all.
+export async function deactivateItem(
+  pool: Pool,
+  id: string,
+  userId: string
+): Promise<Item | null> {
+  const { rows } = await pool.query<ItemRow>(
+    `UPDATE items SET deactivated_at = NOW()
+     WHERE id = $1 AND user_id = $2 AND deactivated_at IS NULL AND archived_at IS NULL
+     RETURNING *`,
+    [id, userId]
+  )
+  return rows[0] ? toItem(rows[0]) : null
+}
+
+// §5.6 — Switch an item back on.  Mirror of deactivateItem, including the no-op guard.
+export async function reactivateItem(
+  pool: Pool,
+  id: string,
+  userId: string
+): Promise<Item | null> {
+  const { rows } = await pool.query<ItemRow>(
+    `UPDATE items SET deactivated_at = NULL
+     WHERE id = $1 AND user_id = $2 AND deactivated_at IS NOT NULL AND archived_at IS NULL
+     RETURNING *`,
     [id, userId]
   )
   return rows[0] ? toItem(rows[0]) : null

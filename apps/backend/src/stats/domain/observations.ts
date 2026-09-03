@@ -17,13 +17,15 @@ import type { Item, ItemSchedule, Occurrence, RecurrenceRule } from '@tracker/sh
 import {
   getItemDueSlots,
   getItemDueDays,
+  pausedIntervalsFromEvents,
+  isDayPaused,
   scheduleAnchorDate,
   deriveLeafCompletion,
   computeDerivedPercent,
   computeNodePercent,
   findDeclaredPercent,
 } from '@tracker/shared'
-import type { TrackerEvent, CompletionNode } from '@tracker/shared'
+import type { TrackerEvent, CompletionNode, PausedInterval } from '@tracker/shared'
 import * as repos from '../../db/repos/index'
 import { deriveDisposition as deriveOccurrenceDisposition } from '../../domain/dispositions'
 import type {
@@ -230,6 +232,43 @@ export function itemEarliestAnchor(item: Item, schedules: ItemSchedule[]): strin
   return anchors.reduce((earliest, a) => (a < earliest ? a : earliest))
 }
 
+// ── §5.6 / v2 §9.1.1.b — paused days leave the window ─────────────────────────
+//
+// Due days come from the recurrence RULES, not from stored rows, so without this an
+// item paused for six weeks would arrive as six weeks of `missing` observations and
+// read as six weeks of failure.  That is the precise failure this design exists to
+// prevent: a confidently-computed claim the record does not support.  It would poison
+// adherence, both streak measures, day-of-week, trajectory and autocorrelation at
+// once, and Layer 3 would narrate the poison fluently.
+//
+// The exclusion drops days the rules WOULD have generated.  Days the record actually
+// holds — a stored occurrence — are never dropped: deactivation clears untouched
+// future occurrences but never touched ones (§5.6), so a session you logged the
+// morning you paused still counts.  Pausing does not un-happen what happened.
+
+// Replay one item's deactivate/reactivate transitions into its paused intervals.
+async function pausedIntervalsFor(
+  pool: Pool,
+  itemIds: string[],
+  userId: string
+): Promise<Map<string, PausedInterval[]>> {
+  const eventsByItem = await repos.findDeactivationEventsByItems(pool, itemIds, userId)
+  const result = new Map<string, PausedInterval[]>()
+  for (const itemId of itemIds) {
+    result.set(itemId, pausedIntervalsFromEvents(eventsByItem.get(itemId) ?? []))
+  }
+  return result
+}
+
+// Drop the rule-derived slots that fall inside a paused interval.
+function dropPausedSlots<T extends { day: string }>(
+  slots: T[],
+  intervals: PausedInterval[]
+): T[] {
+  if (intervals.length === 0) return slots
+  return slots.filter((s) => !isDayPaused(s.day, intervals))
+}
+
 // ── Public observation builders ───────────────────────────────────────────────
 
 /**
@@ -245,9 +284,10 @@ export async function buildLeafDayObservations(
 ): Promise<DayObservation[]> {
   const { startDay, endDay } = window
 
-  const [schedules, occs] = await Promise.all([
+  const [schedules, occs, pausedByItem] = await Promise.all([
     repos.findSchedulesByItem(pool, item.id, userId),
     repos.findOccurrencesByItemsInRange(pool, [item.id], userId, startDay, endDay),
+    pausedIntervalsFor(pool, [item.id], userId),
   ])
 
   // §5.5 — which (day, slot) pairs the item was due in the window. Recurring slots
@@ -256,8 +296,12 @@ export async function buildLeafDayObservations(
   const occBySlot = new Map<string, Occurrence>()
   for (const o of occs) occBySlot.set(`${o.appliesToDay}:${o.scheduleId}`, o)
 
-  const slotKeys: { day: string; scheduleId: string }[] =
-    getItemDueSlots(item, schedules, startDay, endDay)
+  // v2 §9.1.1.b — paused days are not due days.  Applied to the rule-derived slots
+  // only; the stored-row pass below still adds any day the record actually holds.
+  const slotKeys: { day: string; scheduleId: string }[] = dropPausedSlots(
+    getItemDueSlots(item, schedules, startDay, endDay),
+    pausedByItem.get(item.id) ?? []
+  )
   const covered = new Set(slotKeys.map((s) => `${s.day}:${s.scheduleId}`))
   for (const o of occs) {
     const key = `${o.appliesToDay}:${o.scheduleId}`
@@ -422,9 +466,12 @@ export async function buildParentDayObservations(
 
   // Bulk-fetch every schedule in the subtree so due-ness is answered per slot (§5.5)
   const allItemIds = [parentItem.id, ...descendants.map(d => d.id)]
-  const [allSchedules, allOccs] = await Promise.all([
+  const [allSchedules, allOccs, pausedByItem] = await Promise.all([
     repos.findSchedulesByUser(pool, userId),
     repos.findOccurrencesByItemsInRange(pool, allItemIds, userId, startDay, endDay),
+    // v2 §9.1.1.b — one bulk query for the whole subtree; every item in it can have
+    // been paused independently, and each one's own timeline is what applies.
+    pausedIntervalsFor(pool, allItemIds, userId),
   ])
   const schedulesByItem = new Map<string, ItemSchedule[]>()
   for (const s of allSchedules) {
@@ -434,15 +481,25 @@ export async function buildParentDayObservations(
   }
 
   // §5.5 — a parent carries at most one slot, so its due days are unambiguous.
-  const parentDueDays = getItemDueDays(
-    parentItem, schedulesByItem.get(parentItem.id) ?? [], startDay, endDay
-  )
+  // v2 §9.1.1.b — minus the days it was paused.
+  const parentDueDays = dropPausedSlots(
+    getItemDueDays(parentItem, schedulesByItem.get(parentItem.id) ?? [], startDay, endDay)
+      .map((day) => ({ day })),
+    pausedByItem.get(parentItem.id) ?? []
+  ).map((d) => d.day)
 
   // Which slots each descendant was due in, keyed 'itemId:day' (getItemDueSlots —
   // not reimplemented).
   const dueSlots = new Map<string, Set<string>>()
   for (const item of descendants) {
-    for (const slot of getItemDueSlots(item, schedulesByItem.get(item.id) ?? [], startDay, endDay)) {
+    // v2 §9.1.1.b — per item: a child paused on its own contributes nothing on those
+    // days, and §6.1 already excludes a not-due child from the parent's denominator,
+    // so the pause reads as "not due" everywhere without a second rule.
+    const slots = dropPausedSlots(
+      getItemDueSlots(item, schedulesByItem.get(item.id) ?? [], startDay, endDay),
+      pausedByItem.get(item.id) ?? []
+    )
+    for (const slot of slots) {
       const key = `${item.id}:${slot.day}`
       const set = dueSlots.get(key)
       if (set) set.add(slot.scheduleId)

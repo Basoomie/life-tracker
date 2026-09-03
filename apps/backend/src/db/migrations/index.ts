@@ -12,6 +12,7 @@ import * as m11 from './0011_reviews'
 import * as m12 from './0012_item_anchor_day'
 import * as m13 from './0013_item_sort_order'
 import * as m14 from './0014_item_schedules'
+import * as m15 from './0015_item_deactivation'
 
 export interface Migration {
   name: string
@@ -20,4 +21,4 @@ export interface Migration {
 }
 
 // Order matters: migrations run in this order (up) and reverse (down)
-export const migrations: Migration[] = [m1, m2, m3, m4, m5, m6, m7, m8, m9, m10, m11, m12, m13, m14]
+export const migrations: Migration[] = [m1, m2, m3, m4, m5, m6, m7, m8, m9, m10, m11, m12, m13, m14, m15]

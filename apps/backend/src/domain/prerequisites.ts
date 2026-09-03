@@ -153,11 +153,34 @@ export async function isBlocked(
   if (prereqs.length === 0) return false
 
   for (const prereq of prereqs) {
+    if (await isDeadEndPrerequisite(pool, prereq.prerequisiteId, userId)) continue
     const completed = await repos.isItemEverCompleted(pool, prereq.prerequisiteId, userId)
     if (!completed) return true  // at least one prerequisite is incomplete → blocked
   }
 
   return false  // all prerequisites completed
+}
+
+/**
+ * §5.6 — Should this prerequisite be ignored when deriving blocked-ness?
+ *
+ * Yes if it is inactive (or deleted): it can no longer produce a completion event, so
+ * leaving it in place would block its dependents forever with no visible cause and no
+ * action the user could take to clear it.  A prerequisite that cannot complete is not
+ * a gate, it is a dead end.
+ *
+ * This is a rule in the derivation, not a mutation — blocked-ness is derived, never
+ * stored (§4.2) — so reactivating the prerequisite makes its dependents blocked again
+ * automatically, with no state to repair.
+ */
+async function isDeadEndPrerequisite(
+  pool: Pool,
+  prerequisiteId: string,
+  userId: string
+): Promise<boolean> {
+  const item = await repos.findItemById(pool, prerequisiteId, userId)
+  if (!item) return true
+  return item.deactivatedAt !== null || item.archivedAt !== null
 }
 
 /**
@@ -173,6 +196,9 @@ export async function getIncompletePrerequisites(
   const incomplete: string[] = []
 
   for (const prereq of prereqs) {
+    // §5.6 — kept in step with isBlocked: a dead-end prerequisite is not listed as a
+    // reason, because it is not one.
+    if (await isDeadEndPrerequisite(pool, prereq.prerequisiteId, userId)) continue
     const completed = await repos.isItemEverCompleted(pool, prereq.prerequisiteId, userId)
     if (!completed) incomplete.push(prereq.prerequisiteId)
   }

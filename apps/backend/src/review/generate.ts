@@ -63,7 +63,11 @@ async function releaseFactsForItem(
 }
 
 async function releaseFacts(pool: Pool, userId: string, window: DateWindow): Promise<ReleasedFinding[]> {
-  const items = await repos.findItemsByUser(pool, userId)
+  // §5.6 — active items only.  A review is forward-looking advice, and recommending
+  // changes to a habit the user has deliberately switched off is noise the honest
+  // advisor (§6.2) should not produce.  The item's history is not erased — it is still
+  // fully available in Stats; it just stops driving recommendations while paused.
+  const items = await repos.findActiveItemsByUser(pool, userId)
   // Only top-level items — a parent's adherence fact already ships its per-child
   // breakdown (§3.1), so a child's own facts would be redundant noise in the prompt.
   const topLevel = items.filter((item) => item.parentId === null)

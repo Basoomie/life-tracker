@@ -39,7 +39,7 @@ function makeItem(
     userId: 'u1', description: null, categoryId: null, valence: null, priority: null,
     quotaTarget: null, parentId: null, sortOrder: 0,
     dispositionPolicy: 'skip', creationSource: 'planned',
-    archivedAt: null, createdAt: new Date(),
+    deactivatedAt: null, archivedAt: null, createdAt: new Date(),
     ...itemFields,
     schedules: [{
       id: `${o.id}-s0`, userId: 'u1', itemId: o.id, label: null,

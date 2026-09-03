@@ -98,6 +98,14 @@ export type Item = {
                                            // live (not snapshotted) — see enrichOccurrence
   dispositionPolicy: DispositionPolicy
   creationSource: CreationSource
+  // §5.6 — the pause. Set = the item is inactive: it stops being scheduled from this
+  // day forward but keeps every field, schedule and past occurrence. Orthogonal to
+  // archivedAt (the soft delete, §3.4) — the two answer different questions.
+  //
+  // This column answers "is it off right now" for scheduling and list queries. It is
+  // NOT the source of truth for *when* it was off: that is the template_deactivated /
+  // template_reactivated event timeline, replayed by pausedIntervalsFromEvents.
+  deactivatedAt: Date | null
   archivedAt: Date | null
   createdAt: Date
 }

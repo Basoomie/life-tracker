@@ -8,6 +8,8 @@ export type {
   OccurrenceWithState,
   ItemWithSchedules,
   ItemDetail,
+  ItemStatusFilter,
+  ItemActivationResponse,
   CreateItemBody,
   UpdateItemBody,
   CreateScheduleBody,
@@ -78,6 +80,8 @@ export {
   bucketLocalDateTime,
   bucketTimestamp,
   getEffectiveDayStart,
+  pausedIntervalsFromEvents,
+  isDayPaused,
   getDueDays,
   scheduleAnchorDate,
   getItemDueSlots,
@@ -90,6 +94,7 @@ export {
 } from './domain/index'
 export type { LeafCompletionState, ParentCompletionState, CompletionNode } from './domain/index'
 export type { DueSlot } from './domain/index'
+export type { PausedInterval } from './domain/index'
 
 export type {
   DateWindow,
