@@ -45,6 +45,12 @@ export function App() {
   // Change-password modal state
   const [showChangePassword, setShowChangePassword] = useState(false)
 
+  // §5.6 — bumped on every item save. The inactive list (List view) renders item
+  // templates rather than occurrences, so unlike the occurrence views it has no
+  // refresh of its own to piggyback on: without this, editing an inactive task would
+  // leave its old name on screen.
+  const [itemsVersion, setItemsVersion] = useState(0)
+
   // ── Auth check on mount ───────────────────────────────────────────────────
 
   useEffect(() => {
@@ -105,6 +111,7 @@ export function App() {
 
   function handleSaved(_item: Item) {
     setEditItemId(null)
+    setItemsVersion((v) => v + 1)
   }
 
   function handleViewChange(view: ViewKey) {
@@ -128,7 +135,9 @@ export function App() {
         {activeView === 'now' && (
           <NowView onEditItem={(id) => setEditItemId(id)} />
         )}
-        {activeView === 'list' && <ListView onEditItem={(id) => setEditItemId(id)} />}
+        {activeView === 'list' && (
+          <ListView onEditItem={(id) => setEditItemId(id)} itemsVersion={itemsVersion} />
+        )}
         {activeView === 'calendar' && <CalendarView onEditItem={(id) => setEditItemId(id)} />}
         {activeView === 'stats' && <StatsView />}
         {activeView === 'reviews' && <ReviewsView />}

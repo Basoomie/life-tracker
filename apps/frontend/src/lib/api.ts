@@ -11,6 +11,8 @@ import type {
   ItemSchedule,
   ItemWithSchedules,
   ItemDetail,
+  ItemStatusFilter,
+  ItemActivationResponse,
   CreateScheduleBody,
   UpdateScheduleBody,
   Occurrence,
@@ -149,7 +151,10 @@ export const api = {
   },
 
   items: {
-    list: () => apiFetch<ItemWithSchedules[]>('/items'),
+    // §5.6 — the server defaults to the active slice; pass 'inactive' for the paused
+    // list and 'all' when history matters more than what is currently scheduled.
+    list: (status?: ItemStatusFilter) =>
+      apiFetch<ItemWithSchedules[]>(status ? `/items?status=${status}` : '/items'),
     get: (id: string) => apiFetch<ItemDetail>(`/items/${id}`),
     create: (body: CreateItemBody) =>
       apiFetch<Item>('/items', { method: 'POST', body: JSON.stringify(body) }),
@@ -157,6 +162,13 @@ export const api = {
       apiFetch<Item>(`/items/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
     archive: (id: string) =>
       apiFetch<void>(`/items/${id}`, { method: 'DELETE' }),
+    // §5.6 — pausing is NOT deleting: separate endpoints, separate events. The
+    // response reports every item the call switched, because deactivation cascades
+    // over the containment subtree and the user needs to be told what else moved.
+    deactivate: (id: string) =>
+      apiFetch<ItemActivationResponse>(`/items/${id}/deactivate`, { method: 'POST' }),
+    reactivate: (id: string) =>
+      apiFetch<ItemActivationResponse>(`/items/${id}/reactivate`, { method: 'POST' }),
     addPrerequisite: (id: string, prerequisiteItemId: string) =>
       apiFetch<ItemPrerequisite>(`/items/${id}/prerequisites`, {
         method: 'POST', body: JSON.stringify({ prerequisiteItemId }),

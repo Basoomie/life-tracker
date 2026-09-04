@@ -32,6 +32,8 @@ type Props = {
   onClearDisposition: (occ: OccurrenceWithState) => void
   onEdit: (itemId: string) => void
   onArchive: (occ: OccurrenceWithState) => void
+  // §5.6 — pause the item without deleting it.
+  onDeactivate: (occ: OccurrenceWithState) => void
   onManageSessions: (occ: OccurrenceWithState) => void
   onReordered: (orderedItemIds: string[]) => void
   // §4.1 — resolves "is this a child rendered outside its parent's card, and
@@ -87,6 +89,7 @@ export function TimeGrid({
   onClearDisposition,
   onEdit,
   onArchive,
+  onDeactivate,
   onManageSessions,
   onReordered,
   parentLabelFor,
@@ -148,6 +151,7 @@ export function TimeGrid({
         onClearDisposition={() => onClearDisposition(occ)}
         onEdit={() => onEdit(occ.itemId)}
         onArchive={() => { onArchive(occ); if (closeAfterAction) setSelected(null) }}
+        onDeactivate={() => { onDeactivate(occ); if (closeAfterAction) setSelected(null) }}
         onManageSessions={() => onManageSessions(occ)}
         progress={progress}
       />

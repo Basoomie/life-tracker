@@ -3,6 +3,11 @@ type Props = {
   message: string
   confirmLabel?: string
   busy?: boolean
+  // §5.6 — not every confirmation is a destructive one. Making a task inactive is
+  // reversible and is the whole point of the feature, so dressing its button in the
+  // delete colour would tell the user the opposite of the truth. Defaults to 'danger'
+  // because every caller that predates this one is in fact destructive.
+  variant?: 'danger' | 'neutral'
   onConfirm: () => void
   onCancel: () => void
 }
@@ -12,6 +17,7 @@ export function ConfirmModal({
   message,
   confirmLabel = 'Confirm',
   busy,
+  variant = 'danger',
   onConfirm,
   onCancel,
 }: Props) {
@@ -34,7 +40,7 @@ export function ConfirmModal({
             Cancel
           </button>
           <button
-            className="btn btn--danger"
+            className={variant === 'danger' ? 'btn btn--danger' : 'btn'}
             onClick={onConfirm}
             disabled={busy}
             data-testid="confirm-modal-confirm"

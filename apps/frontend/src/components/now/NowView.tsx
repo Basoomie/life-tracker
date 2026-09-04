@@ -96,6 +96,7 @@ export function NowView({ onEditItem }: Props) {
 
   // Archive confirmation target
   const [pendingArchive, setPendingArchive] = useState<OccurrenceWithState | null>(null)
+  const [pendingDeactivate, setPendingDeactivate] = useState<OccurrenceWithState | null>(null)
 
   // Live session state: occurrenceId → SessionState
   const [sessions, setSessions] = useState<Map<string, SessionState>>(() => loadSessions())
@@ -277,6 +278,15 @@ export function NowView({ onEditItem }: Props) {
     refresh()
   }, [refresh])
 
+  // §5.6 — pause, not delete. A full refresh rather than a local patch: this clears
+  // the item's untouched future occurrences and its whole subtree's, which is not
+  // something the client can work out for itself.
+  const handleDeactivate = useCallback(async (occ: OccurrenceWithState) => {
+    await api.items.deactivate(occ.itemId)
+    setPendingDeactivate(null)
+    refresh()
+  }, [refresh])
+
   // ── Ad-hoc capture ─────────────────────────────────────────────────────────
 
   const handleAdHocCapture = useCallback(async (
@@ -355,6 +365,7 @@ export function NowView({ onEditItem }: Props) {
         onDisposition={() => setDispositionTarget(occ)}
         onClearDisposition={() => handleClearDisposition(occ)}
         onEdit={() => onEditItem(occ.itemId)}
+        onDeactivate={() => setPendingDeactivate(occ)}
         onArchive={() => setPendingArchive(occ)}
         onManageSessions={() => setSessionManagerTarget(occ)}
         progress={progress}
@@ -527,6 +538,23 @@ export function NowView({ onEditItem }: Props) {
             setPendingUncompletion(null)
           }}
           onCancel={() => setPendingUncompletion(null)}
+        />
+      )}
+
+      {/* §5.6 — pause confirmation. Names the cascade BEFORE it happens: a parent's
+          sub-tasks go with it, and consenting to that is the user's call. */}
+      {pendingDeactivate && (
+        <ConfirmModal
+          title="Make inactive?"
+          message={
+            pendingDeactivate.hasChildren
+              ? `Stop scheduling "${pendingDeactivate.snapshot.name}" and its sub-tasks? Everything is kept — times, category and history — and you can switch it back on from List → Inactive. The paused days won't count against it.`
+              : `Stop scheduling "${pendingDeactivate.snapshot.name}"? Everything is kept — times, category and history — and you can switch it back on from List → Inactive. The paused days won't count against it.`
+          }
+          confirmLabel="Make inactive"
+          variant="neutral"
+          onConfirm={() => handleDeactivate(pendingDeactivate)}
+          onCancel={() => setPendingDeactivate(null)}
         />
       )}
 

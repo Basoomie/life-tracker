@@ -31,6 +31,11 @@ type Props = {
   onClearDisposition?: () => void
   onEdit?: () => void
   onArchive?: () => void
+  // §5.6 — pause the item without deleting it. Deliberately a separate button from
+  // onArchive rather than a mode of it: "I'm taking a break from this" and "I'm done
+  // with this" are different decisions, and the row should not make the user pick the
+  // destructive-looking one to express the reversible intent.
+  onDeactivate?: () => void
   // §9.1 — opens the session manager (add/edit/delete individual logged
   // windows). Unlike the live TimerControl, this isn't gated on isToday or
   // completion — manual sessions are explicitly for backdating and for
@@ -100,6 +105,7 @@ export function OccurrenceRow({
   onClearDisposition,
   onEdit,
   onArchive,
+  onDeactivate,
   onManageSessions,
   streak,
   progress,
@@ -264,6 +270,17 @@ export function OccurrenceRow({
             title="Edit item"
           >
             ✎
+          </button>
+        )}
+        {onDeactivate && (
+          <button
+            className="disp-btn"
+            onClick={onDeactivate}
+            aria-label="Make task inactive"
+            data-testid="occ-deactivate-btn"
+            title="Make inactive (keeps everything, stops scheduling)"
+          >
+            ⏸
           </button>
         )}
         {onArchive && (

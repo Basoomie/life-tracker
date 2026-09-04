@@ -1266,6 +1266,62 @@ input, select, textarea {
   font-style: italic;
 }
 
+/* ── §5.6 Inactive items panel ───────────────────────────────────────────────
+   Rows here are item TEMPLATES, not occurrences, so they deliberately don't look
+   like .occ-row: there is no checkbox, no timer and no day. What they carry is the
+   configuration that survived the pause, which is the reason to pause rather than
+   delete. */
+.inactive-panel__intro {
+  margin: 0 0 var(--space-3);
+  color: var(--color-text-secondary);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+
+.inactive-panel__error {
+  margin-bottom: var(--space-3);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--color-danger-subtle);
+  color: var(--color-danger);
+  font-size: var(--text-sm);
+}
+
+.inactive-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--color-border-subtle);
+}
+
+.inactive-row:last-child { border-bottom: none; }
+.inactive-row:hover { background: var(--color-surface-hover); }
+
+.inactive-row__main { flex: 1; min-width: 0; }
+
+/* Not dimmed. An inactive task is parked, not degraded — greying it out would read
+   as "broken" and undersell that everything about it is intact. */
+.inactive-row__name {
+  font-weight: 500;
+  /* §12 — long task names wrap rather than overflowing the row on narrow screens,
+     matching .occ-row's treatment. */
+  overflow-wrap: anywhere;
+}
+
+.inactive-row__meta {
+  margin-top: 2px;
+  color: var(--color-text-tertiary);
+  font-size: var(--text-xs);
+  overflow-wrap: anywhere;
+}
+
+.inactive-row__actions {
+  display: flex;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+
 /* A reorder that the server refused. Reverting in silence is indistinguishable
    from a drag that never registered, which is exactly how a rejected
    reorder-root stayed invisible. */

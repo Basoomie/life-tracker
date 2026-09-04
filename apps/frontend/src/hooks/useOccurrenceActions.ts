@@ -24,6 +24,10 @@ export type OccurrenceActions = {
   handleCarryForward: (occ: OccurrenceWithState, targetDay: string, reasonId: string | null, comment: string | null) => Promise<void>
   handleClearDisposition: (occ: OccurrenceWithState) => Promise<void>
   handleArchive: (occ: OccurrenceWithState) => Promise<void>
+  // §5.6 — pause the item (and its subtree). Resolves to the names of everything
+  // that was switched off, so the caller can say what the cascade actually did
+  // rather than leaving the user to discover it.
+  handleDeactivate: (occ: OccurrenceWithState) => Promise<string[]>
 }
 
 export function useOccurrenceActions(
@@ -165,6 +169,15 @@ export function useOccurrenceActions(
     refresh()
   }, [refresh])
 
+  // §5.6 — a full refresh rather than a local patch: deactivation clears this item's
+  // untouched future occurrences AND its whole subtree's, so the number of rows that
+  // just disappeared is not something the client can work out for itself.
+  const handleDeactivate = useCallback(async (occ: OccurrenceWithState) => {
+    const result = await api.items.deactivate(occ.itemId)
+    refresh()
+    return result.affected.map((i) => i.name)
+  }, [refresh])
+
   return {
     sessions,
     dispositionTarget,
@@ -182,5 +195,6 @@ export function useOccurrenceActions(
     handleCarryForward,
     handleClearDisposition,
     handleArchive,
+    handleDeactivate,
   }
 }

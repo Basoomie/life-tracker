@@ -40,6 +40,7 @@ export function CalendarView({ onEditItem }: Props) {
   const [now, setNow] = useState(() => new Date())
   const [pendingUncompletion, setPendingUncompletion] = useState<OccurrenceWithState | null>(null)
   const [pendingArchive, setPendingArchive] = useState<OccurrenceWithState | null>(null)
+  const [pendingDeactivate, setPendingDeactivate] = useState<OccurrenceWithState | null>(null)
 
   useEffect(() => { localStorage.setItem('tracker:cal-range', range) }, [range])
   useEffect(() => { localStorage.setItem('tracker:cal-customDate', customDate) }, [customDate])
@@ -92,6 +93,7 @@ export function CalendarView({ onEditItem }: Props) {
     handleCarryForward,
     handleClearDisposition,
     handleArchive,
+    handleDeactivate,
   } = useOccurrenceActions(setOccurrences, refresh)
 
   // v2 §3.2.5 — badges for the detail row only (TimeGrid never puts them on the
@@ -179,6 +181,7 @@ export function CalendarView({ onEditItem }: Props) {
         onClearDisposition={handleClearDisposition}
         onEdit={onEditItem}
         onArchive={setPendingArchive}
+        onDeactivate={setPendingDeactivate}
         onManageSessions={setSessionManagerTarget}
         onReordered={handleReordered}
         // §4.1 — resolved here, not inside TimeGrid: TimeGrid only receives the
@@ -325,6 +328,26 @@ export function CalendarView({ onEditItem }: Props) {
             setPendingUncompletion(null)
           }}
           onCancel={() => setPendingUncompletion(null)}
+        />
+      )}
+
+      {/* §5.6 — pause confirmation. Names the cascade BEFORE it happens: a parent's
+          sub-tasks go with it, and consenting to that is the user's call. */}
+      {pendingDeactivate && (
+        <ConfirmModal
+          title="Make inactive?"
+          message={
+            pendingDeactivate.hasChildren
+              ? `Stop scheduling "${pendingDeactivate.snapshot.name}" and its sub-tasks? Everything is kept — times, category and history — and you can switch it back on from List → Inactive. The paused days won't count against it.`
+              : `Stop scheduling "${pendingDeactivate.snapshot.name}"? Everything is kept — times, category and history — and you can switch it back on from List → Inactive. The paused days won't count against it.`
+          }
+          confirmLabel="Make inactive"
+          variant="neutral"
+          onConfirm={async () => {
+            await handleDeactivate(pendingDeactivate)
+            setPendingDeactivate(null)
+          }}
+          onCancel={() => setPendingDeactivate(null)}
         />
       )}
 

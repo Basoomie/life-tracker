@@ -12,6 +12,7 @@ import { ConfirmModal } from '../shared/ConfirmModal'
 import { OccurrenceCard } from '../shared/OccurrenceCard'
 import { SortableList } from '../shared/SortableList'
 import { FilterBar } from '../FilterBar'
+import { InactiveItemsPanel } from './InactiveItemsPanel'
 import { sortByTiming, groupByPriority, splitTimed } from '../../lib/list-sort'
 import { applyFilters, makeDefaultFilters, serializeFilters, deserializeFilters } from '../../lib/filters'
 import { getRangeDates, getDaysInRange, formatDayLabel, todayStr } from '../../lib/date-range'
@@ -24,9 +25,12 @@ import type { OccurrenceWithState, Category, Reason } from '@tracker/shared'
 
 type Props = {
   onEditItem: (itemId: string) => void
+  // §5.6 — bumped by the app when an item is saved, so the inactive panel picks up a
+  // rename made in the edit modal instead of showing the old name.
+  itemsVersion?: number
 }
 
-export function ListView({ onEditItem }: Props) {
+export function ListView({ onEditItem, itemsVersion }: Props) {
   const [range, setRange] = useState<RangeKey>(() => {
     return (localStorage.getItem('tracker:list-range') as RangeKey | null) ?? 'today'
   })
@@ -45,6 +49,13 @@ export function ListView({ onEditItem }: Props) {
   const [reasons, setReasons] = useState<Reason[]>([])
   const [pendingUncompletion, setPendingUncompletion] = useState<OccurrenceWithState | null>(null)
   const [pendingArchive, setPendingArchive] = useState<OccurrenceWithState | null>(null)
+  // §5.6 — the inactive list is a separate mode, not a filter: it renders ITEMS (an
+  // inactive item has no occurrences), so it replaces the content area rather than
+  // narrowing it. Not persisted to localStorage like range/filters — it is somewhere
+  // you go deliberately, and reopening the app on it would hide today's work.
+  const [showInactive, setShowInactive] = useState(false)
+  const [inactiveCount, setInactiveCount] = useState<number | null>(null)
+  const [pendingDeactivate, setPendingDeactivate] = useState<OccurrenceWithState | null>(null)
 
   useEffect(() => { localStorage.setItem('tracker:list-range', range) }, [range])
   useEffect(() => { localStorage.setItem('tracker:list-customDate', customDate) }, [customDate])
@@ -82,6 +93,16 @@ export function ListView({ onEditItem }: Props) {
     api.reasons.list().then(setReasons).catch(() => {})
   }, [])
 
+  // §5.6 — the count on the toolbar button, fetched without opening the panel: "do I
+  // have anything parked?" is the question the button exists to answer, and a bare
+  // "Inactive" answers it only by making you go and look. Refetched on itemsVersion so
+  // it survives an edit, and the panel keeps it in step from there via onCountChange.
+  useEffect(() => {
+    api.items.list('inactive')
+      .then((inactive) => setInactiveCount(inactive.length))
+      .catch(() => {})
+  }, [itemsVersion])
+
   // v2 §3.2.5 — ambient streak badges. Refetched when completion or disposition
   // state changes, which is exactly what can move a chain (see NowView).
   const { streaks, refresh: refreshStreaks } = useStreakSummaries()
@@ -111,6 +132,7 @@ export function ListView({ onEditItem }: Props) {
     handleCarryForward,
     handleClearDisposition,
     handleArchive,
+    handleDeactivate,
   } = useOccurrenceActions(setOccurrences, refresh)
 
   // Local patch, not refresh() — see OccurrenceCard's onReordered doc comment
@@ -192,6 +214,7 @@ export function ListView({ onEditItem }: Props) {
         onDisposition={() => setDispositionTarget(occ)}
         onClearDisposition={() => handleClearDisposition(occ)}
         onEdit={() => onEditItem(occ.itemId)}
+        onDeactivate={() => setPendingDeactivate(occ)}
         onArchive={() => setPendingArchive(occ)}
         onManageSessions={() => setSessionManagerTarget(occ)}
         progress={progress}
@@ -335,10 +358,22 @@ export function ListView({ onEditItem }: Props) {
         >
           Filters
         </button>
+
+        {/* §5.6 — always rendered, even at zero: it is the only place inactive tasks
+            live, so it has to be findable before you have any. */}
+        <button
+          className={`btn btn--ghost${showInactive ? ' btn--active' : ''}`}
+          onClick={() => setShowInactive((v) => !v)}
+          data-testid="toggle-inactive"
+          aria-pressed={showInactive}
+        >
+          Inactive{inactiveCount ? ` (${inactiveCount})` : ''}
+        </button>
       </div>
 
-      {/* Filter bar */}
-      {showFilters && (
+      {/* Filter bar — hidden in the inactive list, whose rows are items rather than
+          occurrences and so carry none of the state the filters act on. */}
+      {showFilters && !showInactive && (
         <FilterBar
           filters={filters}
           categories={categories}
@@ -347,7 +382,13 @@ export function ListView({ onEditItem }: Props) {
       )}
 
       {/* Content */}
-      {loading ? (
+      {showInactive ? (
+        <InactiveItemsPanel
+          onEditItem={onEditItem}
+          itemsVersion={itemsVersion}
+          onCountChange={setInactiveCount}
+        />
+      ) : loading ? (
         <div className="now-view__loading">
           <span className="spinner" aria-hidden="true" />&ensp;Loading…
         </div>
@@ -395,6 +436,30 @@ export function ListView({ onEditItem }: Props) {
             setPendingUncompletion(null)
           }}
           onCancel={() => setPendingUncompletion(null)}
+        />
+      )}
+
+      {/* §5.6 — pause confirmation. Names the cascade BEFORE it happens: a parent's
+          sub-tasks go with it, and consenting to that is the user's call, not an
+          outcome they should find out about afterwards. */}
+      {pendingDeactivate && (
+        <ConfirmModal
+          title="Make inactive?"
+          message={
+            pendingDeactivate.hasChildren
+              ? `Stop scheduling "${pendingDeactivate.snapshot.name}" and its sub-tasks? Everything is kept — times, category and history — and you can switch it back on from the Inactive list. The paused days won't count against it.`
+              : `Stop scheduling "${pendingDeactivate.snapshot.name}"? Everything is kept — times, category and history — and you can switch it back on from the Inactive list. The paused days won't count against it.`
+          }
+          confirmLabel="Make inactive"
+          variant="neutral"
+          onConfirm={async () => {
+            const names = await handleDeactivate(pendingDeactivate)
+            setPendingDeactivate(null)
+            // The count reflects everything the cascade took, so the toolbar shows
+            // straight away that the sub-tasks went with it.
+            setInactiveCount((n) => (n ?? 0) + names.length)
+          }}
+          onCancel={() => setPendingDeactivate(null)}
         />
       )}
 
