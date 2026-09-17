@@ -139,6 +139,19 @@ const UNSCHEDULED = makeOcc({
   id: 'occ-read', itemId: 'item-read', name: 'Reading',
 })
 
+// A 15-minute range: shorter than the two stacked text lines a block used to
+// render, which clipped both and left an unlabelled sliver on the grid.
+const QUARTER_HOUR = makeOcc({
+  id: 'occ-15m', itemId: 'item-15m', name: 'Breakfast',
+  snapshot: { timingPrecision: 'range', timingStartTime: '06:30', timingEndTime: '06:45' },
+})
+
+// A name long enough to need real width — the gutter column is narrow, so this
+// is the fixture that catches the name being squeezed by the action buttons.
+const UNSCHEDULED_LONG_NAME = makeOcc({
+  id: 'occ-long', itemId: 'item-long', name: 'Immersion (Japanese)',
+})
+
 // Two unscheduled root items with explicit manual order, for gutter
 // drag-and-drop reorder tests.
 const GUTTER_A = makeOcc({
@@ -414,6 +427,61 @@ test.describe('§12.4 — Calendar view', () => {
     // Label changes to the next day (non-empty)
     const labelText = await page.locator('.cal-mobile-nav__label').innerText()
     expect(labelText.trim().length).toBeGreaterThan(0)
+  })
+
+  // §12.4 says the grid is proportional, which means short items get short
+  // blocks — so a block has to stay legible at ANY duration, not just at the
+  // durations tall enough for two stacked lines.
+  test('§12.4 Calendar: a block too short to stack its two lines still renders its name unclipped', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2025-06-16T07:00:00'))
+    await setupCalApiMocks(page, [QUARTER_HOUR])
+    await goToCalendarView(page)
+
+    const block = desktopGrid(page).getByTestId('cal-block-occ-15m')
+    await expect(block).toBeVisible()
+    await block.scrollIntoViewIfNeeded()
+
+    const blockBox = await block.boundingBox()
+    const nameBox  = await block.locator('.cal-block__name').boundingBox()
+    expect(blockBox).not.toBeNull()
+    expect(nameBox).not.toBeNull()
+
+    // The name occupies a full line of text — not a sliver of one.
+    expect(nameBox!.height).toBeGreaterThanOrEqual(10)
+
+    // ...and that line sits entirely inside the block, which clips its overflow.
+    // Before the compact layout the name's box ran past the block's bottom edge
+    // and was cut off, leaving the title readable only via the hover tooltip.
+    expect(nameBox!.y).toBeGreaterThanOrEqual(blockBox!.y - 1)
+    expect(nameBox!.y + nameBox!.height).toBeLessThanOrEqual(blockBox!.y + blockBox!.height + 1)
+  })
+
+  test('§12.4 Calendar: a gutter row gives its name a legible width instead of letting the action buttons squeeze it', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2025-06-16T07:00:00'))
+    await setupCalApiMocks(page, [UNSCHEDULED_LONG_NAME, ONE_HOUR])
+    await goToCalendarView(page)
+
+    const gutter = desktopGrid(page).getByTestId('cal-gutter-2025-06-16')
+    await expect(gutter).toBeVisible()
+
+    const row  = gutter.getByTestId('occ-row-occ-long')
+    const name = row.locator('.occ-name')
+    await expect(name).toBeVisible()
+
+    const gutterBox  = await gutter.boundingBox()
+    const nameBox    = await name.boundingBox()
+    const actionsBox = await row.locator('.occ-actions').boundingBox()
+
+    // The gutter column is ~360px. The name gets the bulk of it: the buttons
+    // take a line of their own rather than competing with the title for width.
+    expect(nameBox!.width).toBeGreaterThan(gutterBox!.width * 0.6)
+
+    // A single line of text — not a name broken one or two characters per line.
+    expect(nameBox!.height).toBeLessThan(40)
+
+    // The buttons stay inside the column (.cal-gutter clips horizontally, so an
+    // overflowing action row loses its last button outright).
+    expect(actionsBox!.x + actionsBox!.width).toBeLessThanOrEqual(gutterBox!.x + gutterBox!.width + 1)
   })
 
 })

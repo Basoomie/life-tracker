@@ -10,6 +10,7 @@ import { computeDayLayout, nowLinePx, TOTAL_PX, PX_PER_HOUR } from '../../lib/ca
 import type { GridBlock, DayLayout } from '../../lib/calendar-layout'
 import type { OccurrenceNode } from '../../lib/occurrence-tree'
 import { occurrenceKey } from '../../lib/occurrence-key'
+import { hhmm } from '../../lib/now-ordering'
 import type { OccurrenceWithState, Bucket, ItemStreakSummary } from '@tracker/shared'
 import type { SessionState } from '../now/TimerControl'
 
@@ -60,11 +61,16 @@ function buildHourLabels(dayStart: string): Array<{ label: string; topPx: number
 function blockTitle(block: GridBlock): string {
   const { timingStartTime, timingEndTime, name } = block.occ.snapshot
   if (block.kind === 'range' && timingStartTime && timingEndTime) {
-    return `${name} ${timingStartTime}–${timingEndTime}`
+    return `${name} ${hhmm(timingStartTime)}–${hhmm(timingEndTime)}`
   }
-  if (block.kind === 'point' && timingStartTime) return `${name} @ ${timingStartTime}`
+  if (block.kind === 'point' && timingStartTime) return `${name} @ ${hhmm(timingStartTime)}`
   return name
 }
+
+// Below this height a block cannot fit its name stacked over its time without
+// clipping one of them (name + time + the block's own padding ≈ 38px). Such
+// blocks switch to a single-line layout instead — see .cal-block--compact.
+const STACKED_MIN_PX = 44
 
 // Skip/excuse/carry-forward read visually distinct in the day grid too, not
 // just the detail-panel row — same three statuses OccurrenceRow treats specially.
@@ -229,6 +235,7 @@ export function TimeGrid({
                     block.occ.completionState.isComplete ? 'cal-block--done' : '',
                     DISPOSITIONED_TYPES.has(block.occ.disposition.type) ? `cal-block--${block.occ.disposition.type}` : '',
                     isSelected ? 'cal-block--selected' : '',
+                    block.heightPx < STACKED_MIN_PX ? 'cal-block--compact' : '',
                   ].filter(Boolean).join(' ')}
                   style={{
                     top:    `${block.topPx}px`,
@@ -247,8 +254,8 @@ export function TimeGrid({
                   <span className="cal-block__name">{block.occ.snapshot.name}</span>
                   {block.kind === 'range' && block.occ.snapshot.timingStartTime && (
                     <span className="cal-block__time">
-                      {block.occ.snapshot.timingStartTime}
-                      {block.occ.snapshot.timingEndTime ? `–${block.occ.snapshot.timingEndTime}` : ''}
+                      {hhmm(block.occ.snapshot.timingStartTime)}
+                      {block.occ.snapshot.timingEndTime ? `–${hhmm(block.occ.snapshot.timingEndTime)}` : ''}
                     </span>
                   )}
                 </button>

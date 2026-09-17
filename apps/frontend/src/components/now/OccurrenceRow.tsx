@@ -161,9 +161,6 @@ export function OccurrenceRow({
     occ.isBlocked ? 'occ-row--blocked' : '',
     isDispositioned ? `occ-row--dispositioned occ-row--${occ.disposition.type}` : '',
     isAutoClosed ? 'occ-row--auto_closed' : '',
-    // Only a row carrying a progress bar needs to wrap onto a second line at
-    // full width; leaf rows keep their single-line layout.
-    progress ? 'occ-row--with-progress' : '',
   ].filter(Boolean).join(' ')
 
   return (

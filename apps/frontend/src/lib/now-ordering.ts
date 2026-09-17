@@ -166,13 +166,20 @@ export function tierOccurrences(
 
 // ── Display helpers ─────────────────────────────────────────────────────────
 
+// Times arrive as HH:MM or HH:MM:SS depending on the item. Nobody sets seconds
+// on a task, so displaying them is noise that also costs horizontal room where
+// it is scarcest (a calendar block, a narrow row).
+export function hhmm(time: string): string {
+  return time.slice(0, 5)
+}
+
 export function formatTimingLabel(occ: OccurrenceWithState, buckets: Bucket[]): string {
   const { timingPrecision, timingStartTime, timingEndTime, timingBucketId } = occ.snapshot
   if (timingPrecision === 'range' && timingStartTime && timingEndTime) {
-    return `${timingStartTime} – ${timingEndTime}`
+    return `${hhmm(timingStartTime)} – ${hhmm(timingEndTime)}`
   }
   if (timingPrecision === 'point' && timingStartTime) {
-    return `@ ${timingStartTime}`
+    return `@ ${hhmm(timingStartTime)}`
   }
   if (timingPrecision === 'bucket' && timingBucketId) {
     const b = buckets.find((x) => x.id === timingBucketId)

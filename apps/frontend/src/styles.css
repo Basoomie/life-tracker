@@ -298,6 +298,17 @@ input, select, textarea {
   padding: var(--space-3) var(--space-4);
   border-bottom: 1px solid var(--color-border-subtle);
   transition: background var(--transition-fast);
+  /* The row is its own size container so its parts can respond to the width the
+     row actually got, not the width of the window. The same row renders full-
+     width in Now/List and inside a ~340px Calendar gutter column; a viewport
+     media query cannot tell those apart, which is how gutter names ended up
+     broken mid-word on a wide screen. */
+  container-type: inline-size;
+  /* Safety net at any width: the action cluster never shrinks, so if it cannot
+     fit beside the title it takes a line of its own rather than squeezing the
+     title to a sliver. */
+  flex-wrap: wrap;
+  row-gap: var(--space-2);
 }
 
 .occ-row:last-child { border-bottom: none; }
@@ -521,13 +532,9 @@ input, select, textarea {
 
 /* ── Parent progress bar (rendered by OccurrenceCard, lives inside the row) ──
    A full-width flex line of its own, ordered after the title/actions line at
-   desktop widths — visually identical to sitting under the header, but as a
+   wide row widths — visually identical to sitting under the header, but as a
    flex sibling of .occ-actions it can be re-ordered above the buttons once
-   they wrap onto their own line (see the ≤480px block). ─────────────────── */
-.occ-row--with-progress {
-  flex-wrap: wrap;
-  row-gap: var(--space-2);
-}
+   they wrap onto their own line (see the ≤480px container block). ───────── */
 
 /* The full-width line itself: the bar (with its completed/total count) followed
    by the colour-ramped parent %. The % lives here rather than on the meta line
@@ -575,22 +582,25 @@ input, select, textarea {
   white-space: nowrap;
 }
 
-@media (max-width: 480px) {
-  /* The icon cluster (timer, clock, edit, trash, disposition) doesn't shrink,
-     so on a phone-width row it was squeezing the title down to a sliver —
-     narrow enough that word-break: break-word had no choice but to split
-     mid-word. Wrapping actions onto their own full-width line below the
-     title gives the name its own row to wrap at word boundaries instead. */
-  .occ-row {
-    flex-wrap: wrap;
-    row-gap: var(--space-2);
-  }
+/* The icon cluster (timer, clock, edit, trash, disposition) doesn't shrink, so
+   on a narrow row it squeezed the title down to a sliver — narrow enough that
+   word-break: break-word had no choice but to split mid-word. Giving the
+   actions their own full-width line below the title gives the name the whole
+   row to wrap at word boundaries instead.
+
+   Keyed off the ROW's width (see container-type on .occ-row), not the
+   viewport's, so it fires for a phone AND for the Calendar's unscheduled
+   gutter column on a desktop — the two cases are the same problem. */
+@container (max-width: 480px) {
   .occ-actions {
     flex-basis: 100%;
     justify-content: flex-end;
     flex-wrap: wrap;
-    /* Align under the title: checkbox width (20px) + row gap (--space-3). */
-    margin-left: calc(20px + var(--space-3));
+    /* Align under the title: checkbox width (20px) + row gap (--space-3).
+       Padding rather than margin — flex-basis: 100% is measured border-box, so
+       a margin here would be added on top of it and push the buttons out past
+       the row's right edge (clipped outright inside the Calendar gutter). */
+    padding-left: calc(20px + var(--space-3));
     /* Once the buttons have a line to themselves, the progress bar reads as
        belonging to the title above it, not floating under the button cluster —
        so it goes first (order 1) and the buttons last. */
@@ -1434,9 +1444,10 @@ input, select, textarea {
   margin-top: var(--space-3);
 }
 
-/* Threshold picked so the gutter column (~360px) has room to show occurrence
-   names on one or two lines instead of wrapping mid-word — see disp-btn/timer
-   action widths in occ-actions, which eat ~140px of any row before name text. */
+/* Threshold picked so the time grid keeps a usable width once the ~360px gutter
+   column sits beside it. The gutter's rows are narrower than 480px, so each one
+   drops its action buttons onto their own line (see the @container block on
+   .occ-actions) and gives the occurrence name the full column width. */
 @container (min-width: 760px) {
   .cal-day {
     flex-direction: row;
@@ -1537,6 +1548,9 @@ input, select, textarea {
 /* Calendar blocks */
 .cal-block {
   position: absolute;
+  /* Its own size container: a block's width is whatever the day column and any
+     overlapping neighbours leave it, which the viewport says nothing about. */
+  container-type: inline-size;
   border-radius: var(--radius-sm);
   padding: var(--space-1) var(--space-2);
   overflow: hidden;
@@ -1621,6 +1635,44 @@ input, select, textarea {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* Short blocks (< ~45min) can't stack name over time without clipping one of
+   them — a 15-minute block used to show neither, leaving a nameless sliver you
+   had to hover to identify. They lay the two out on a single line and drop the
+   vertical padding instead, which fits inside even the 20px minimum height. */
+.cal-block--compact {
+  flex-direction: row;
+  align-items: center;
+  gap: var(--space-2);
+  padding-block: 0;
+  line-height: var(--leading-tight);
+}
+
+.cal-block--compact .cal-block__name {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+/* Outsized shrink factor, so on a block too narrow for both the time is what
+   gives way: the block's position on the grid already encodes its time, while
+   the name exists nowhere else on screen. */
+.cal-block--compact .cal-block__time {
+  flex: 0 20 auto;
+  min-width: 0;
+}
+
+/* Past the point where shrinking still leaves something readable, drop the time
+   outright rather than render a stub like "1…". Compact blocks hit that first
+   (they share one line with the name); a stacked block has its own line and
+   only gives the time up when even that can't hold "06:30–08:00" — which
+   happens in week/month columns split between overlapping items. */
+@container (max-width: 150px) {
+  .cal-block--compact .cal-block__time { display: none; }
+}
+
+@container (max-width: 90px) {
+  .cal-block__time { display: none; }
 }
 
 /* Detail panel — shown when a block is clicked */
