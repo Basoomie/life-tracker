@@ -7,15 +7,17 @@
 // date input's min attribute.
 
 import { useState } from 'react'
-import type { DayStartEntry } from '@tracker/shared'
+import { planDayStartReanchor } from '@tracker/shared'
+import type { Bucket, DayStartEntry } from '@tracker/shared'
 import { todayStr } from '../../lib/date-range'
 
 type Props = {
   entries: DayStartEntry[]      // ascending order (oldest first)
+  buckets: Bucket[]             // §6.7 — re-anchored by a day-start change
   onAppend: (value: string, effectiveFrom: string) => Promise<void>
 }
 
-export function DayStartSection({ entries, onAppend }: Props) {
+export function DayStartSection({ entries, buckets, onAppend }: Props) {
   const today = todayStr()
 
   const currentEntry = [...entries]
@@ -30,6 +32,11 @@ export function DayStartSection({ entries, onAppend }: Props) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
+
+  // §6.7 — what the change will do to the buckets, shown before it is applied rather
+  // than discovered afterwards. Same planner the API runs, so the preview cannot
+  // disagree with what actually happens.
+  const plan = planDayStartReanchor(buckets, currentEntry?.value ?? '00:00', newValue.slice(0, 5))
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -99,6 +106,33 @@ export function DayStartSection({ entries, onAppend }: Props) {
               />
             </div>
           </div>
+
+          {/* §6.7 — bucket consequences of this change, before submitting */}
+          {plan.status === 'moved' && (
+            <div className="ds-note" data-testid="day-start-reanchor-preview">
+              Buckets follow the day-start:{' '}
+              {plan.changed.map((b, i) => (
+                <span key={b.id}>
+                  {i > 0 && ', '}
+                  <strong>{b.name}</strong> becomes {b.startTime} → {b.endTime}
+                </span>
+              ))}
+              . Every other bucket boundary stays where it is.
+            </div>
+          )}
+          {plan.status === 'blocked' && (
+            <div className="cfg-section-error" role="alert" data-testid="day-start-reanchor-blocked">
+              {plan.error}
+            </div>
+          )}
+          {/* Known v1 seam: bucket boundaries are not versioned by date, so they
+              re-anchor immediately rather than on the effective date. */}
+          {plan.status === 'moved' && effectiveFrom > today && (
+            <div className="cfg-section-error" role="alert" data-testid="day-start-future-bucket-note">
+              Heads up: bucket boundaries aren&rsquo;t dated, so they re-anchor now — not on{' '}
+              {effectiveFrom}.
+            </div>
+          )}
 
           {error && (
             <div className="cfg-section-error" role="alert">{error}</div>

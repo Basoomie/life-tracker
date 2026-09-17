@@ -32,8 +32,9 @@ export type {
   CreateReasonBody,
   RenameReasonBody,
   CreateBucketBody,
-  UpdateBucketBoundariesBody,
+  MoveBucketSeamBody,
   CreateDayStartBody,
+  CreateDayStartResponse,
   RunBackgroundJobBody,
   ApproveEvidenceBody,
   LoginBody,
@@ -95,6 +96,25 @@ export {
 export type { LeafCompletionState, ParentCompletionState, CompletionNode } from './domain/index'
 export type { DueSlot } from './domain/index'
 export type { PausedInterval } from './domain/index'
+
+export {
+  isHHMM,
+  spanMinutes,
+  offsetFromDayStart,
+  buildBucketCycle,
+  validateBucketTiling,
+  bucketContaining,
+  validateSeamMove,
+  applySeamMove,
+  planDayStartReanchor,
+} from './domain/index'
+export type {
+  BucketSeam,
+  BucketCycle,
+  BucketCycleResult,
+  ReanchorStatus,
+  ReanchorPlan,
+} from './domain/index'
 
 export type {
   DateWindow,

@@ -17,6 +17,7 @@ import type {
   UpdateScheduleBody,
   Occurrence,
   DayStartEntry,
+  CreateDayStartResponse,
   User,
   DispositionBody,
   CarryForwardBody,
@@ -213,10 +214,12 @@ export const api = {
         method: 'POST',
         body: JSON.stringify({ name, startTime, endTime, sortOrder }),
       }),
-    updateBoundaries: (id: string, startTime: string, endTime: string) =>
-      apiFetch<Bucket>(`/buckets/${id}/boundaries`, {
+    // §6.6 — move the seam that ends `beforeBucketId`; both neighbours move.
+    // Returns the whole set so the client never re-derives it.
+    moveSeam: (beforeBucketId: string, time: string) =>
+      apiFetch<Bucket[]>(`/buckets/${beforeBucketId}/seam`, {
         method: 'PATCH',
-        body: JSON.stringify({ startTime, endTime }),
+        body: JSON.stringify({ time }),
       }),
   },
 
@@ -242,8 +245,10 @@ export const api = {
 
   dayStart: {
     list: () => apiFetch<DayStartEntry[]>('/day-start'),
+    // §6.7 — the buckets re-anchor with the day-start, so the response carries the
+    // resulting bucket set alongside the appended timeline entry.
     append: (value: string, effectiveFrom: string) =>
-      apiFetch<DayStartEntry>('/day-start', {
+      apiFetch<CreateDayStartResponse>('/day-start', {
         method: 'POST',
         body: JSON.stringify({ value, effectiveFrom }),
       }),

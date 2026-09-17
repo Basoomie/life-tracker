@@ -66,17 +66,42 @@ export async function findBucketById(
   return rows[0] ? toBucket(rows[0]) : null
 }
 
-export async function updateBucketBoundaries(
+/**
+ * §6.6 — Move the seam between two adjacent buckets: the one that ends there and the
+ * one that starts there, in a single transaction.
+ *
+ * The explicit BEGIN/COMMIT is a deliberate exception to this codebase's
+ * sequential-statements style (see reorderChildren). Every other multi-row write here
+ * is idempotent or order-independent; this one is not. A half-applied seam move leaves
+ * a gap or overlap in the stored bucket set — the precise state the tiling rule exists
+ * to prevent — and nothing downstream would flag it.
+ *
+ * Returns the full bucket set so callers never have to re-derive it.
+ */
+export async function moveBucketSeam(
   pool: Pool,
-  id: string,
   userId: string,
-  startTime: string,
-  endTime: string
-): Promise<Bucket | null> {
-  const { rows } = await pool.query<BucketRow>(
-    `UPDATE buckets SET start_time = $3, end_time = $4
-     WHERE id = $1 AND user_id = $2 RETURNING *`,
-    [id, userId, startTime, endTime]
-  )
-  return rows[0] ? toBucket(rows[0]) : null
+  beforeBucketId: string,
+  afterBucketId: string,
+  newTime: string
+): Promise<Bucket[]> {
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    await client.query(
+      `UPDATE buckets SET end_time = $3 WHERE id = $1 AND user_id = $2`,
+      [beforeBucketId, userId, newTime]
+    )
+    await client.query(
+      `UPDATE buckets SET start_time = $3 WHERE id = $1 AND user_id = $2`,
+      [afterBucketId, userId, newTime]
+    )
+    await client.query('COMMIT')
+  } catch (err) {
+    await client.query('ROLLBACK')
+    throw err
+  } finally {
+    client.release()
+  }
+  return findBucketsByUser(pool, userId)
 }

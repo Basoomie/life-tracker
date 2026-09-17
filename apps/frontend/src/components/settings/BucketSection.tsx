@@ -1,19 +1,31 @@
-// §6.6 — Bucket boundary editor with visual tiling strip.
+// §6.6 — Bucket editor. The editable unit is the **seam** between two buckets, not a
+// bucket's own start/end: "Early Morning ends at 09:00" and "Morning starts at 09:00"
+// are one fact, and moving one side without the other is exactly what opens a gap.
+// Each seam row here moves both neighbours in a single API call.
 //
-// Tiling validation runs server-side (validateBucketTiling in domain/buckets.ts).
-// On a PATCH /buckets/:id/boundaries the API returns either the updated bucket
-// or a 400 { error: 'invalid_tiling', message: '...' }.  The UI surfaces any
-// tiling error clearly and keeps the form open — it never silently accepts or
-// silently fixes an invalid edit.
+// The day-boundary seam is shown but locked — it moves with the day-start (§6.7), in
+// the section below. When the set has drifted out of anchor, that seam is an ordinary
+// editable one and the banner says so: moving it back is the repair.
+//
+// Validation is server-authoritative (PATCH /buckets/:id/seam). The same rules run here
+// from @tracker/shared purely to render the warning and to keep the form open on error.
 
 import { useState } from 'react'
-import type { Bucket } from '@tracker/shared'
+import {
+  buildBucketCycle,
+  offsetFromDayStart,
+  spanMinutes,
+  validateBucketTiling,
+} from '@tracker/shared'
+import type { Bucket, BucketSeam } from '@tracker/shared'
 
-// ── Band strip helpers ─────────────────────────────────────────────────────────
+// ── Helpers ────────────────────────────────────────────────────────────────────
 
-function hhmmToMinutes(hhmm: string): number {
-  const [h, m] = hhmm.split(':').map(Number)
-  return h * 60 + m
+function formatDuration(minutes: number): string {
+  const h = Math.floor(minutes / 60)
+  const m = minutes % 60
+  if (h === 0) return `${m}m`
+  return m === 0 ? `${h}h` : `${h}h ${m}m`
 }
 
 type BandInfo = {
@@ -23,22 +35,11 @@ type BandInfo = {
   colorIdx: number
 }
 
-function computeBands(buckets: Bucket[], dayStart: string): BandInfo[] {
-  if (buckets.length === 0) return []
-  const dayStartMin = hhmmToMinutes(dayStart)
-
-  const parsed = buckets.map((b) => {
-    const startRaw = (hhmmToMinutes(b.startTime) - dayStartMin + 1440) % 1440
-    const endRaw   = (hhmmToMinutes(b.endTime)   - dayStartMin + 1440) % 1440
-    return { bucket: b, startOffset: startRaw, endOffset: endRaw === 0 ? 1440 : endRaw }
-  })
-
-  parsed.sort((a, b) => a.startOffset - b.startOffset)
-
-  return parsed.map((p, idx) => ({
-    bucket: p.bucket,
-    startPct: (p.startOffset / 1440) * 100,
-    widthPct: ((p.endOffset - p.startOffset) / 1440) * 100,
+function computeBands(ordered: Bucket[], dayStart: string): BandInfo[] {
+  return ordered.map((bucket, idx) => ({
+    bucket,
+    startPct: (offsetFromDayStart(bucket.startTime, dayStart) / 1440) * 100,
+    widthPct: (spanMinutes(bucket.startTime, bucket.endTime) / 1440) * 100,
     colorIdx: idx % 4,
   }))
 }
@@ -48,42 +49,47 @@ function computeBands(buckets: Bucket[], dayStart: string): BandInfo[] {
 type Props = {
   buckets: Bucket[]
   dayStart: string        // HH:MM effective value (from day-start timeline)
-  onUpdateBoundaries: (id: string, startTime: string, endTime: string) => Promise<void>
+  onMoveSeam: (beforeBucketId: string, time: string) => Promise<void>
 }
 
-export function BucketSection({ buckets, dayStart, onUpdateBoundaries }: Props) {
-  const [editingId, setEditingId] = useState<string | null>(null)
-  const [editStart, setEditStart] = useState('')
-  const [editEnd, setEditEnd] = useState('')
+export function BucketSection({ buckets, dayStart, onMoveSeam }: Props) {
+  const [editingSeamId, setEditingSeamId] = useState<string | null>(null)
+  const [editTime, setEditTime] = useState('')
   const [editError, setEditError] = useState<string | null>(null)
   const [editBusy, setEditBusy] = useState(false)
 
-  const bands = computeBands(buckets, dayStart)
+  const cycleResult = buildBucketCycle(buckets, dayStart)
+  const cycle = cycleResult.ok ? cycleResult.cycle : null
+  const tilingError = validateBucketTiling(buckets, dayStart)
 
-  function openEdit(bucket: Bucket) {
-    setEditingId(bucket.id)
-    setEditStart(bucket.startTime)
-    setEditEnd(bucket.endTime)
+  const ordered = cycle ? cycle.ordered : buckets
+  const bands = cycle ? computeBands(cycle.ordered, dayStart) : []
+
+  // Seam that ends bucket i, keyed by the bucket it follows.
+  const seamAfter = new Map<string, BucketSeam>()
+  for (const seam of cycle?.seams ?? []) seamAfter.set(seam.beforeBucketId, seam)
+
+  function openEdit(seam: BucketSeam) {
+    setEditingSeamId(seam.beforeBucketId)
+    setEditTime(seam.time)
     setEditError(null)
   }
 
   function cancelEdit() {
-    setEditingId(null)
+    setEditingSeamId(null)
     setEditError(null)
   }
 
-  async function handleSave() {
-    if (!editingId) return
+  async function handleSave(seam: BucketSeam) {
     // Normalise time inputs — some browsers return 'HH:MM:SS'
-    const start = editStart.slice(0, 5)
-    const end   = editEnd.slice(0, 5)
+    const time = editTime.slice(0, 5)
     setEditBusy(true)
     setEditError(null)
     try {
-      await onUpdateBoundaries(editingId, start, end)
-      setEditingId(null)
+      await onMoveSeam(seam.beforeBucketId, time)
+      setEditingSeamId(null)
     } catch (err) {
-      // Surface the server's tiling error message directly (§6.6)
+      // Surface the server's message directly (§6.6)
       setEditError(err instanceof Error ? err.message : 'Failed to save')
     } finally {
       setEditBusy(false)
@@ -105,10 +111,26 @@ export function BucketSection({ buckets, dayStart, onUpdateBoundaries }: Props) 
       </div>
       <div className="settings-section__body">
 
+        {/* §6.6 — the set no longer tiles the day. Always a fact about the data, never
+            a guess: the message is the same rule the API enforces. */}
+        {tilingError && (
+          <div className="bucket-warning" role="alert" data-testid="bucket-tiling-warning">
+            <strong>Buckets don&rsquo;t cover the whole day.</strong> {tilingError}
+            {cycle && !cycle.anchored && (
+              <>
+                {' '}Move the {cycle.seams[cycle.seams.length - 1].time} seam to {dayStart},
+                or re-apply the day-start below to move it for you.
+              </>
+            )}
+          </div>
+        )}
+
         {/* §6.6 — visual tiling strip */}
         <div className="bucket-strip" data-testid="bucket-strip" aria-label="Bucket tiling strip">
           {bands.length === 0 ? (
-            <span className="bucket-strip__empty">No buckets configured</span>
+            <span className="bucket-strip__empty">
+              {buckets.length === 0 ? 'No buckets configured' : 'Buckets do not tile the day'}
+            </span>
           ) : (
             bands.map((band) => (
               <div
@@ -124,85 +146,101 @@ export function BucketSection({ buckets, dayStart, onUpdateBoundaries }: Props) 
           )}
         </div>
 
-        {/* bucket list with per-row edit */}
+        {/* Buckets in day-start order, with the editable seam between each pair */}
         {buckets.length === 0 ? (
           <p className="cfg-empty">No buckets defined yet.</p>
         ) : (
           <div className="cfg-list">
-            {buckets.map((bucket) => (
-              <div key={bucket.id}>
-                <div className="bucket-row" data-testid={`bucket-row-${bucket.id}`}>
-                  <span className="bucket-row__name">{bucket.name}</span>
-                  <span className="bucket-row__times">
-                    {bucket.startTime} → {bucket.endTime}
-                  </span>
-                  <button
-                    className="btn btn--ghost"
-                    style={btnSm}
-                    onClick={() => editingId === bucket.id ? cancelEdit() : openEdit(bucket)}
-                    data-testid={`bucket-row-${bucket.id}-edit-btn`}
-                  >
-                    {editingId === bucket.id ? 'Cancel' : 'Edit'}
-                  </button>
-                </div>
+            {ordered.map((bucket) => {
+              const seam = seamAfter.get(bucket.id)
+              const isEditing = seam != null && editingSeamId === seam.beforeBucketId
 
-                {editingId === bucket.id && (
-                  <div className="bucket-edit-form" data-testid="bucket-edit-form">
-                    <div className="bucket-edit-fields">
-                      <div className="field">
-                        <label className="field__label" htmlFor="bucket-edit-start">Start time</label>
-                        <input
-                          id="bucket-edit-start"
-                          className="field__input"
-                          type="time"
-                          value={editStart}
-                          onChange={(e) => setEditStart(e.target.value)}
-                          data-testid="bucket-edit-start"
-                        />
-                      </div>
-                      <div className="field">
-                        <label className="field__label" htmlFor="bucket-edit-end">End time</label>
-                        <input
-                          id="bucket-edit-end"
-                          className="field__input"
-                          type="time"
-                          value={editEnd}
-                          onChange={(e) => setEditEnd(e.target.value)}
-                          data-testid="bucket-edit-end"
-                        />
-                      </div>
-                    </div>
-
-                    {/* §6.6 — tiling error surfaced clearly; form stays open */}
-                    {editError && (
-                      <div className="cfg-section-error" role="alert" data-testid="bucket-edit-error">
-                        {editError}
-                      </div>
-                    )}
-
-                    <div className="bucket-edit-actions">
-                      <button
-                        className="btn btn--primary"
-                        style={btnSm}
-                        onClick={handleSave}
-                        disabled={editBusy}
-                        data-testid="bucket-edit-save"
-                      >
-                        {editBusy ? 'Saving…' : 'Save'}
-                      </button>
-                      <button
-                        className="btn btn--ghost"
-                        style={btnSm}
-                        onClick={cancelEdit}
-                        data-testid="bucket-edit-cancel"
-                      >
-                        Cancel
-                      </button>
-                    </div>
+              return (
+                <div key={bucket.id}>
+                  <div className="bucket-row" data-testid={`bucket-row-${bucket.id}`}>
+                    <span className="bucket-row__name">{bucket.name}</span>
+                    <span className="bucket-row__times">
+                      {bucket.startTime} → {bucket.endTime}
+                    </span>
+                    <span className="bucket-row__duration">
+                      {formatDuration(spanMinutes(bucket.startTime, bucket.endTime))}
+                    </span>
                   </div>
-                )}
-              </div>
-            ))}
+
+                  {seam && (
+                    <div className="bucket-seam" data-testid={`bucket-seam-${seam.beforeBucketId}`}>
+                      <span className="bucket-seam__time">{seam.time}</span>
+                      {seam.isDayBoundary ? (
+                        <span className="bucket-seam__label" data-testid="bucket-seam-day-boundary">
+                          day boundary — moves with the day-start below
+                        </span>
+                      ) : (
+                        <>
+                          <span className="bucket-seam__label">
+                            {seam.beforeName} → {seam.afterName}
+                          </span>
+                          <button
+                            className="btn btn--ghost"
+                            style={btnSm}
+                            onClick={() => (isEditing ? cancelEdit() : openEdit(seam))}
+                            data-testid={`bucket-seam-${seam.beforeBucketId}-edit-btn`}
+                          >
+                            {isEditing ? 'Cancel' : 'Edit'}
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  )}
+
+                  {seam && isEditing && (
+                    <div className="bucket-edit-form" data-testid="bucket-seam-form">
+                      <div className="bucket-edit-fields">
+                        <div className="field">
+                          <label className="field__label" htmlFor="bucket-seam-time">
+                            {seam.beforeName} ends / {seam.afterName} starts
+                          </label>
+                          <input
+                            id="bucket-seam-time"
+                            className="field__input"
+                            type="time"
+                            value={editTime}
+                            onChange={(e) => setEditTime(e.target.value)}
+                            data-testid="bucket-seam-time"
+                          />
+                        </div>
+                      </div>
+
+                      {/* §6.6 — server's error surfaced clearly; form stays open */}
+                      {editError && (
+                        <div className="cfg-section-error" role="alert" data-testid="bucket-seam-error">
+                          {editError}
+                        </div>
+                      )}
+
+                      <div className="bucket-edit-actions">
+                        <button
+                          className="btn btn--primary"
+                          style={btnSm}
+                          onClick={() => handleSave(seam)}
+                          disabled={editBusy}
+                          data-testid="bucket-seam-save"
+                        >
+                          {editBusy ? 'Saving…' : 'Save'}
+                        </button>
+                        <button
+                          className="btn btn--ghost"
+                          style={btnSm}
+                          onClick={cancelEdit}
+                          data-testid="bucket-seam-cancel"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )
+            })}
           </div>
         )}
       </div>

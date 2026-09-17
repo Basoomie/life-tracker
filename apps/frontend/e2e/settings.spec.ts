@@ -306,78 +306,122 @@ test.describe('§7 Reasons — separate list with same lifecycle', () => {
 
 })
 
-test.describe('§6.6 Buckets — tiling validation', () => {
+// The seeded five-bucket set, tiling the 04:00 → 04:00 window (§6.6).
+function seededBuckets(): Bucket[] {
+  return [
+    makeBucket({ id: 'bkt-em', name: 'Early Morning', startTime: '04:00', endTime: '09:00', sortOrder: 1 }),
+    makeBucket({ id: 'bkt-mo', name: 'Morning',       startTime: '09:00', endTime: '12:00', sortOrder: 2 }),
+    makeBucket({ id: 'bkt-af', name: 'Afternoon',     startTime: '12:00', endTime: '17:00', sortOrder: 3 }),
+    makeBucket({ id: 'bkt-ev', name: 'Evening',       startTime: '17:00', endTime: '22:00', sortOrder: 4 }),
+    makeBucket({ id: 'bkt-ni', name: 'Night',         startTime: '22:00', endTime: '04:00', sortOrder: 5 }),
+  ]
+}
 
-  test('§6.6 bucket boundary edit that maintains tiling saves successfully', async ({ page }) => {
-    const bkt = makeBucket({ id: 'bkt-1', name: 'All Day', startTime: '04:00', endTime: '04:00', sortOrder: 1 })
+test.describe('§6.6 Buckets — boundaries are edited as seams', () => {
+
+  test('§6.6 moving a seam moves both adjacent buckets in one edit', async ({ page }) => {
     const state: MockState = {
       categories: [],
       reasons: [],
-      buckets: [bkt],
+      buckets: seededBuckets(),
       dayStartEntries: [makeDayStartEntry({ id: 'ds-1', value: '04:00', startsOn: '2025-01-01' })],
     }
     await setupMocks(page, state)
 
-    // Mock PATCH /buckets/:id/boundaries → success
-    const updatedBkt = { ...bkt, startTime: '04:00', endTime: '04:00' }
-    await page.route(/\/api\/buckets\/[^/]+\/boundaries$/, (route) => {
-      route.fulfill({ json: updatedBkt })
+    // The API applies the move to both neighbours and returns the whole set.
+    await page.route(/\/api\/buckets\/[^/]+\/seam$/, (route) => {
+      route.fulfill({
+        json: seededBuckets().map((b) => {
+          if (b.id === 'bkt-em') return { ...b, endTime: '10:00' }
+          if (b.id === 'bkt-mo') return { ...b, startTime: '10:00' }
+          return b
+        }),
+      })
     })
 
     await gotoSettings(page)
 
-    // Open edit form
-    await page.getByTestId(`bucket-row-${bkt.id}-edit-btn`).click()
-    await expect(page.getByTestId('bucket-edit-form')).toBeVisible()
+    await page.getByTestId('bucket-seam-bkt-em-edit-btn').click()
+    await expect(page.getByTestId('bucket-seam-form')).toBeVisible()
+    await page.getByTestId('bucket-seam-time').fill('10:00')
+    await page.getByTestId('bucket-seam-save').click()
 
-    // Set same boundaries (valid no-op tiling — API mock returns success)
-    await page.getByTestId('bucket-edit-save').click()
-
-    // No error shown; form closes
-    await expect(page.getByTestId('bucket-edit-error')).not.toBeVisible()
-    await expect(page.getByTestId('bucket-edit-form')).not.toBeVisible()
+    await expect(page.getByTestId('bucket-seam-form')).not.toBeVisible()
+    // Both sides of the seam show the new time — the pair moved together.
+    await expect(page.getByTestId('bucket-row-bkt-em')).toContainText('04:00 → 10:00')
+    await expect(page.getByTestId('bucket-row-bkt-mo')).toContainText('10:00 → 12:00')
+    await expect(page.getByTestId('bucket-seam-bkt-em')).toContainText('10:00')
   })
 
-  test('§6.6 bucket boundary edit that breaks tiling is rejected with a clear error — no silent accept or silent fix', async ({ page }) => {
-    const bkt = makeBucket({ id: 'bkt-1', name: 'Morning', startTime: '04:00', endTime: '12:00', sortOrder: 1 })
+  test('§6.6 the day-boundary seam is shown but not editable here', async ({ page }) => {
     const state: MockState = {
       categories: [],
       reasons: [],
-      buckets: [bkt],
+      buckets: seededBuckets(),
+      dayStartEntries: [makeDayStartEntry({ id: 'ds-1', value: '04:00', startsOn: '2025-01-01' })],
+    }
+    await setupMocks(page, state)
+    await gotoSettings(page)
+
+    // Night's seam sits at 04:00 — the day-start — so it carries no Edit control.
+    await expect(page.getByTestId('bucket-seam-day-boundary')).toBeVisible()
+    await expect(page.getByTestId('bucket-seam-bkt-ni-edit-btn')).toHaveCount(0)
+    // Interior seams remain editable.
+    await expect(page.getByTestId('bucket-seam-bkt-em-edit-btn')).toBeVisible()
+  })
+
+  test('§6.6 a rejected seam move shows the error and keeps the form open — no silent accept or silent fix', async ({ page }) => {
+    const state: MockState = {
+      categories: [],
+      reasons: [],
+      buckets: seededBuckets(),
       dayStartEntries: [makeDayStartEntry({ id: 'ds-1', value: '04:00', startsOn: '2025-01-01' })],
     }
     await setupMocks(page, state)
 
-    // Mock PATCH → 400 invalid_tiling
-    await page.route(/\/api\/buckets\/[^/]+\/boundaries$/, (route) => {
+    await page.route(/\/api\/buckets\/[^/]+\/seam$/, (route) => {
       route.fulfill({
         status: 400,
         json: {
-          error: 'invalid_tiling',
-          message: 'Bucket "Morning" does not close the day; it ends at offset 480 (expected 1440).',
+          error: 'invalid_seam',
+          message:
+            'The seam between "Early Morning" and "Morning" must fall strictly between ' +
+            '04:00 and 12:00 — the span those two buckets share. Got 18:00.',
         },
       })
     })
 
     await gotoSettings(page)
 
-    // Open edit, change times, submit
-    await page.getByTestId(`bucket-row-${bkt.id}-edit-btn`).click()
-    await expect(page.getByTestId('bucket-edit-form')).toBeVisible()
+    await page.getByTestId('bucket-seam-bkt-em-edit-btn').click()
+    await page.getByTestId('bucket-seam-time').fill('18:00')
+    await page.getByTestId('bucket-seam-save').click()
 
-    await page.getByTestId('bucket-edit-end').fill('08:00')
-    await page.getByTestId('bucket-edit-save').click()
+    await expect(page.getByTestId('bucket-seam-error')).toBeVisible()
+    await expect(page.getByTestId('bucket-seam-error')).toContainText('must fall strictly between')
+    // Form stays open (no silent fix) and the stored boundary is unchanged.
+    await expect(page.getByTestId('bucket-seam-form')).toBeVisible()
+    await expect(page.getByTestId('bucket-row-bkt-em')).toContainText('04:00 → 09:00')
+  })
 
-    // Error is clearly shown (no silent accept); message describes the tiling problem
-    await expect(page.getByTestId('bucket-edit-error')).toBeVisible()
-    await expect(page.getByTestId('bucket-edit-error')).toContainText('does not close the day')
+  test('§6.6 a bucket set that no longer covers the day is flagged, and its wrap seam is editable', async ({ page }) => {
+    // The reported defect's state: buckets anchored at 04:00, day-start now 03:00.
+    const state: MockState = {
+      categories: [],
+      reasons: [],
+      buckets: seededBuckets(),
+      dayStartEntries: [makeDayStartEntry({ id: 'ds-1', value: '03:00', startsOn: '2025-01-01' })],
+    }
+    await setupMocks(page, state)
+    await gotoSettings(page)
 
-    // Form stays open (no silent fix — edit is NOT discarded)
-    await expect(page.getByTestId('bucket-edit-form')).toBeVisible()
-    await expect(page.getByTestId('bucket-edit-save')).toBeVisible()
+    await expect(page.getByTestId('bucket-tiling-warning')).toBeVisible()
+    await expect(page.getByTestId('bucket-tiling-warning')).toContainText('the day starts at 03:00')
 
-    // Strip still shows original bucket (unchanged)
-    await expect(page.getByTestId(`bucket-band-${bkt.id}`)).toBeVisible()
+    // Because the 04:00 seam is no longer the day boundary, it can be moved back —
+    // that is the repair path out of the drifted state.
+    await expect(page.getByTestId('bucket-seam-day-boundary')).toHaveCount(0)
+    await expect(page.getByTestId('bucket-seam-bkt-ni-edit-btn')).toBeVisible()
   })
 
 })
@@ -405,9 +449,13 @@ test.describe('§6.7 Day-start — forward-only timeline append', () => {
       if (route.request().method() === 'GET') {
         route.fulfill({ json: state.dayStartEntries })
       } else if (route.request().method() === 'POST') {
-        // Simulate forward-only append: new entry added to timeline
+        // Simulate forward-only append: new entry added to timeline. §6.7 — the
+        // response also carries the (here unchanged) bucket set.
         state.dayStartEntries = [...state.dayStartEntries, newEntry]
-        route.fulfill({ status: 201, json: newEntry })
+        route.fulfill({
+          status: 201,
+          json: { entry: newEntry, buckets: state.buckets, reanchor: { status: 'no-buckets', changed: [] } },
+        })
       } else {
         route.continue()
       }
@@ -437,6 +485,92 @@ test.describe('§6.7 Day-start — forward-only timeline append', () => {
 
     // Current effective value updates to the new one (startsOn = today <= today)
     await expect(page.getByTestId('day-start-current-value')).toContainText('05:00')
+  })
+
+  test('§6.7 the bucket consequences of a day-start change are shown before it is applied', async ({ page }) => {
+    const state: MockState = {
+      categories: [],
+      reasons: [],
+      buckets: seededBuckets(),
+      dayStartEntries: [makeDayStartEntry({ id: 'ds-1', value: '04:00', startsOn: '2025-01-01' })],
+    }
+    await setupMocks(page, state)
+    await gotoSettings(page)
+
+    await page.getByTestId('day-start-new-value').fill('03:00')
+
+    const preview = page.getByTestId('day-start-reanchor-preview')
+    await expect(preview).toBeVisible()
+    await expect(preview).toContainText('Early Morning')
+    await expect(preview).toContainText('03:00 → 09:00')
+    await expect(preview).toContainText('Night')
+    await expect(preview).toContainText('22:00 → 03:00')
+    await expect(preview).toContainText('Every other bucket boundary stays where it is')
+  })
+
+  test('§6.7 a day-start that would split a non-edge bucket is called out before submitting', async ({ page }) => {
+    const state: MockState = {
+      categories: [],
+      reasons: [],
+      buckets: seededBuckets(),
+      dayStartEntries: [makeDayStartEntry({ id: 'ds-1', value: '04:00', startsOn: '2025-01-01' })],
+    }
+    await setupMocks(page, state)
+    await gotoSettings(page)
+
+    await page.getByTestId('day-start-new-value').fill('10:00')
+
+    const blocked = page.getByTestId('day-start-reanchor-blocked')
+    await expect(blocked).toBeVisible()
+    await expect(blocked).toContainText('falls inside bucket "Morning"')
+  })
+
+  test('§6.7 applying a day-start change re-anchors the buckets in the list', async ({ page }) => {
+    const state: MockState = {
+      categories: [],
+      reasons: [],
+      buckets: seededBuckets(),
+      dayStartEntries: [makeDayStartEntry({ id: 'ds-1', value: '04:00', startsOn: '2025-01-01' })],
+    }
+    await setupMocks(page, state)
+
+    const now = new Date()
+    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+    const newEntry = makeDayStartEntry({ id: 'ds-reanchor', value: '03:00', startsOn: today })
+    const reanchored = seededBuckets().map((b) => {
+      if (b.id === 'bkt-em') return { ...b, startTime: '03:00' }
+      if (b.id === 'bkt-ni') return { ...b, endTime: '03:00' }
+      return b
+    })
+
+    await page.route('/api/day-start', (route) => {
+      if (route.request().method() === 'GET') {
+        route.fulfill({ json: state.dayStartEntries })
+      } else if (route.request().method() === 'POST') {
+        state.dayStartEntries = [...state.dayStartEntries, newEntry]
+        route.fulfill({
+          status: 201,
+          json: {
+            entry: newEntry,
+            buckets: reanchored,
+            reanchor: { status: 'moved', changed: reanchored.filter((b) => b.id === 'bkt-em' || b.id === 'bkt-ni') },
+          },
+        })
+      } else {
+        route.continue()
+      }
+    })
+
+    await gotoSettings(page)
+    await page.getByTestId('day-start-new-value').fill('03:00')
+    await page.getByTestId('day-start-submit').click()
+
+    // The edge buckets followed the day-start; the set covers the day again.
+    await expect(page.getByTestId('bucket-row-bkt-em')).toContainText('03:00 → 09:00')
+    await expect(page.getByTestId('bucket-row-bkt-ni')).toContainText('22:00 → 03:00')
+    await expect(page.getByTestId('bucket-tiling-warning')).toHaveCount(0)
+    // Interior boundaries are untouched.
+    await expect(page.getByTestId('bucket-row-bkt-mo')).toContainText('09:00 → 12:00')
   })
 
 })

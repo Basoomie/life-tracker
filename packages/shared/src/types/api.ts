@@ -2,7 +2,15 @@
 // All types are consumed by both frontend (step 4) and backend routes.
 // Defined once here so the API cannot drift from the client.
 
-import type { ComputedOccurrence, Item, ItemPrerequisite, ItemSchedule } from './entities'
+import type {
+  Bucket,
+  ComputedOccurrence,
+  DayStartEntry,
+  Item,
+  ItemPrerequisite,
+  ItemSchedule,
+} from './entities'
+import type { ReanchorStatus } from '../domain/buckets'
 import type {
   Priority,
   Valence,
@@ -243,14 +251,28 @@ export type CreateBucketBody = {
   sortOrder?: number
 }
 
-export type UpdateBucketBoundariesBody = {
-  startTime: string   // HH:MM
-  endTime: string     // HH:MM
+// §6.6 — Move the seam that *ends* the addressed bucket. Both the bucket that ends
+// there and the one that starts there move together; a bucket's boundaries are never
+// editable on their own, because one side of a seam cannot move without the other.
+export type MoveBucketSeamBody = {
+  time: string        // HH:MM — where the seam moves to
 }
 
 export type CreateDayStartBody = {
   value: string         // HH:MM
   effectiveFrom: string // YYYY-MM-DD — must be >= today (§6.7)
+}
+
+// §6.7 — A day-start change carries the bucket set's edge with it (re-anchoring), so
+// the response returns the resulting bucket set alongside the appended timeline entry.
+export type CreateDayStartResponse = {
+  entry: DayStartEntry
+  buckets: Bucket[]
+  reanchor: {
+    status: ReanchorStatus
+    /** Buckets whose boundaries moved with the day-start; empty when nothing moved. */
+    changed: Bucket[]
+  }
 }
 
 export type RunBackgroundJobBody = {

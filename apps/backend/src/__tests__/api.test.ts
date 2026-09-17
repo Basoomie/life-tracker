@@ -1249,46 +1249,137 @@ describe('§9.2 — ad-hoc one-tap creates item and running session together', (
   })
 })
 
-// ── §6.6 — bucket boundary update that breaks tiling is rejected ──────────────
+// ── §6.6 — bucket boundaries are edited as seams ──────────────────────────────
 
-describe('§6.6 — bucket boundary update that breaks tiling is rejected at the API', () => {
-  it('§6.6 PATCH /buckets/:id/boundaries returns 400 when tiling is violated', async () => {
-    const u = await makeUser('api-bucket-tiling@test.com')
-    const app = await buildTestApp(u.id)
-    const today = todayLocal()
-
-    // Post day-start at 04:00 (use actual today to pass the >= today validation)
-    const dsRes = await app.inject({
-      method: 'POST',
-      url: '/api/day-start',
-      payload: { value: '04:00', effectiveFrom: today },
-    })
-    expect(dsRes.statusCode).toBe(201)
-
-    // Create two buckets that tile the day (04:00–16:00 and 16:00–04:00)
-    const dayBucketRes = await app.inject({
+// The seeded five-bucket set, tiling the 04:00 → 04:00 window (§6.6).
+async function seedBuckets(app: Awaited<ReturnType<typeof buildTestApp>>) {
+  const spans: [string, string, string][] = [
+    ['Early Morning', '04:00', '09:00'],
+    ['Morning',       '09:00', '12:00'],
+    ['Afternoon',     '12:00', '17:00'],
+    ['Evening',       '17:00', '22:00'],
+    ['Night',         '22:00', '04:00'],
+  ]
+  const created: Record<string, string> = {}
+  for (let i = 0; i < spans.length; i++) {
+    const [name, startTime, endTime] = spans[i]
+    const res = await app.inject({
       method: 'POST',
       url: '/api/buckets',
-      payload: { name: 'Day', startTime: '04:00', endTime: '16:00', sortOrder: 1 },
+      payload: { name, startTime, endTime, sortOrder: i + 1 },
     })
-    expect(dayBucketRes.statusCode).toBe(201)
-    const dayBucket = JSON.parse(dayBucketRes.body)
+    expect(res.statusCode).toBe(201)
+    created[name] = JSON.parse(res.body).id
+  }
+  return created
+}
+
+async function setDayStart(
+  app: Awaited<ReturnType<typeof buildTestApp>>,
+  value: string,
+  effectiveFrom = todayLocal()
+) {
+  return app.inject({ method: 'POST', url: '/api/day-start', payload: { value, effectiveFrom } })
+}
+
+function bucketByName(buckets: { name: string }[], name: string) {
+  return buckets.find((b) => b.name === name) as { name: string; startTime: string; endTime: string }
+}
+
+// Config-level events carry no occurrence or item, so the existing repo finders
+// (by occurrence / by item / by day) do not reach them.
+async function configEventsOfType(userId: string, eventType: string) {
+  const { rows } = await getTestPool().query<{ payload: Record<string, unknown> }>(
+    `SELECT payload FROM events WHERE user_id = $1 AND event_type = $2 ORDER BY recorded_at`,
+    [userId, eventType]
+  )
+  return rows
+}
+
+describe('§6.6 — bucket boundaries are editable, as seams that move both neighbours', () => {
+  it('§6.6 PATCH /buckets/:id/seam moves both adjacent buckets and keeps the set tiling', async () => {
+    const u = await makeUser('api-bucket-seam-move@test.com')
+    const app = await buildTestApp(u.id)
+    await setDayStart(app, '04:00')
+    const ids = await seedBuckets(app)
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: `/api/buckets/${ids['Early Morning']}/seam`,
+      payload: { time: '10:00' },
+    })
+    expect(res.statusCode).toBe(200)
+
+    const buckets = JSON.parse(res.body)
+    expect(bucketByName(buckets, 'Early Morning').endTime).toBe('10:00')
+    expect(bucketByName(buckets, 'Morning').startTime).toBe('10:00')
+    // Untouched neighbours stay put.
+    expect(bucketByName(buckets, 'Morning').endTime).toBe('12:00')
+    expect(bucketByName(buckets, 'Night').startTime).toBe('22:00')
+
+    await app.close()
+  })
+
+  it('§6.6 a seam move writes one bucket_seam_moved event for the one user action', async () => {
+    const u = await makeUser('api-bucket-seam-event@test.com')
+    const app = await buildTestApp(u.id)
+    await setDayStart(app, '04:00')
+    const ids = await seedBuckets(app)
 
     await app.inject({
-      method: 'POST',
-      url: '/api/buckets',
-      payload: { name: 'Night', startTime: '16:00', endTime: '04:00', sortOrder: 2 },
+      method: 'PATCH',
+      url: `/api/buckets/${ids['Early Morning']}/seam`,
+      payload: { time: '10:00' },
     })
 
-    // Attempt to change Day bucket to 04:00–17:00 — this overlaps Night (still 16:00–04:00)
-    const patchRes = await app.inject({
-      method: 'PATCH',
-      url: `/api/buckets/${dayBucket.id}/boundaries`,
-      payload: { startTime: '04:00', endTime: '17:00' },
+    const events = await configEventsOfType(u.id, 'bucket_seam_moved')
+    expect(events).toHaveLength(1)
+    expect(events[0].payload).toMatchObject({
+      beforeBucketId: ids['Early Morning'],
+      afterBucketId: ids['Morning'],
+      previousTime: '09:00',
+      newTime: '10:00',
     })
-    expect(patchRes.statusCode).toBe(400)
-    const body = JSON.parse(patchRes.body)
-    expect(body.error).toBe('invalid_tiling')
+
+    await app.close()
+  })
+
+  it('§6.6 a seam move that would leave a bucket empty returns 400 and writes nothing', async () => {
+    const u = await makeUser('api-bucket-seam-empty@test.com')
+    const app = await buildTestApp(u.id)
+    await setDayStart(app, '04:00')
+    const ids = await seedBuckets(app)
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: `/api/buckets/${ids['Early Morning']}/seam`,
+      payload: { time: '12:00' },   // Morning's own end — would empty it
+    })
+    expect(res.statusCode).toBe(400)
+    expect(JSON.parse(res.body).error).toBe('invalid_seam')
+
+    const after = JSON.parse((await app.inject({ method: 'GET', url: '/api/buckets' })).body)
+    expect(bucketByName(after, 'Early Morning').endTime).toBe('09:00')
+    expect(bucketByName(after, 'Morning').startTime).toBe('09:00')
+
+    await app.close()
+  })
+
+  it('§6.6 the day-boundary seam cannot be moved here; it belongs to the day-start', async () => {
+    const u = await makeUser('api-bucket-seam-dayboundary@test.com')
+    const app = await buildTestApp(u.id)
+    await setDayStart(app, '04:00')
+    const ids = await seedBuckets(app)
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: `/api/buckets/${ids['Night']}/seam`,   // the 04:00 seam == the day-start
+      payload: { time: '03:00' },
+    })
+    expect(res.statusCode).toBe(400)
+    const body = JSON.parse(res.body)
+    expect(body.error).toBe('invalid_seam')
+    expect(body.message).toMatch(/day boundary/)
 
     await app.close()
   })
@@ -1341,6 +1432,116 @@ describe('§6.7 — day-start write appends to timeline and does not re-bucket p
     expect(pastRes.statusCode).toBe(400)
     const pastBody = JSON.parse(pastRes.body)
     expect(pastBody.error).toBe('past_effective_date')
+
+    await app.close()
+  })
+})
+
+// ── §6.7 — a day-start change re-anchors the buckets ─────────────────────────
+
+describe('§6.7 — a day-start change carries the bucket set edge with it', () => {
+  it('§6.7 POST /day-start moves the first and last bucket to the new day-start', async () => {
+    const u = await makeUser('api-day-start-reanchor@test.com')
+    const app = await buildTestApp(u.id)
+    await setDayStart(app, '04:00')
+    await seedBuckets(app)
+
+    const res = await setDayStart(app, '03:00')
+    expect(res.statusCode).toBe(201)
+
+    const body = JSON.parse(res.body)
+    expect(body.reanchor.status).toBe('moved')
+    expect(body.reanchor.changed.map((b: { name: string }) => b.name).sort()).toEqual([
+      'Early Morning', 'Night',
+    ])
+    expect(bucketByName(body.buckets, 'Early Morning').startTime).toBe('03:00')
+    expect(bucketByName(body.buckets, 'Night').endTime).toBe('03:00')
+
+    // Interior seams are exactly where they were.
+    expect(bucketByName(body.buckets, 'Morning').startTime).toBe('09:00')
+    expect(bucketByName(body.buckets, 'Afternoon').startTime).toBe('12:00')
+
+    await app.close()
+  })
+
+  it('§6.7 the re-anchor is recorded as its own buckets_reanchored event', async () => {
+    const u = await makeUser('api-day-start-reanchor-event@test.com')
+    const app = await buildTestApp(u.id)
+    await setDayStart(app, '04:00')
+    const ids = await seedBuckets(app)
+    await setDayStart(app, '03:00')
+
+    const events = await configEventsOfType(u.id, 'buckets_reanchored')
+    expect(events).toHaveLength(1)
+    expect(events[0].payload).toMatchObject({
+      previousDayStart: '04:00',
+      newDayStart: '03:00',
+      previousSeamTime: '04:00',
+      firstBucketId: ids['Early Morning'],
+      lastBucketId: ids['Night'],
+    })
+
+    await app.close()
+  })
+
+  it('§6.7 a day-start that would split a non-edge bucket is refused and nothing is written', async () => {
+    const u = await makeUser('api-day-start-splits-bucket@test.com')
+    const app = await buildTestApp(u.id)
+    await setDayStart(app, '04:00')
+    await seedBuckets(app)
+
+    const res = await setDayStart(app, '10:00')   // inside Morning (09:00→12:00)
+    expect(res.statusCode).toBe(400)
+    expect(JSON.parse(res.body).error).toBe('day_start_splits_bucket')
+
+    // The timeline is unchanged: the rejected value was never appended.
+    const timeline = JSON.parse((await app.inject({ method: 'GET', url: '/api/day-start' })).body)
+    expect(timeline.some((e: { value: string }) => e.value === '10:00')).toBe(false)
+
+    // And the buckets did not move.
+    const buckets = JSON.parse((await app.inject({ method: 'GET', url: '/api/buckets' })).body)
+    expect(bucketByName(buckets, 'Early Morning').startTime).toBe('04:00')
+
+    await app.close()
+  })
+
+  it('§6.7 applying a day-start change repairs a bucket set that had already drifted', async () => {
+    // Reproduces the reported defect: buckets anchored at 04:00 while the day-start had
+    // already moved to 03:00, leaving 03:00–04:00 in no bucket and every edit rejected.
+    const u = await makeUser('api-day-start-repairs-drift@test.com')
+    const app = await buildTestApp(u.id)
+    await setDayStart(app, '04:00')
+    await seedBuckets(app)
+
+    // Drift the day-start straight into the DB, the way the old route did.
+    await repos.insertDayStartEntry(getTestPool(), {
+      userId: u.id,
+      startsOn: todayLocal(),
+      value: '03:00',
+    })
+    const drifted = JSON.parse((await app.inject({ method: 'GET', url: '/api/buckets' })).body)
+    expect(bucketByName(drifted, 'Early Morning').startTime).toBe('04:00')
+
+    // Re-applying the same day-start value repairs the anchor.
+    const res = await setDayStart(app, '03:00')
+    expect(res.statusCode).toBe(201)
+    const body = JSON.parse(res.body)
+    expect(body.reanchor.status).toBe('moved')
+    expect(bucketByName(body.buckets, 'Early Morning').startTime).toBe('03:00')
+    expect(bucketByName(body.buckets, 'Night').endTime).toBe('03:00')
+
+    await app.close()
+  })
+
+  it('§6.7 a day-start change with no buckets configured still appends to the timeline', async () => {
+    const u = await makeUser('api-day-start-no-buckets@test.com')
+    const app = await buildTestApp(u.id)
+
+    const res = await setDayStart(app, '05:00')
+    expect(res.statusCode).toBe(201)
+    const body = JSON.parse(res.body)
+    expect(body.reanchor.status).toBe('no-buckets')
+    expect(body.entry.value).toBe('05:00')
 
     await app.close()
   })

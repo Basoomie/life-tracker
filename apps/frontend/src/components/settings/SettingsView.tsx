@@ -110,20 +110,21 @@ export function SettingsView({ theme, onToggleTheme }: Props) {
 
   // ── Bucket handlers ───────────────────────────────────────────────────────────
 
-  async function handleUpdateBucketBoundaries(id: string, startTime: string, endTime: string) {
-    const updated = await api.buckets.updateBoundaries(id, startTime, endTime)
-    setState((prev) => ({
-      ...prev,
-      buckets: prev.buckets.map((b) => (b.id === id ? updated : b)),
-    }))
+  // §6.6 — a seam move changes two buckets at once, so the API returns the whole set.
+  async function handleMoveBucketSeam(beforeBucketId: string, time: string) {
+    const buckets = await api.buckets.moveSeam(beforeBucketId, time)
+    setState((prev) => ({ ...prev, buckets }))
   }
 
   // ── Day-start handlers ────────────────────────────────────────────────────────
 
+  // §6.7 — the day-start change carries the bucket set's edge with it, so both the
+  // timeline and the buckets come back from the one call.
   async function handleAppendDayStart(value: string, effectiveFrom: string) {
-    const entry = await api.dayStart.append(value, effectiveFrom)
+    const { entry, buckets } = await api.dayStart.append(value, effectiveFrom)
     setState((prev) => ({
       ...prev,
+      buckets,
       dayStartEntries: [...prev.dayStartEntries, entry].sort((a, b) =>
         a.startsOn.localeCompare(b.startsOn)
       ),
@@ -176,12 +177,13 @@ export function SettingsView({ theme, onToggleTheme }: Props) {
       <BucketSection
         buckets={state.buckets}
         dayStart={effectiveDayStart}
-        onUpdateBoundaries={handleUpdateBucketBoundaries}
+        onMoveSeam={handleMoveBucketSeam}
       />
 
       {/* §6.7 — Day-start timeline */}
       <DayStartSection
         entries={state.dayStartEntries}
+        buckets={state.buckets}
         onAppend={handleAppendDayStart}
       />
 

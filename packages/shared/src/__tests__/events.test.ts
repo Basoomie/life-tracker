@@ -213,10 +213,11 @@ describe('TrackerEvent discriminated union', () => {
         'template_created', 'template_edited', 'template_soft_deleted',
         'priority_changed', 'prerequisite_added', 'prerequisite_removed',
         'day_start_changed', 'bucket_boundaries_changed',
+        'bucket_seam_moved', 'buckets_reanchored',
         'category_created', 'category_renamed', 'category_archived',
         'reason_created', 'reason_renamed', 'reason_archived',
       ]
-      expect(allTypes).toHaveLength(30)
+      expect(allTypes).toHaveLength(32)
     })
   })
 })

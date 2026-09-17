@@ -16,3 +16,21 @@ export {
   buildParentCompletionState,
 } from './completion'
 export type { LeafCompletionState, ParentCompletionState, CompletionNode } from './completion'
+export {
+  isHHMM,
+  spanMinutes,
+  offsetFromDayStart,
+  buildBucketCycle,
+  validateBucketTiling,
+  bucketContaining,
+  validateSeamMove,
+  applySeamMove,
+  planDayStartReanchor,
+} from './buckets'
+export type {
+  BucketSeam,
+  BucketCycle,
+  BucketCycleResult,
+  ReanchorStatus,
+  ReanchorPlan,
+} from './buckets'

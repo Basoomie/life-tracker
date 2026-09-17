@@ -353,6 +353,9 @@ type DayStartChangedEvent = EventBase & {
   }
 }
 
+// §6.6 — Retired in favour of bucket_seam_moved: a single bucket's boundaries can never
+// move on their own without breaking the tiling. Kept in the union because history is
+// immutable — events already written must still narrow and replay.
 type BucketBoundariesChangedEvent = EventBase & {
   eventType: 'bucket_boundaries_changed'
   payload: {
@@ -361,6 +364,32 @@ type BucketBoundariesChangedEvent = EventBase & {
     previousEndTime: string
     newStartTime: string
     newEndTime: string
+  }
+}
+
+// §6.6 — One user action ("move the 09:00 seam to 10:00") writing one event, even
+// though two bucket rows change: the seam is the thing the user edited.
+type BucketSeamMovedEvent = EventBase & {
+  eventType: 'bucket_seam_moved'
+  payload: {
+    beforeBucketId: string   // the bucket that ends at the seam
+    afterBucketId: string    // the bucket that starts at the seam
+    previousTime: string     // HH:MM
+    newTime: string          // HH:MM
+  }
+}
+
+// §6.7 — The bucket set's edge following a day-start change. Recorded separately from
+// day_start_changed so replay can tell a user-initiated seam edit apart from one the
+// day-start dragged along with it.
+type BucketsReanchoredEvent = EventBase & {
+  eventType: 'buckets_reanchored'
+  payload: {
+    previousDayStart: string | null  // null when the day-start was never configured
+    newDayStart: string
+    previousSeamTime: string         // where the day-boundary seam sat before
+    firstBucketId: string            // now starts at newDayStart
+    lastBucketId: string             // now ends at newDayStart
   }
 }
 
@@ -523,6 +552,8 @@ export type TrackerEvent =
   | PrerequisiteRemovedEvent
   | DayStartChangedEvent
   | BucketBoundariesChangedEvent
+  | BucketSeamMovedEvent
+  | BucketsReanchoredEvent
   | CategoryCreatedEvent
   | CategoryRenamedEvent
   | CategoryArchivedEvent
